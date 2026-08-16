@@ -4,7 +4,7 @@ RubyCuts statically links a full CRuby (MRI) build into the app rather than a su
 
 ## Attribution
 
-The configure flags and several of the workarounds below (especially the iOS-specific ones slated for slice 2) are ported from [xord/cruby](https://github.com/xord/cruby) (MIT license), which cross-compiles CRuby into an xcframework via CocoaPods. RubyCuts doesn't depend on it directly -- it's CocoaPods-only, Objective-C, and this project is SPM-only with zero third-party dependencies -- but its Rakefile is the reason the flags below aren't a guess.
+The configure flags and several of the workarounds below (especially the iOS-specific ones) are ported from [xord/cruby](https://github.com/xord/cruby) (MIT license), which cross-compiles CRuby into an xcframework via CocoaPods. RubyCuts doesn't depend on it directly -- it's CocoaPods-only, Objective-C, and this project is SPM-only with zero third-party dependencies -- but its Rakefile is the reason the flags below aren't a guess.
 
 ## Pinned version
 
@@ -22,14 +22,14 @@ Both live as constants at the top of `scripts/build-cruby.rb`, which downloads a
 
 ```sh
 mise install                  # once, to get Ruby 3.4.x on PATH
-ruby scripts/build-cruby.rb   # 10-20 minutes
+ruby scripts/build-cruby.rb   # 30-60 minutes, three targets: macOS, iOS device, iOS simulator
 ```
 
 This downloads and SHA256-verifies the tarball into `.build-cruby/src/`, configures and builds out-of-tree into `.build-cruby/<sdk>-<arch>/`, then copies the resulting static library and headers into `Vendor/CRuby/`. Both `.build-cruby/` and `Vendor/CRuby/` are git-ignored -- this is a build artifact, not something to commit.
 
 The script is idempotent: each step (download, extract, configure+make, install) is skipped if its output already exists, so re-running it after it's already succeeded finishes in a couple seconds. Pass `--clean` to wipe `.build-cruby/` and `Vendor/CRuby/` and start over.
 
-The Xcode project does **not** run this script as part of a normal build -- a CRuby build takes 10-20 minutes, and making every `⌘B` depend on it would make the project miserable to work in. Instead, the app target has a Run Script build phase, ordered before Compile Sources, that just checks `Vendor/CRuby/lib/macosx/libruby-static.a` exists and fails with a pointer to this script if it's missing.
+The Xcode project does **not** run this script as part of a normal build -- building all three targets takes 30-60 minutes, and making every `⌘B` depend on it would make the project miserable to work in. Instead, the app target has a Run Script build phase, ordered before Compile Sources, that just checks `Vendor/CRuby/lib/$(PLATFORM_NAME)/libruby-static.a` exists for whatever platform is currently building and fails with a pointer to this script if it's missing.
 
 ## Bumping the version
 
@@ -45,34 +45,63 @@ CFLAGS="-pipe -Os -fvisibility=hidden" \
 ./configure --prefix=<install> \
   --disable-shared --disable-dln --disable-install-doc \
   --with-static-linked-ext \
-  --without-bigdecimal --without-readline --without-openssl --without-psych \
-  --with-out-ext=bigdecimal*,readline*,openssl*,psych*
+  --without-bigdecimal --without-readline --without-openssl --without-psych --without-fiddle \
+  --with-out-ext=bigdecimal*,readline*,openssl*,psych*,fiddle*
 ```
 
 - `--disable-shared` -- we want a static archive to link into the app bundle, not a `.dylib` a sandboxed app can't load from an arbitrary path.
 - `--disable-dln` -- disables Ruby's own dynamic-library loading (`dlopen`-based `require` of C extensions). The app never loads a `.so` at runtime; every extension it needs is compiled in statically.
 - `--with-static-linked-ext` -- links C extensions (`zlib`, `stringio`, etc.) into the static archive itself instead of building them as separate loadable objects that `--disable-dln` would make unreachable.
-- `--without-openssl --without-psych` -- **no TLS and no YAML in this slice.** This is what keeps slice 1 cheap: with no third-party static libraries (OpenSSL, libyaml) to cross-compile and merge into `libruby-static.a`, packaging is a plain `make install` plus a copy, and the `ar`-explode machinery a merged archive would need never has to exist yet. `net/http` over TLS and `psych` come back in slice 3, once that merge step is built.
+- `--without-openssl --without-psych` -- **no TLS and no YAML in this slice.** This is what keeps slice 1/2 cheap: with no third-party static libraries (OpenSSL, libyaml) to cross-compile and merge into `libruby-static.a`, packaging is a plain `make install` plus a copy, and the `ar`-explode machinery a merged archive would need never has to exist yet. `net/http` over TLS and `psych` come back in slice 3, once that merge step is built.
 - `--without-bigdecimal --without-readline` -- neither is needed for evaluating expressions from Swift; `readline` in particular expects a real TTY, which doesn't exist in an app sandbox.
+- `--without-fiddle` -- `fiddle` is Ruby's FFI/`dlopen` binding. On iOS, a shipped app that can `dlopen` and call arbitrary native code fails App Store review; dropped for every target (including macOS) so all three build from one flag set instead of macOS quietly carrying a capability iOS can't have.
 - `-fvisibility=hidden` -- keeps the archive's non-public symbols out of the app binary's exported symbol table.
 
-The macOS arm64 target builds natively (no `--host` cross-compile flag), since the build machine's own architecture already matches: Apple Silicon Xcode running on Apple Silicon macOS. iOS builds need `--host=arm-apple-darwin` and several autoconf overrides for functions the platform doesn't expose -- that lands in slice 2 alongside the rest of the iOS-specific work.
+The macOS arm64 target builds natively (no `--host` cross-compile flag), since the build machine's own architecture already matches: Apple Silicon Xcode running on Apple Silicon macOS. The two iOS targets are real cross-compiles and need more:
+
+```
+IPHONEOS_DEPLOYMENT_TARGET=18.0 \
+CFLAGS="-pipe -Os -fvisibility=hidden -target arm64-apple-ios18.0 -isysroot <iphoneos SDK path> -I<stub-include>" \
+LDFLAGS="-target arm64-apple-ios18.0 -isysroot <iphoneos SDK path>" \
+ac_cv_func_backtrace=no ac_cv_func_system=no ac_cv_func_syscall=no ac_cv_func___syscall=no \
+ac_cv_func_getentropy=no ac_cv_func_dup3=no ac_cv_func_pipe2=no \
+./configure --prefix=<install> --host=aarch64-apple-darwin --with-baseruby=<host ruby> \
+  ...same flags as macOS above...
+```
+
+(the simulator row is identical but for `-target arm64-apple-ios18.0-simulator`, the `iphonesimulator` SDK path, and a different install destination)
+
+- `--host=aarch64-apple-darwin` -- tells autoconf this is a cross-compile, so it can't run test binaries and has to trust its probes (or the `ac_cv_func_*` overrides below) instead of executing them.
+- `-target <triple> -isysroot <sdk path>` on both `CFLAGS` and `LDFLAGS` -- the compile step needs the target triple and iOS sysroot instead of the host's default; `LDFLAGS` carries the same because `configure`'s own link probes (`AC_CHECK_FUNC`-style checks that compile-and-link a tiny probe program) need to resolve against the iOS SDK too, not just the final `make` link.
+- `--with-baseruby=<host ruby>` -- a cross-compile can't run the CRuby binary it's building to generate `.rb`-derived headers and tables partway through the build, so it needs a working native Ruby to do that job instead. `check_host_ruby!` in `scripts/build-cruby.rb` guarantees the host Ruby's minor version matches the target before this is used.
+- **Stub `sys/vnode.h`** -- the iOS SDKs don't ship this header. `dir.c:100` includes it unconditionally under `#ifdef __APPLE__`, with no autoconf guard, so the build hard-fails without it. The stub can't be empty: `dir.c:2252-2254` compares against `VREG`/`VDIR`/`VLNK` (`enum vtype`), and `dir.c:211-212`/`3784` compare against `VT_HFS`/`VT_CIFS` (`enum vtagtype`) -- both enums have to be redeclared, and their member ordering has to match the macOS SDK's header exactly, since those values get compared against live `getattrlist` output at runtime. (`fsobj_tag_t` itself doesn't need redeclaring -- it's a plain `u_int32_t` typedef in `sys/attr.h`, which the iOS SDKs do ship.) `write_vnode_stub!` in `scripts/build-cruby.rb` generates the stub per target into `.build-cruby/<target>/stub-include/sys/vnode.h`, added to `CFLAGS` via `-I`.
+- **`ac_cv_func_*=no` overrides** -- `backtrace`, `system`, `syscall`, `__syscall`, `getentropy`, `dup3`, `pipe2` are present in the iOS SDK headers, so autoconf's normal probing finds them and Ruby then emits calls to them. Some are unavailable at link time, some are private/entitlement-gated, and calling them can fail App Store review even where they link. This list is ported as-is from the [xord/cruby](https://github.com/xord/cruby) recipe (see Attribution above); it hasn't been individually re-verified against the current iOS SDK, so treat it as the known-good starting point rather than a minimal set -- trimming it is a plausible follow-up, but only worth doing against a green test run to trim against.
+
+Two more fixes came up cross-compiling against the current iOS 26 SDKs that aren't in the xord/cruby recipe (it targets an older Ruby and SDK):
+
+- **`vm_dump.c`'s `system()` patch.** `rb_vm_bugreport`'s `RUBY_ON_BUG` debug hook calls `system()` unconditionally -- unlike everywhere else CRuby gates a call behind a `HAVE_*` check (`HAVE_BACKTRACE` guards the near-identical helper one function above, in the same file), this one isn't gated, so it fails to compile once `ac_cv_func_system=no` above removes `HAVE_SYSTEM`. `patch_vm_dump_system_guard!` in `scripts/build-cruby.rb` wraps it in `#ifdef HAVE_SYSTEM` before configuring, once per full source checkout (idempotent, and a no-op on macOS, where `HAVE_SYSTEM` stays defined).
+- **Bundled gems with a native C extension don't link on iOS at all.** `debug`, `racc`, `nkf`, `rbs`, and `syslog` -- the `bundled_gems`-listed runtime gems with an `ext/`, distinct from `bigdecimal` which is excluded via `--without-bigdecimal` above for an unrelated reason -- each build a `.bundle` the same way every Ruby C extension does: unresolved core VM symbols (`rb_eArgError` and the like), trusting the process that `dlopen()`s it to resolve them at load time. On macOS that trust is spelled `-undefined dynamic_lookup`; Apple's iOS linker refuses the flag outright for any binary, so every one of these fails at link with a page of undefined symbols. None of them are needed by RubyCuts -- `Vendor/CRuby` only ever takes the static lib and headers, never an installed gems tree -- so `patch_bundled_gems!` strips their lines from `gems/bundled_gems` before extraction, for every target, and sweeps any stale `.bundle/gems`/`.bundle/extensions` output a build that failed on one of these before this exclusion existed may have left behind.
 
 ## What's deliberately not here yet
 
-- **No iOS.** The iOS-specific configure overrides (`ac_cv_func_{backtrace,system,syscall,__syscall,getentropy,dup3,pipe2}=no`, a stub `sys/vnode.h`, `--without-fiddle` for App Store review, `--host=arm-iphone-darwin`) are known from the xord/cruby recipe and land in slice 2.
-- **No OpenSSL / libyaml**, as above -- `require 'net/http'` won't establish a TLS connection and `require 'yaml'` won't load. Slice 3.
+- **No OpenSSL / libyaml** -- `require 'net/http'` won't establish a TLS connection and `require 'yaml'` won't load. Slice 3.
 - **No stdlib `.rb` files bundled.** `require 'json'`, `require 'csv'`, and friends won't work yet -- only core classes and methods that don't need a `.rb` file on `$LOAD_PATH`. Bundling `lib/ruby/3.4.0/` and wiring the load path is the very next slice.
 
 **No x86_64, ever.** This isn't a deferred slice -- RubyCuts targets Apple Silicon only. `ARCHS = arm64` in `Config/Shared.xcconfig` enforces this at the project level, so an Intel Mac or an Intel simulator destination won't build. `TARGETS` in `scripts/build-cruby.rb` should never grow an x86_64 row.
 
 ## Header layout
 
-Ruby installs generic headers under `include/ruby-3.4.0/` and one arch-specific header, `include/ruby-3.4.0/<arch-triplet>/ruby/config.h`, in a sibling directory. `scripts/build-cruby.rb`'s `install_artifacts!` flattens both into a single `Vendor/CRuby/include/`, so `HEADER_SEARCH_PATHS` only needs one `-I` path. That works because slice 1 builds exactly one arch; see the `SEAM` comment in `Config/Shared.xcconfig` for what has to change once slice 2 adds more.
+Ruby installs generic headers under `include/ruby-3.4.0/` and one arch-specific header, `include/ruby-3.4.0/<arch-triplet>/ruby/config.h`, in a sibling directory. `scripts/build-cruby.rb`'s `install_artifacts!` flattens both, per target, into `Vendor/CRuby/include/<platform>/` -- one complete header tree per SDK (`macosx`, `iphoneos`, `iphonesimulator`), matching the per-SDK `Vendor/CRuby/lib/<platform>/libruby-static.a` layout. `<platform>` is exactly Xcode's `PLATFORM_NAME`, so `HEADER_SEARCH_PATHS` and `OTHER_LDFLAGS` in `Config/Shared.xcconfig` each need only one `$(PLATFORM_NAME)`-parameterized line instead of one row per SDK.
 
 ## Verifying a build
 
 ```sh
-lipo -info Vendor/CRuby/lib/macosx/libruby-static.a   # => arm64
-ls Vendor/CRuby/include/ruby/config.h
+for p in macosx iphoneos iphonesimulator; do
+  lipo -info Vendor/CRuby/lib/$p/libruby-static.a   # => arm64, for all three
+  ls Vendor/CRuby/include/$p/ruby/config.h
+done
 ```
+
+`vtool -show-build-version` on a member object of each archive confirms the platform each was actually built for (`MACOS` / `IOS` / `IOSSIMULATOR`) -- the check that catches a simulator build that silently picked up the device triple.
+
+Building all three targets takes roughly 30-60 minutes.

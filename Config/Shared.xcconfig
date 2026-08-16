@@ -8,11 +8,11 @@
 ARCHS = arm64
 
 // Embedded CRuby. Built by scripts/build-cruby.rb into Vendor/CRuby/, which is git-ignored -- see docs/embedding-cruby.md. The app target's Run Script build phase fails fast with a pointer to that script if this is missing.
+//
+// scripts/build-cruby.rb installs one complete header tree and one static lib per SDK, under Vendor/CRuby/{include,lib}/<platform>/, where <platform> is exactly Xcode's PLATFORM_NAME (macosx, iphoneos, iphonesimulator) -- so both paths below key off $(PLATFORM_NAME) instead of enumerating SDKs.
 CRUBY_DIR = $(SRCROOT)/Vendor/CRuby
-HEADER_SEARCH_PATHS = $(inherited) $(CRUBY_DIR)/include
+HEADER_SEARCH_PATHS = $(inherited) $(CRUBY_DIR)/include/$(PLATFORM_NAME)
 SWIFT_OBJC_BRIDGING_HEADER = $(SRCROOT)/RubyCuts/RubyCuts-Bridging-Header.h
 
-// SEAM: Vendor/CRuby/include/ruby/config.h is a straight copy of the one arm64/macOS config.h today, since slice 1 builds a single target. Once slice 2 adds iphoneos/iphonesimulator, a single shared header path can't hold one arch's config.h anymore -- it'll need to become a small dispatching header (`#if defined(__arm64__) && defined(TARGET_OS_IOS) ... #include "config-ios-arm64.h" ... #elif ... #include "config-macos-arm64.h" ...`) that picks the right one per build. See scripts/build-cruby.rb's install_artifacts! for where the copy happens today.
-
-// -force_load pulls in the whole static archive: its symbols are otherwise reached only through rubycuts_shim.c, so the linker would drop them as unused. -lz is needed by the statically linked zlib ext. Only macosx is wired up in slice 1 -- iphoneos/iphonesimulator get their own OTHER_LDFLAGS[sdk=...] rows, and their own Vendor/CRuby/lib/<sdk>/ static lib, once slice 2 adds those targets to scripts/build-cruby.rb.
-OTHER_LDFLAGS[sdk=macosx*] = $(inherited) -lz -Wl,-force_load,$(CRUBY_DIR)/lib/macosx/libruby-static.a
+// -force_load pulls in the whole static archive: its symbols are otherwise reached only through rubycuts_shim.c, so the linker would drop them as unused. -lz is needed by the statically linked zlib ext.
+OTHER_LDFLAGS = $(inherited) -lz -Wl,-force_load,$(CRUBY_DIR)/lib/$(PLATFORM_NAME)/libruby-static.a

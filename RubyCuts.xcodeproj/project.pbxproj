@@ -261,7 +261,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "if [ ! -f \"${CRUBY_DIR}/lib/macosx/libruby-static.a\" ]; then\n    echo \"error: CRuby not built. Run: ruby scripts/build-cruby.rb\"\n    exit 1\nfi\n";
+			shellScript = "if [ ! -f \"${CRUBY_DIR}/lib/${PLATFORM_NAME}/libruby-static.a\" ]; then\n    echo \"error: CRuby not built for ${PLATFORM_NAME}. Run: ruby scripts/build-cruby.rb\"\n    exit 1\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
