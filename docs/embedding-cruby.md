@@ -104,4 +104,13 @@ done
 
 `vtool -show-build-version` on a member object of each archive confirms the platform each was actually built for (`MACOS` / `IOS` / `IOSSIMULATOR`) -- the check that catches a simulator build that silently picked up the device triple.
 
+Beyond the artifact check, `RubyRuntimeTests` (including `reportsRubyVersion`, the test that actually boots the VM and evals) has run and passed on all three real destinations: macOS, iOS Simulator, and a physical iPhone -- not just a `generic/platform=iOS` unsigned build. A physical device needs a signing team (`Config/Local.xcconfig`, see `Local.xcconfig.sample`) and `-allowProvisioningUpdates` on the `xcodebuild` invocation to let Xcode generate the test-runner's provisioning profile automatically:
+
+```sh
+xcodebuild -project RubyCuts.xcodeproj -scheme RubyCuts \
+  -destination 'platform=iOS,name=<your device name>' \
+  -allowProvisioningUpdates \
+  test -only-testing:RubyCutsTests
+```
+
 Building all three targets takes roughly 30-60 minutes.
