@@ -2,7 +2,17 @@ import Testing
 
 @testable import RubyCuts
 
+// Every test drives the same embedded CRuby VM through `RubyRuntime.shared`,
+// which is a single non-thread-safe interpreter. Swift Testing runs tests
+// concurrently by default; left that way, two tests racing through
+// `require 'net/http'` -> `require 'resolv'` -> `require 'rbconfig'` can
+// double-load resolv.rb and leave RbConfig undefined for the loser (seen on
+// the iOS Simulator; macOS scheduling happened not to trip it). `.serialized`
+// runs the suite's tests one at a time, matching the runtime's single-threaded
+// contract. The app itself is unaffected -- it only touches the VM serially
+// from the main actor, one user action at a time.
 @MainActor
+@Suite(.serialized)
 struct RubyRuntimeTests {
 
     @Test func addsIntegers() throws {
@@ -103,6 +113,46 @@ struct RubyRuntimeTests {
             "Logger.new(File::NULL).info('x'); 'ok'"
         )
         #expect(result == "ok")
+    }
+
+    // MARK: - TLS (OpenSSL) + YAML (libyaml/psych)
+
+    @Test func requiresOpenSSL() throws {
+        // Proves the openssl C ext loaded and libssl/libcrypto are linked into
+        // libruby-static.a. SSLContext.new exercises the TLS machinery; the
+        // digest is compared against the stdlib's pure-Ruby-reference Digest so
+        // the assertion has no hardcoded value and returns ASCII hex (raw digest
+        // bytes would contain NULs and break the C-string boundary in evaluate).
+        _ = try RubyRuntime.shared.evaluate("require 'openssl'")
+        let ctx = try RubyRuntime.shared.evaluate("OpenSSL::SSL::SSLContext.new; 'ok'")
+        #expect(ctx == "ok")
+        let digest = try RubyRuntime.shared.evaluate(
+            "require 'digest'; OpenSSL::Digest::SHA256.hexdigest('x') == Digest::SHA256.hexdigest('x') ? 'match' : 'mismatch'"
+        )
+        #expect(digest == "match")
+    }
+
+    @Test func requiresYAML() throws {
+        // Proves psych loaded and its libyaml C backend parses: `1` must come
+        // back as an Integer, not a string, which only happens if libyaml is
+        // actually wired in (a psych built --without-libyaml can't parse).
+        let result = try RubyRuntime.shared.evaluate(
+            "require 'yaml'; YAML.safe_load(\"a: 1\\n\")['a'] == 1 ? 'yaml-ok' : 'yaml-fail'"
+        )
+        #expect(result == "yaml-ok")
+    }
+
+    @Test func requiresNetHTTPOverTLS() throws {
+        // Offline proxy for TLS availability: net/http loads, Net::HTTP accepts
+        // use_ssl=true, and an SSLContext builds (the real TLS primitive -- the
+        // context is otherwise constructed lazily inside connect(), a network
+        // call). A live HTTPS round-trip is a manual smoke test, not a unit test.
+        let result = try RubyRuntime.shared.evaluate(
+            "require 'net/http'; require 'openssl'; "
+                + "http = Net::HTTP.new('example.com', 443); http.use_ssl = true; "
+                + "OpenSSL::SSL::SSLContext.new; http.use_ssl? ? 'tls-ok' : 'tls-fail'"
+        )
+        #expect(result == "tls-ok")
     }
 
     @Test func loadPathIsExactlyTheBundledStdlib() throws {

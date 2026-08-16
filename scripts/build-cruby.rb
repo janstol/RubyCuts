@@ -27,6 +27,26 @@ TARBALL_URL = "https://cache.ruby-lang.org/pub/ruby/#{RUBY_SERIES}/ruby-#{RUBY_V
 TARBALL_PATH = File.join(SRC_DIR, "ruby-#{RUBY_VERSION_PIN}.tar.gz")
 SOURCE_DIR = File.join(SRC_DIR, "ruby-#{RUBY_VERSION_PIN}")
 
+# OpenSSL (TLS for net/http) and libyaml (the C backend psych loads for
+# `require 'yaml'`). Both are cross-compiled per target and merged into
+# libruby-static.a -- see build_openssl!/build_libyaml! and
+# merge_static_extensions!. SHA256s verified against the official sources:
+# OpenSSL against the .sha256 published alongside the release (openssl.org
+# redirects to the GitHub release asset), libyaml cross-checked against the
+# sha512 in Arch Linux's libyaml PKGBUILD (libyaml publishes no sibling
+# checksum). Do not trust a third-party repo for these -- re-verify on bump.
+OPENSSL_VERSION_PIN = "3.6.3"
+OPENSSL_SHA256 = "243a86649cf6f23eeb6a2ff2456e09e5d77dd9018a54d3d96b0c6bdd6ba6c7f1"
+OPENSSL_TARBALL_URL = "https://github.com/openssl/openssl/releases/download/openssl-#{OPENSSL_VERSION_PIN}/openssl-#{OPENSSL_VERSION_PIN}.tar.gz"
+OPENSSL_TARBALL_PATH = File.join(SRC_DIR, "openssl-#{OPENSSL_VERSION_PIN}.tar.gz")
+OPENSSL_SOURCE_DIR = File.join(SRC_DIR, "openssl-#{OPENSSL_VERSION_PIN}")
+
+LIBYAML_VERSION_PIN = "0.2.5"
+LIBYAML_SHA256 = "c642ae9b75fee120b2d96c712538bd2cf283228d2337df2cf2988e3c02678ef4"
+LIBYAML_TARBALL_URL = "https://github.com/yaml/libyaml/releases/download/#{LIBYAML_VERSION_PIN}/yaml-#{LIBYAML_VERSION_PIN}.tar.gz"
+LIBYAML_TARBALL_PATH = File.join(SRC_DIR, "yaml-#{LIBYAML_VERSION_PIN}.tar.gz")
+LIBYAML_SOURCE_DIR = File.join(SRC_DIR, "yaml-#{LIBYAML_VERSION_PIN}")
+
 IOS_DEPLOYMENT_TARGET = "18.0" # matches IPHONEOS_DEPLOYMENT_TARGET in the project
 
 # Functions the iOS SDK declares but doesn't let an app call. Autoconf finds them and Ruby then emits calls that fail App Store review or crash. From the xord/cruby recipe.
@@ -84,9 +104,8 @@ TARGETS = {
 # REPL-error-message niceties, not needed for running scripts; mkmf.rb -- a
 # C-extension build tool, meaningless without a compiler on-device; un.rb --
 # a command-line coreutils shim, not a library; ruby_vm -- RubyVM::*
-# introspection helpers this app has no use for; yaml/yaml.rb -- configure
-# ran with --without-psych (see docs/embedding-cruby.md), so `require 'yaml'`
-# would just raise a worse-looking LoadError than leaving it out entirely.
+# introspection helpers this app has no use for. yaml/yaml.rb ARE shipped:
+# psych is now built (libyaml merged in), so `require 'yaml'` resolves.
 EXCLUDED_STDLIB_ENTRIES = %w[
   bundler
   bundler.rb
@@ -110,8 +129,6 @@ EXCLUDED_STDLIB_ENTRIES = %w[
   syntax_suggest
   syntax_suggest.rb
   un.rb
-  yaml
-  yaml.rb
 ].freeze
 
 # Bundled gems (installed under lib/ruby/gems/#{RUBY_ABI_VERSION}/gems/, not
@@ -146,31 +163,42 @@ rescue StandardError
 end
 
 def download_and_verify!
+  download_and_verify_tarball!(TARBALL_URL, TARBALL_PATH, RUBY_VERSION_SHA256, "ruby-#{RUBY_VERSION_PIN}.tar.gz")
+  download_and_verify_tarball!(OPENSSL_TARBALL_URL, OPENSSL_TARBALL_PATH, OPENSSL_SHA256, "openssl-#{OPENSSL_VERSION_PIN}.tar.gz")
+  download_and_verify_tarball!(LIBYAML_TARBALL_URL, LIBYAML_TARBALL_PATH, LIBYAML_SHA256, "yaml-#{LIBYAML_VERSION_PIN}.tar.gz")
+end
+
+def download_and_verify_tarball!(url, path, sha256, label)
   FileUtils.mkdir_p(SRC_DIR)
-  if File.exist?(TARBALL_PATH) && Digest::SHA256.file(TARBALL_PATH).hexdigest == RUBY_VERSION_SHA256
-    puts "== ruby-#{RUBY_VERSION_PIN}.tar.gz already downloaded and verified"
+  if File.exist?(path) && Digest::SHA256.file(path).hexdigest == sha256
+    puts "== #{label} already downloaded and verified"
     return
   end
 
-  puts "== downloading ruby-#{RUBY_VERSION_PIN}.tar.gz"
-  URI.parse(TARBALL_URL).open { |remote| File.binwrite(TARBALL_PATH, remote.read) }
+  puts "== downloading #{label}"
+  URI.parse(url).open { |remote| File.binwrite(path, remote.read) }
 
-  actual = Digest::SHA256.file(TARBALL_PATH).hexdigest
-  return if actual == RUBY_VERSION_SHA256
+  actual = Digest::SHA256.file(path).hexdigest
+  return if actual == sha256
 
-  File.delete(TARBALL_PATH)
-  abort "error: sha256 mismatch for ruby-#{RUBY_VERSION_PIN}.tar.gz\n" \
-    "  expected: #{RUBY_VERSION_SHA256}\n  actual:   #{actual}"
+  File.delete(path)
+  abort "error: sha256 mismatch for #{label}\n  expected: #{sha256}\n  actual:   #{actual}"
 end
 
 def extract!
-  if File.exist?(File.join(SOURCE_DIR, "configure"))
-    puts "== ruby-#{RUBY_VERSION_PIN} already extracted"
+  extract_tarball!(TARBALL_PATH, SOURCE_DIR, "ruby-#{RUBY_VERSION_PIN}", "configure")
+  extract_tarball!(OPENSSL_TARBALL_PATH, OPENSSL_SOURCE_DIR, "openssl-#{OPENSSL_VERSION_PIN}", "Configure")
+  extract_tarball!(LIBYAML_TARBALL_PATH, LIBYAML_SOURCE_DIR, "yaml-#{LIBYAML_VERSION_PIN}", "configure")
+end
+
+def extract_tarball!(tarball, dest_dir, label, marker)
+  if File.exist?(File.join(dest_dir, marker))
+    puts "== #{label} already extracted"
     return
   end
 
-  puts "== extracting ruby-#{RUBY_VERSION_PIN}.tar.gz"
-  sh!("tar", "xzf", TARBALL_PATH, "-C", SRC_DIR, chdir: ROOT)
+  puts "== extracting #{label}"
+  sh!("tar", "xzf", tarball, "-C", SRC_DIR, chdir: ROOT)
 end
 
 def install_dir_for(key) = File.join(BUILD_DIR, key, "install")
@@ -178,6 +206,14 @@ def install_dir_for(key) = File.join(BUILD_DIR, key, "install")
 def build_dir_for(key) = File.join(BUILD_DIR, key, "build")
 
 def stub_include_dir_for(key) = File.join(BUILD_DIR, key, "stub-include")
+
+# Per-target install prefixes for the third-party static libs. Built before
+# configure_and_make! so Ruby's configure can point at them with
+# --with-openssl-dir / --with-libyaml-dir, and merged into libruby-static.a
+# afterward.
+def openssl_install_dir_for(key) = File.join(BUILD_DIR, key, "openssl-install")
+
+def libyaml_install_dir_for(key) = File.join(BUILD_DIR, key, "libyaml-install")
 
 def find_static_lib(install_dir)
   Dir.glob(File.join(install_dir, "lib", "lib*-static.a")).first
@@ -253,6 +289,27 @@ def patch_bundled_gems!
   end
 end
 
+# ext/psych/extconf.rb's default branch calls `pkg_config('yaml-0.1')`
+# unconditionally before dir_config('libyaml')/find_header/find_library. On a
+# build machine with pkg-config + a host Homebrew libyaml installed, that
+# pkg_config call picks up the host (x86_64 or arm64-macOS) libyaml and
+# contaminates the iOS cross-compile with the wrong arch. Neutralize it so
+# the dir_config('libyaml') + --with-libyaml-dir path is the only one taken.
+# (Matches the xord/cruby recipe.) Idempotent, once per checkout.
+def patch_psych_extconf!
+  path = File.join(SOURCE_DIR, "ext", "psych", "extconf.rb")
+  contents = File.read(path)
+  return if contents.include?("pkg_config('yaml-0.1') # neutralized")
+
+  target = "  pkg_config('yaml-0.1')\n"
+  replacement = "  # pkg_config('yaml-0.1') # neutralized by patch_psych_extconf! (scripts/build-cruby.rb); --with-libyaml-dir drives dir_config('libyaml') below, so a host Homebrew libyaml can't contaminate a cross-compile\n"
+  unless contents.include?(target)
+    abort "error: ext/psych/extconf.rb no longer has the expected pkg_config('yaml-0.1') line -- " \
+      "update patch_psych_extconf! in scripts/build-cruby.rb"
+  end
+  File.write(path, contents.sub(target, replacement))
+end
+
 # The iOS SDKs (device and simulator) don't ship sys/vnode.h. dir.c includes
 # it unconditionally under #ifdef __APPLE__ (dir.c:100) with no autoconf
 # guard around it, so the build hard-fails without a stub. It can't be an
@@ -290,6 +347,87 @@ def write_vnode_stub!(key)
   C
 end
 
+# libyaml (psych's C backend). Autoconf, so simpler than OpenSSL -- built
+# first to de-risk. Idempotent: skips if libyaml.a is already installed.
+# Native on macOS; cross-compiled for iOS by pointing CC at the SDK via xcrun
+# and carrying -target <triple> -isysroot <sdk> on CFLAGS/LDFLAGS, the same
+# triple/sysroot the Ruby cross-compile uses. Out-of-tree (its own build dir)
+# so the three targets never share configure state.
+def build_libyaml!(key, target)
+  install_dir = libyaml_install_dir_for(key)
+  if File.exist?(File.join(install_dir, "lib", "libyaml.a"))
+    puts "== #{key} libyaml already built"
+    return
+  end
+
+  sdk_path = check_sdk!(target[:sdk])
+  build_dir = File.join(BUILD_DIR, key, "libyaml-build")
+  FileUtils.rm_rf(build_dir)
+  FileUtils.mkdir_p(build_dir)
+
+  env = { target[:deployment_target_env] => target[:deployment_target] }
+  configure_args = ["--prefix=#{install_dir}", "--enable-static", "--disable-shared"]
+
+  if target[:host]
+    configure_args << "--host=#{target[:host]}"
+    env["CC"] = "xcrun --sdk #{target[:sdk]} cc -arch #{target[:arch]}"
+    env["CFLAGS"] = "-target #{target[:triple]} -isysroot #{sdk_path}"
+    env["LDFLAGS"] = "-target #{target[:triple]} -isysroot #{sdk_path}"
+    env["SDKROOT"] = sdk_path
+  end
+
+  puts "== configuring #{key} libyaml"
+  sh!(File.join(LIBYAML_SOURCE_DIR, "configure"), *configure_args, chdir: build_dir, env: env)
+  jobs = capture!("sysctl", "-n", "hw.ncpu").strip
+  sh!("make", "-j#{jobs}", chdir: build_dir, env: env)
+  sh!("make", "install", chdir: build_dir, env: env)
+end
+
+# OpenSSL (TLS for net/http). Uses OpenSSL's own Perl Configure with its
+# built-in Apple targets -- darwin64-arm64-cc (macOS), ios64-xcrun (device),
+# iossimulator-xcrun (simulator) -- which drive clang via `xcrun -sdk <sdk>
+# cc` and auto-select the SDK. Those targets don't pin a deployment target,
+# so CFLAGS carries -target <triple> (Configure:770 appends the CFLAGS env to
+# the target's flags), pinning arch + min iOS version; the native macOS build
+# needs no -target. Built out-of-tree (each target its own build dir) so
+# reconfiguring for a different SDK never leaves the previous target's objects
+# in the source tree. Idempotent. `no-apps` skips the openssl CLI (and
+# cascades to disable `tests`); `install_sw` installs libssl.a/libcrypto.a +
+# headers, skipping docs/engines.
+def build_openssl!(key, target)
+  install_dir = openssl_install_dir_for(key)
+  if File.exist?(File.join(install_dir, "lib", "libssl.a")) &&
+     File.exist?(File.join(install_dir, "lib", "libcrypto.a"))
+    puts "== #{key} openssl already built"
+    return
+  end
+
+  check_sdk!(target[:sdk])
+  ossl_target =
+    case target[:sdk]
+    when "macosx" then "darwin64-arm64-cc"
+    when "iphoneos" then "ios64-xcrun"
+    when "iphonesimulator" then "iossimulator-xcrun"
+    else abort "error: no OpenSSL Configure target mapped for sdk #{target[:sdk].inspect}"
+    end
+
+  env = { target[:deployment_target_env] => target[:deployment_target] }
+  env["CFLAGS"] = "-target #{target[:triple]}" if target[:triple]
+
+  configure_args = [ossl_target, "no-shared", "no-tests", "no-apps", "--prefix=#{install_dir}"]
+
+  build_dir = File.join(BUILD_DIR, key, "openssl-build")
+  FileUtils.rm_rf(build_dir)
+  FileUtils.mkdir_p(build_dir)
+
+  puts "== configuring #{key} openssl (#{ossl_target})"
+  sh!("perl", File.join(OPENSSL_SOURCE_DIR, "Configure"), *configure_args, chdir: build_dir, env: env)
+  jobs = capture!("sysctl", "-n", "hw.ncpu").strip
+  puts "== building #{key} openssl"
+  sh!("make", "-j#{jobs}", chdir: build_dir, env: env)
+  sh!("make", "install_sw", chdir: build_dir, env: env)
+end
+
 def configure_and_make!(key, target)
   install_dir = install_dir_for(key)
   if find_static_lib(install_dir)
@@ -310,19 +448,37 @@ def configure_and_make!(key, target)
     "--with-static-linked-ext",
     "--without-bigdecimal",
     "--without-readline",
-    "--without-openssl",
-    "--without-psych",
     "--without-fiddle", # App Store review flags apps that can load arbitrary native code via dlopen/FFI; dropped for every target, not just iOS, so macOS and iOS stay built from the same flag set.
-    "--with-out-ext=bigdecimal*,readline*,openssl*,psych*,fiddle*",
+    "--with-out-ext=bigdecimal*,readline*,fiddle*",
+    # Point the openssl/psych extconfs at the per-target third-party installs
+    # built above. Ruby's configure forwards every --with-* arg (stored in
+    # ac_configure_args) to each ext's extconf, where mkmf's dir_config reads
+    # them -- so ext/openssl/extconf.rb's dir_config("openssl") and
+    # ext/psych/extconf.rb's dir_config("libyaml") find these builds instead of
+    # probing the host.
+    "--with-openssl-dir=#{openssl_install_dir_for(key)}",
+    "--with-libyaml-dir=#{libyaml_install_dir_for(key)}",
   ]
   configure_args << "--host=#{target[:host]}" if target[:host]
   # Cross-compiles need a base Ruby to run CRuby's own generator scripts during the build; check_host_ruby! already guarantees the host `ruby`'s minor version matches.
   configure_args << "--with-baseruby=#{RbConfig.ruby}" if target[:host]
 
   cflags = "-pipe -Os -fvisibility=hidden"
+  # The openssl/psych exts propagate -lssl/-lcrypto/-lyaml to the ruby
+  # executable's link: under --with-static-linked-ext the exts link into the
+  # ruby binary (not into lib*-static.a -- that move is merge_static_extensions!'s
+  # post-make job), so `make` has to find those libs on its link line. The
+  # per-target third-party install dirs go on the link search path for that.
+  # (The shipped libruby-static.a gets these libs folded in by
+  # merge_static_extensions! instead; this LDFLAGS only lets `make` link its
+  # intermediate ruby binary, which never ships.) libcrypto.a's one external
+  # ref, _CCRandomGenerateBytes, resolves from libSystem on both macOS and iOS,
+  # so no -framework Security is needed.
+  third_party_ldflags = "-L#{openssl_install_dir_for(key)}/lib -L#{libyaml_install_dir_for(key)}/lib"
   env = {
     "CFLAGS" => cflags,
     target[:deployment_target_env] => target[:deployment_target],
+    "LDFLAGS" => third_party_ldflags,
   }
   # Cross-compiles (slice 2) can't rely on the toolchain's default SDK and must force it explicitly; a native build picks up Xcode's default.
   env["SDKROOT"] = sdk_path if target[:host]
@@ -330,8 +486,8 @@ def configure_and_make!(key, target)
   if target[:triple]
     write_vnode_stub!(key)
     env["CFLAGS"] = "#{cflags} -target #{target[:triple]} -isysroot #{sdk_path} -I#{stub_include_dir_for(key)}"
-    # configure's own link probes need the target/sysroot too, not just the compile step.
-    env["LDFLAGS"] = "-target #{target[:triple]} -isysroot #{sdk_path}"
+    # configure's own link probes need the target/sysroot too, not just the compile step; the third-party -L paths stay on the link line.
+    env["LDFLAGS"] = "-target #{target[:triple]} -isysroot #{sdk_path} #{third_party_ldflags}"
     env.merge!(IOS_AC_OVERRIDES)
   end
 
@@ -363,6 +519,18 @@ end
 # unlike plain `ar` -- flattens nested .a members into the output archive
 # instead of embedding them as archive-in-archive members `ar` can't see
 # into.
+#
+# The same step folds in the third-party static libraries (libssl.a,
+# libcrypto.a from build_openssl!, libyaml.a from build_libyaml!) by appending
+# them to the same libtool filelist. Once flattened into lib*-static.a, the
+# existing `-Wl,-force_load,...libruby-static.a` in Config/Shared.xcconfig
+# pulls them into the app link with no new link flag. Contingency (only if
+# `libtool -static` errors on duplicate member names -- libyaml's api.o /
+# reader.o are the generic-name collision candidates): switch to the
+# explode-rename-rearchive method -- extract every archive into a temp dir,
+# rename colliding .o's with a numeric prefix, exclude dmyext.o/dmyenc.o,
+# then `ar -crs` everything plus extinit.o/encinit.o into the final archive.
+# Not used today because the filelist path builds clean.
 def merge_static_extensions!(key)
   install_dir = install_dir_for(key)
   build_dir = build_dir_for(key)
@@ -380,15 +548,25 @@ def merge_static_extensions!(key)
   sh!("ar", "d", stripped, "dmyext.o", "dmyenc.o", chdir: build_dir)
 
   ext_archives = Dir.glob(File.join(build_dir, "ext", "**", "*.a")).sort
+  third_party_archives = [
+    File.join(openssl_install_dir_for(key), "lib", "libssl.a"),
+    File.join(openssl_install_dir_for(key), "lib", "libcrypto.a"),
+    File.join(libyaml_install_dir_for(key), "lib", "libyaml.a"),
+  ]
+  third_party_archives.each do |archive|
+    next if File.exist?(archive)
+    abort "error: #{archive} missing -- run build_openssl!/build_libyaml! before merge_static_extensions!"
+  end
+
   filelist_entries = [stripped, File.join(build_dir, "ext", "extinit.o")] + ext_archives + [
     File.join(build_dir, "enc", "encinit.o"),
     File.join(build_dir, "enc", "libenc.a"),
     File.join(build_dir, "enc", "libtrans.a"),
-  ]
+  ] + third_party_archives
   filelist = "#{static_lib}.filelist"
   File.write(filelist, "#{filelist_entries.join("\n")}\n")
 
-  puts "== merging statically-linked extensions into #{key}'s static lib"
+  puts "== merging statically-linked extensions + openssl/libyaml into #{key}'s static lib"
   merged = "#{static_lib}.merged"
   sh!("libtool", "-static", "-o", merged, "-filelist", filelist, chdir: build_dir)
   FileUtils.mv(merged, static_lib)
@@ -575,12 +753,15 @@ def main
   extract!
   patch_vm_dump_system_guard!
   patch_bundled_gems!
+  patch_psych_extconf!
 
   targets = TARGETS.select { |_, target| target[:enabled] }
   abort "error: no targets enabled in TARGETS" if targets.empty?
 
   targets.each do |key, target|
     puts "== target: #{key}"
+    build_libyaml!(key, target)
+    build_openssl!(key, target)
     configure_and_make!(key, target)
     merge_static_extensions!(key)
     install_artifacts!(key, target)
