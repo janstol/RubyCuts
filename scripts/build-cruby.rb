@@ -515,6 +515,53 @@ def install_stdlib!(install_dir)
   puts "== stdlib installed: #{files.size} files, #{(total_bytes / 1024.0 / 1024.0).round(1)} MB, under #{STDLIB_DEST}"
 end
 
+# Ships a sanitized rbconfig.rb at the stdlib root (the one $LOAD_PATH
+# entry, so `require 'rbconfig'` finds it). The arch subdir that holds the
+# unsanitized original is already skipped by install_stdlib! (detected by
+# content via stdlib_arch_subdir), so this *adds* a clean copy at the root
+# rather than touching the skipped subdir.
+#
+# Why a string rewrite and not just a move: the original's TOPDIR line is
+# `File.dirname(__FILE__).chomp!("/lib/ruby/3.4.0/<arch>")`. Relocated to the
+# stdlib root, __FILE__ no longer ends in that suffix, chomp! returns nil, so
+# TOPDIR is nil and CONFIG["prefix"] falls back to `DESTDIR + "<dev path>"`.
+# Relocation alone therefore ships the dev-machine install path; rewriting that
+# path to a neutral token makes the fallback resolve to the token instead.
+# The host/target/build/arch family is left untouched -- it carries no absolute
+# paths, and host_os ("darwin25") is exactly what makes resolv's WINDOWS check
+# resolve to non-Windows on every platform. The full RbConfig.expand /
+# MAKEFILE_CONFIG / fire_update! machinery stays intact so the whole RbConfig
+# surface remains available to any consumer (logger, fileutils, mkmf, ...).
+def sanitize_rbconfig!(install_dir)
+  stdlib_dir = File.join(install_dir, "lib", "ruby", RUBY_ABI_VERSION)
+  arch_subdir = stdlib_arch_subdir(stdlib_dir)
+  src = File.join(stdlib_dir, arch_subdir, "rbconfig.rb")
+  abort "error: no rbconfig.rb found at #{src} -- run configure_and_make! first" unless File.exist?(src)
+
+  contents = File.read(src)
+  dev_prefix = install_dir_for("macosx-arm64")
+
+  # Replace the dev-machine install prefix everywhere it appears: prefix,
+  # RUBY_EXEC_PREFIX, configure_args, and any $(prefix)-derived value
+  # RbConfig.expand resolves at load time.
+  contents.gsub!(dev_prefix, "/usr/local")
+
+  # Homebrew's GNU coreutils (ginstall/gmkdir) shadow the BSD tools on the
+  # build machine; the app sandbox only has the BSD names, so point at those.
+  contents.gsub!(%r{/opt/homebrew/bin/ginstall -c}, "install -c")
+  contents.gsub!(%r{/opt/homebrew/bin/gmkdir -p}, "mkdir -p")
+
+  # Build-time guard against an incomplete rewrite: nothing of the dev prefix
+  # or a Homebrew path may remain in the shipped file.
+  if contents.include?(dev_prefix) || contents.include?("/opt/homebrew")
+    abort "error: sanitized rbconfig.rb still contains a dev-machine path -- " \
+      "update sanitize_rbconfig! in scripts/build-cruby.rb"
+  end
+
+  File.write(File.join(STDLIB_DEST, "rbconfig.rb"), contents)
+  puts "== sanitized rbconfig.rb installed under #{STDLIB_DEST}"
+end
+
 def main
   check_host_ruby!
 
@@ -546,6 +593,7 @@ def main
   # enabled.
   assert_stdlib_identical!(targets)
   install_stdlib!(install_dir_for("macosx-arm64"))
+  sanitize_rbconfig!(install_dir_for("macosx-arm64"))
 
   puts "== done -- static libs, headers, and stdlib installed under #{VENDOR_DIR}"
 end

@@ -78,24 +78,31 @@ struct RubyRuntimeTests {
         #expect(result == "aGk=")
     }
 
-    @Test func netHTTPFailsOnRbConfigNotHTTPSNotFound() {
-        // Not the HTTPS/OpenSSL limitation this test set out to exercise: on this
-        // platform, `require 'net/http'` fails to even load, at `require 'resolv'`,
-        // before it gets anywhere near a socket. resolv.rb's top-level `WINDOWS`
-        // constant does `RUBY_PLATFORM =~ /mswin|.../ || RbConfig::CONFIG[...]` --
-        // on non-Windows platforms the left side never short-circuits it, so it
-        // always touches RbConfig, which isn't defined (rbconfig.rb is excluded --
-        // see docs/embedding-cruby.md). Locking in the actual failure instead of
-        // the one originally expected, so a future rbconfig fix (or Slice 3 for the
-        // HTTPS half) has to update this test rather than silently leave it stale.
-        do {
-            _ = try RubyRuntime.shared.evaluate("require 'net/http'")
-            Issue.record("expected require 'net/http' to fail without RbConfig")
-        } catch RubyError.evaluationFailed(let message) {
-            #expect(message.contains("RbConfig"))
-        } catch {
-            Issue.record("expected RubyError, got \(error)")
-        }
+    @Test func requiresNetHTTP() throws {
+        // Locks in the sanitized rbconfig.rb fix: `require 'net/http'` used to
+        // fail outright at `require 'resolv'`, because resolv.rb's top-level
+        // `WINDOWS` constant always touches RbConfig (rbconfig.rb was excluded --
+        // see docs/embedding-cruby.md). With a sanitized rbconfig.rb on
+        // $LOAD_PATH, loading now succeeds. TLS itself is a separate capability
+        // (covered by requiresNetHTTPOverTLS once OpenSSL is merged in); this
+        // test only proves the loading path is unblocked.
+        _ = try RubyRuntime.shared.evaluate("require 'net/http'")
+        let defined = try RubyRuntime.shared.evaluate("defined?(Net::HTTP).nil? ? 'no' : 'yes'")
+        #expect(defined == "yes")
+    }
+
+    @Test func requiresLogger() throws {
+        // Extends the rbconfig fix past resolv/net-http: logger.rb requires
+        // rbconfig directly (logger.rb:15), so it was broken by the same root
+        // cause. Confirms the whole RbConfig surface is usable, not just the
+        // slice resolv happens to touch.
+        _ = try RubyRuntime.shared.evaluate("require 'logger'")
+        // Writing a log line exercises Logger.new's internals (LogDevice,
+        // formatter) without needing a real IO target.
+        let result = try RubyRuntime.shared.evaluate(
+            "Logger.new(File::NULL).info('x'); 'ok'"
+        )
+        #expect(result == "ok")
     }
 
     @Test func loadPathIsExactlyTheBundledStdlib() throws {
