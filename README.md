@@ -15,7 +15,14 @@ Early, pre-alpha. The app currently builds and runs, but none of the Ruby execut
 
 ## Building
 
-Clone the repo and open `RubyCuts.xcodeproj` in Xcode, or build from the command line:
+RubyCuts embeds a statically-linked CRuby, built by a standalone script rather than as part of the Xcode build (it takes 10-20 minutes, which would make every `⌘B` miserable). Run this once before opening the project:
+
+```sh
+mise install
+ruby scripts/build-cruby.rb
+```
+
+See [`docs/embedding-cruby.md`](docs/embedding-cruby.md) for what it does and why. With that done, clone the repo and open `RubyCuts.xcodeproj` in Xcode, or build from the command line:
 
 ```sh
 xcodebuild -project RubyCuts.xcodeproj -scheme RubyCuts -destination 'platform=macOS' build
