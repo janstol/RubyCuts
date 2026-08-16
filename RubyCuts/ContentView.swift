@@ -7,7 +7,7 @@ struct ContentView: View {
     private let rubyDescription: String
 
     init() {
-        // Not RUBY_DESCRIPTION: that constant is only defined by Init_ruby_description(), which runs during ruby_options() command-line processing -- rubycuts_init() intentionally calls plain ruby_init() instead, since there's no command line to process for an embedded eval loop. RUBY_VERSION/RUBY_PLATFORM/RUBY_RELEASE_DATE come from Init_version(), which ruby_init() does run.
+        // Not RUBY_DESCRIPTION: it's available now that rubycuts_init() completes boot via ruby_options() (see rubycuts_shim.c), but building the string from RUBY_VERSION/RUBY_PLATFORM/RUBY_RELEASE_DATE keeps this scaffolding independent of exactly which boot path set it.
         let code = "\"ruby #{RUBY_VERSION} (#{RUBY_RELEASE_DATE}) [#{RUBY_PLATFORM}]\""
         rubyDescription = (try? RubyRuntime.shared.evaluate(code)) ?? "Ruby failed to start."
     }

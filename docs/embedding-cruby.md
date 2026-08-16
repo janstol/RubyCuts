@@ -82,10 +82,49 @@ Two more fixes came up cross-compiling against the current iOS 26 SDKs that aren
 - **`vm_dump.c`'s `system()` patch.** `rb_vm_bugreport`'s `RUBY_ON_BUG` debug hook calls `system()` unconditionally -- unlike everywhere else CRuby gates a call behind a `HAVE_*` check (`HAVE_BACKTRACE` guards the near-identical helper one function above, in the same file), this one isn't gated, so it fails to compile once `ac_cv_func_system=no` above removes `HAVE_SYSTEM`. `patch_vm_dump_system_guard!` in `scripts/build-cruby.rb` wraps it in `#ifdef HAVE_SYSTEM` before configuring, once per full source checkout (idempotent, and a no-op on macOS, where `HAVE_SYSTEM` stays defined).
 - **Bundled gems with a native C extension don't link on iOS at all.** `debug`, `racc`, `nkf`, `rbs`, and `syslog` -- the `bundled_gems`-listed runtime gems with an `ext/`, distinct from `bigdecimal` which is excluded via `--without-bigdecimal` above for an unrelated reason -- each build a `.bundle` the same way every Ruby C extension does: unresolved core VM symbols (`rb_eArgError` and the like), trusting the process that `dlopen()`s it to resolve them at load time. On macOS that trust is spelled `-undefined dynamic_lookup`; Apple's iOS linker refuses the flag outright for any binary, so every one of these fails at link with a page of undefined symbols. None of them are needed by RubyCuts -- `Vendor/CRuby` only ever takes the static lib and headers, never an installed gems tree -- so `patch_bundled_gems!` strips their lines from `gems/bundled_gems` before extraction, for every target, and sweeps any stale `.bundle/gems`/`.bundle/extensions` output a build that failed on one of these before this exclusion existed may have left behind.
 
+### `--with-static-linked-ext` doesn't actually reach `lib*-static.a`
+
+Discovered while wiring up `require 'stringio'` and friends in the stdlib-bundling slice, by probing the built archive with `nm` rather than trusting the flag's name: `--with-static-linked-ext` links every statically-linked C extension (`stringio`, `json/ext`, `socket`, `date_core`, `strscan`, ...) into its own per-extension archive (`ext/<name>/<name>.a`) and generates `ext/extinit.c` to register them all with the VM's `require` machinery. But the generated `Makefile`'s object list for `lib*-static.a` (`$(LIBRUBY_A_OBJS)`, i.e. `$(OBJS)`) never includes them -- only the final `ruby` executable's own link recipe does. Left alone, `lib*-static.a` ships `dmyext.o`'s empty `Init_ext()` stub instead of the real one, so `require` of any statically-linked extension fails with `cannot load such file`, and the equivalent `dmyenc.o` stub means non-ASCII encodings (`Encoding.find("Shift_JIS")` and friends) aren't registered either.
+
+`merge_static_extensions!` in `scripts/build-cruby.rb` fixes this after `make install`: it drops the two stub objects from the installed static lib and merges in the real ones (`ext/extinit.o` + every `ext/**/*.a`, `enc/encinit.o` + `enc/libenc.a` + `enc/libtrans.a`) with `libtool -static`, which -- unlike plain `ar` -- flattens nested `.a` members into the output archive instead of embedding them as archive-in-archive members `ar` can't see into. It's idempotent (checks for `dmyext.o` in the archive before doing anything) and runs for every target, every time the script runs, independent of whether `configure_and_make!` decided a target was already built.
+
+## Completing VM boot: `ruby_options()`, not bare `ruby_init()`
+
+`rubycuts_init()` (`RubyCuts/Ruby/rubycuts_shim.c`) calls `RUBY_INIT_STACK; ruby_init();` same as before, but that alone is not a complete boot -- `ruby_init()` only runs `Init_BareVM` plus the core-class `rb_call_inits()` list. It never runs `Init_ext()` (registering every statically-linked C extension so `require` can find it -- see above), never loads the compiled builtin iseqs, never sets up the non-ASCII encoding database, and never seeds `$LOAD_PATH`. All of that lives in `ruby_opt_init()`, reachable only through `ruby_options()`, CRuby's command-line option processor.
+
+`rubycuts_init()` calls `ruby_options()` with a synthetic, writable argv equivalent to `ruby --disable-gems -e ''`:
+
+- `argv[0]` is `NULL`, and every other element points at a writable (non-literal) buffer -- `ruby_options()` mutates argv in place (`ruby_setproctitle()`, `$0=`), which is undefined behavior against a string literal's read-only storage.
+- `-e ''` makes `ruby_options()` run the full boot sequence without there being a script to actually execute; its return value (an opaque node for `ruby_run_node()`) is discarded, since there's nothing in it worth running.
+- `--disable-gems` skips RubyGems bootstrap entirely -- not needed, since plain `Kernel#require` against `$LOAD_PATH` is sufficient once the stdlib and bundled gems are flattened into one directory (see below).
+
+`ruby_options()` also runs `ruby_init_loadpath()`, which seeds `$LOAD_PATH` from `ruby_exec_prefix`, a compile-time constant baked into `verconf.h` at cross-compile time -- it points at this machine's `.build-cruby/.../install`, present on the dev Mac and absent on a device or simulator. `rubycuts_init()` throws that away on purpose: right after `ruby_options()` returns, it clears `$LOAD_PATH` and pushes the one path that actually ships in the app bundle (see below). This is also why relying on `ruby_init_loadpath()`'s output directly, or passing `-I<path>` in argv instead of the explicit clear-and-push, wouldn't work -- either leaves the stale dev-machine entries in place as a shadowing hazard instead of removing them, which would let `require` keep working on macOS via leftover paths while silently broken on device. `RubyRuntimeTests.loadPathIsExactlyTheBundledStdlib` exists specifically to catch that failure mode.
+
+## Bundling the stdlib and wiring `$LOAD_PATH`
+
+`Vendor/CRuby/stdlib/` is `lib/ruby/3.4.0/` from the CRuby install, minus a deny-list, plus two bundled gems flattened in alongside it. `install_stdlib!` in `scripts/build-cruby.rb` builds it once (not per target) after confirming, with a SHA256 digest, that all three target installs' stdlib trees are byte-identical -- turning what was previously just an assumption into a build-time assertion.
+
+`EXCLUDED_STDLIB_ENTRIES` (the deny-list) leaves out:
+
+- `bundler`, `rubygems` -- not needed; `rubycuts_init()` boots with `--disable-gems`, and plain `Kernel#require` against `$LOAD_PATH` is enough.
+- `irb`, `reline`, `readline.rb` -- no TTY in an app sandbox.
+- `did_you_mean`, `error_highlight`, `syntax_suggest` -- REPL/CLI error-message niceties, not needed for running a script.
+- `rdoc`, `prism` (the standalone gem copy; the C-ext `prism` core extension is unaffected) -- not needed for running scripts.
+- `mkmf.rb` -- a C-extension build tool, meaningless without a compiler on-device.
+- `un.rb` -- a command-line coreutils shim, not a library.
+- `ruby_vm` -- `RubyVM::*` introspection helpers this app has no use for.
+- `yaml`, `yaml.rb` -- configure ran with `--without-psych` (see above), so `require 'yaml'` would just raise a worse-looking `LoadError` than leaving it out.
+- The per-target arch subdirectory (e.g. `arm64-darwin25/`), whose only content is `rbconfig.rb`. Detected by content (the one child containing `rbconfig.rb`), not a hardcoded name, so a future Ruby version's differently-named arch subdirectory gets caught rather than silently shipped or silently skipped.
+
+`INCLUDED_BUNDLED_GEMS` (`csv`, `base64`) are copied in from `lib/ruby/gems/3.4.0/gems/<gem>-*/lib/`, flattened alongside the stdlib -- `json`, `fileutils`, and `net/http` are already "default gems" and ship as part of `lib/ruby/3.4.0/` itself, no separate step needed.
+
+**Excluding `rbconfig.rb` has a wider blast radius than just `require 'rbconfig'`.** It embeds this machine's absolute `--prefix`/`--host` build paths, so it can't ship as-is, and no sanitized replacement exists yet. Besides the obviously-named case (`require 'logger'`, which needs it directly), `resolv.rb`'s top-level `WINDOWS` constant does `RUBY_PLATFORM =~ /mswin|cygwin|.../ || RbConfig::CONFIG['host_os'] =~ /mswin/` -- on any non-Windows platform the left side never short-circuits it, so loading `resolv` always touches the now-undefined `RbConfig` and raises `NameError` at `require` time. `resolv` is itself required by `net/http`, so **`require 'net/http'` currently fails outright** (not just "can't establish TLS" -- it never gets that far). `RubyRuntimeTests.netHTTPFailsOnRbConfigNotHTTPSNotFound` locks in this specific failure so a future fix (a sanitized `rbconfig.rb`, or a `resolv.rb` patch) has to update the test rather than leave it stale.
+
+`rubycuts_init()` locates the bundled resource via `Bundle.main.resourceURL` (`RubyRuntime.swift`) -- `RubyCuts.app/Contents/Resources/stdlib` on macOS, `RubyCuts.app/stdlib` on iOS; `RubyCutsTests` is app-hosted (`TEST_HOST`/`BUNDLE_LOADER`), so `Bundle.main` resolves the same way during a test run. `Vendor/CRuby/stdlib/` is bundled into the app target as a folder reference (`RubyCuts.xcodeproj`'s `PBXFileReference` with `lastKnownFileType = folder`) rather than a Run Script `rsync` -- the project already has `ENABLE_USER_SCRIPT_SANDBOXING = YES`, which would deny a script phase read access to the ~130 files under `$SRCROOT` with no practical `inputPaths` declaration; Copy Bundle Resources is a native build-system task and unaffected.
+
 ## What's deliberately not here yet
 
-- **No OpenSSL / libyaml** -- `require 'net/http'` won't establish a TLS connection and `require 'yaml'` won't load. Slice 3.
-- **No stdlib `.rb` files bundled.** `require 'json'`, `require 'csv'`, and friends won't work yet -- only core classes and methods that don't need a `.rb` file on `$LOAD_PATH`. Bundling `lib/ruby/3.4.0/` and wiring the load path is the very next slice.
+- **No OpenSSL / libyaml** -- `require 'yaml'` won't load, and TLS specifically is unavailable to `net/http` even once the `RbConfig`/`resolv` issue above is fixed. Slice 3.
 
 **No x86_64, ever.** This isn't a deferred slice -- RubyCuts targets Apple Silicon only. `ARCHS = arm64` in `Config/Shared.xcconfig` enforces this at the project level, so an Intel Mac or an Intel simulator destination won't build. `TARGETS` in `scripts/build-cruby.rb` should never grow an x86_64 row.
 
@@ -99,12 +138,14 @@ Ruby installs generic headers under `include/ruby-3.4.0/` and one arch-specific 
 for p in macosx iphoneos iphonesimulator; do
   lipo -info Vendor/CRuby/lib/$p/libruby-static.a   # => arm64, for all three
   ls Vendor/CRuby/include/$p/ruby/config.h
+  nm -g Vendor/CRuby/lib/$p/libruby-static.a | grep -c " T _Init_stringio$"  # => 1, for all three
 done
+ls Vendor/CRuby/stdlib | head   # sanity: csv.rb, base64.rb present; no rdoc/, bundler/, rubygems/
 ```
 
-`vtool -show-build-version` on a member object of each archive confirms the platform each was actually built for (`MACOS` / `IOS` / `IOSSIMULATOR`) -- the check that catches a simulator build that silently picked up the device triple.
+`vtool -show-build-version` on a member object of each archive confirms the platform each was actually built for (`MACOS` / `IOS` / `IOSSIMULATOR`) -- the check that catches a simulator build that silently picked up the device triple. The `Init_stringio` check confirms `merge_static_extensions!` actually replaced the `dmyext.o` stub -- see above.
 
-Beyond the artifact check, `RubyRuntimeTests` (including `reportsRubyVersion`, the test that actually boots the VM and evals) has run and passed on all three real destinations: macOS, iOS Simulator, and a physical iPhone -- not just a `generic/platform=iOS` unsigned build. A physical device needs a signing team (`Config/Local.xcconfig`, see `Local.xcconfig.sample`) and `-allowProvisioningUpdates` on the `xcodebuild` invocation to let Xcode generate the test-runner's provisioning profile automatically:
+Beyond the artifact check, `RubyRuntimeTests` (including `reportsRubyVersion`, the test that actually boots the VM and evals, and `loadPathIsExactlyTheBundledStdlib`, the test that would catch a dev-machine-only pass) has run and passed on all three real destinations: macOS, iOS Simulator, and a physical iPhone -- not just a `generic/platform=iOS` unsigned build. A physical device needs a signing team (`Config/Local.xcconfig`, see `Local.xcconfig.sample`) and `-allowProvisioningUpdates` on the `xcodebuild` invocation to let Xcode generate the test-runner's provisioning profile automatically:
 
 ```sh
 xcodebuild -project RubyCuts.xcodeproj -scheme RubyCuts \

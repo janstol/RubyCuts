@@ -4,6 +4,9 @@ import Foundation
 enum RubyError: Error {
     /// Evaluation failed, either because `code` didn't parse or because it raised. The associated string is the Ruby exception's `to_s`, e.g. `"undefined method 'foo' for nil"`.
     case evaluationFailed(String)
+
+    /// The Ruby VM never came up: either the bundled `stdlib/` resource is missing from the app bundle, or `rubycuts_init` itself reported failure. The associated string describes which.
+    case initializationFailed(String)
 }
 
 /// A single embedded CRuby VM, booted once and reused for the life of the process.
@@ -26,8 +29,7 @@ final class RubyRuntime {
     /// - Returns: The evaluated result, converted with `to_s`.
     /// - Throws: `RubyError.evaluationFailed` if `code` fails to parse or raises.
     func evaluate(_ code: String) throws -> String {
-        // Safe to call on every evaluation: rubycuts_init() no-ops after the first call.
-        rubycuts_init()
+        try bootIfNeeded()
 
         var errorMessage: UnsafeMutablePointer<CChar>?
         let result = code.withCString { codePointer in
@@ -42,5 +44,36 @@ final class RubyRuntime {
         defer { if let errorMessage { rubycuts_free(errorMessage) } }
         let message = errorMessage.map { String(cString: $0) } ?? "unknown Ruby error"
         throw RubyError.evaluationFailed(message)
+    }
+
+    /// Boots the VM if it hasn't already. Safe to call on every evaluation: `rubycuts_init` no-ops after the first successful call.
+    private func bootIfNeeded() throws {
+        guard let stdlibURL = Self.bundledStdlibURL() else {
+            throw RubyError.initializationFailed(
+                "bundled CRuby stdlib resource not found -- run scripts/build-cruby.rb and rebuild"
+            )
+        }
+
+        let status = stdlibURL.withUnsafeFileSystemRepresentation { path in
+            rubycuts_init(path)
+        }
+        guard status == 0 else {
+            throw RubyError.initializationFailed("rubycuts_init failed with status \(status)")
+        }
+    }
+
+    /// Locates the bundled CRuby stdlib directory: `RubyCuts.app/Contents/Resources/stdlib` on macOS, `RubyCuts.app/stdlib` on iOS. `RubyCutsTests` is app-hosted (`TEST_HOST`/`BUNDLE_LOADER` in the project), so `Bundle.main` during a test run resolves to `RubyCuts.app` too.
+    ///
+    /// - Returns: The resource's URL, or `nil` if it's missing -- a build that skipped `scripts/build-cruby.rb`, or a stale bundle from before this resource was wired up.
+    private static func bundledStdlibURL() -> URL? {
+        guard let resourceURL = Bundle.main.resourceURL else { return nil }
+        let stdlibURL = resourceURL.appending(component: "stdlib", directoryHint: .isDirectory)
+
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: stdlibURL.path, isDirectory: &isDirectory),
+            isDirectory.boolValue
+        else { return nil }
+
+        return stdlibURL
     }
 }

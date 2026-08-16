@@ -5,8 +5,8 @@
 extern "C" {
 #endif
 
-/// Boots the Ruby VM. Returns 0 on success. Safe to call once per process.
-int rubycuts_init(void);
+/// Boots the Ruby VM with `stdlib_path` as the sole `$LOAD_PATH` entry. Returns 0 on success, non-zero if the VM failed to boot. Safe to call more than once; later calls no-op.
+int rubycuts_init(const char *stdlib_path);
 
 /// Evaluates `code`, returning a malloc'd UTF-8 string the caller frees with `rubycuts_free`. On failure returns NULL and writes a malloc'd message to `*error_out`, which the caller also frees with `rubycuts_free`.
 char *rubycuts_eval_to_string(const char *code, char **error_out);

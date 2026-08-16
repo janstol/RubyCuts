@@ -16,6 +16,7 @@ ROOT = File.expand_path("..", __dir__)
 BUILD_DIR = File.join(ROOT, ".build-cruby")
 SRC_DIR = File.join(BUILD_DIR, "src")
 VENDOR_DIR = File.join(ROOT, "Vendor", "CRuby")
+STDLIB_DEST = File.join(VENDOR_DIR, "stdlib")
 
 RUBY_VERSION_PIN = "3.4.9"
 RUBY_VERSION_SHA256 = "7bb4d4f5e807cc27251d14d9d6086d182c5b25875191e44ab15b709cd7a7dd9c"
@@ -75,6 +76,50 @@ TARGETS = {
     triple: "arm64-apple-ios18.0",
   },
 }.freeze
+
+# Top-level names under lib/ruby/3.4.0 that don't ship in Vendor/CRuby/stdlib/.
+# rdoc/bundler/rubygems/prism -- not needed for plain Kernel#require against
+# $LOAD_PATH (rubycuts_init boots with --disable-gems); irb/reline/readline --
+# no TTY in an app sandbox; did_you_mean/error_highlight/syntax_suggest --
+# REPL-error-message niceties, not needed for running scripts; mkmf.rb -- a
+# C-extension build tool, meaningless without a compiler on-device; un.rb --
+# a command-line coreutils shim, not a library; ruby_vm -- RubyVM::*
+# introspection helpers this app has no use for; yaml/yaml.rb -- configure
+# ran with --without-psych (see docs/embedding-cruby.md), so `require 'yaml'`
+# would just raise a worse-looking LoadError than leaving it out entirely.
+EXCLUDED_STDLIB_ENTRIES = %w[
+  bundler
+  bundler.rb
+  did_you_mean
+  did_you_mean.rb
+  error_highlight
+  error_highlight.rb
+  irb
+  irb.rb
+  mkmf.rb
+  prism
+  prism.rb
+  rdoc
+  rdoc.rb
+  readline.rb
+  reline
+  reline.rb
+  rubygems
+  rubygems.rb
+  ruby_vm
+  syntax_suggest
+  syntax_suggest.rb
+  un.rb
+  yaml
+  yaml.rb
+].freeze
+
+# Bundled gems (installed under lib/ruby/gems/#{RUBY_ABI_VERSION}/gems/, not
+# lib/ruby/#{RUBY_ABI_VERSION}/) flattened into Vendor/CRuby/stdlib/ alongside
+# the default-gem stdlib above, so a plain `require "csv"` finds them on
+# $LOAD_PATH. Both are pure Ruby -- json/fileutils/net/http are already
+# "default gems" and ship as part of lib/ruby/#{RUBY_ABI_VERSION}/ itself.
+INCLUDED_BUNDLED_GEMS = %w[csv base64].freeze
 
 def sh!(*cmd, chdir:, env: {})
   puts "+ #{cmd.join(" ")}"
@@ -299,6 +344,58 @@ def configure_and_make!(key, target)
   sh!("make", "install", chdir: build_dir, env: env)
 end
 
+# --with-static-linked-ext links every statically-linked C extension
+# (stringio, json/ext, socket, date_core, strscan, ...) into its own
+# per-extension archive (ext/<name>/<name>.a) and generates ext/extinit.c
+# to register them all -- but the generated Makefile's object list for
+# lib*-static.a ($(LIBRUBY_A_OBJS), i.e. $(OBJS)) never includes them; only
+# the final `ruby` executable's own link recipe does (traced in the actual
+# generated Makefile/exts.mk, not assumed from the configure flags). Left
+# alone, lib*-static.a ships dmyext.o's empty Init_ext() stub instead of
+# the real one, so `require` of any statically-linked extension fails with
+# "cannot load such file" -- confirmed by probing the built archive with
+# `nm`. Same story for enc/encinit.o vs the dmyenc.o stub and the non-ASCII
+# encoding tables in enc/libenc.a + enc/libtrans.a (without it, e.g.
+# Encoding.find("Shift_JIS") raises).
+#
+# Fixed here by rebuilding lib*-static.a after `make install`: drop the two
+# stub objects and merge in the real ones with `libtool -static`, which --
+# unlike plain `ar` -- flattens nested .a members into the output archive
+# instead of embedding them as archive-in-archive members `ar` can't see
+# into.
+def merge_static_extensions!(key)
+  install_dir = install_dir_for(key)
+  build_dir = build_dir_for(key)
+  static_lib = find_static_lib(install_dir)
+  abort "error: no lib*-static.a found under #{install_dir}/lib -- run configure_and_make! first" unless static_lib
+
+  members = capture!("ar", "t", static_lib).lines(chomp: true)
+  unless members.include?("dmyext.o")
+    puts "== #{key} static extensions already merged"
+    return
+  end
+
+  stripped = "#{static_lib}.stripped"
+  FileUtils.cp(static_lib, stripped)
+  sh!("ar", "d", stripped, "dmyext.o", "dmyenc.o", chdir: build_dir)
+
+  ext_archives = Dir.glob(File.join(build_dir, "ext", "**", "*.a")).sort
+  filelist_entries = [stripped, File.join(build_dir, "ext", "extinit.o")] + ext_archives + [
+    File.join(build_dir, "enc", "encinit.o"),
+    File.join(build_dir, "enc", "libenc.a"),
+    File.join(build_dir, "enc", "libtrans.a"),
+  ]
+  filelist = "#{static_lib}.filelist"
+  File.write(filelist, "#{filelist_entries.join("\n")}\n")
+
+  puts "== merging statically-linked extensions into #{key}'s static lib"
+  merged = "#{static_lib}.merged"
+  sh!("libtool", "-static", "-o", merged, "-filelist", filelist, chdir: build_dir)
+  FileUtils.mv(merged, static_lib)
+  FileUtils.rm_f(stripped)
+  FileUtils.rm_f(filelist)
+end
+
 def install_artifacts!(key, target)
   install_dir = install_dir_for(key)
   static_lib = find_static_lib(install_dir)
@@ -327,6 +424,97 @@ def install_artifacts!(key, target)
   end
 end
 
+# The one child of lib/ruby/#{RUBY_ABI_VERSION} that isn't shared across
+# targets: it holds only rbconfig.rb, which embeds this machine's absolute
+# --prefix/--host build paths, so it's never copied into Vendor/CRuby/stdlib/
+# (see EXCLUDED_STDLIB_ENTRIES's comment and docs/embedding-cruby.md).
+# Detected by content, not by a hardcoded name (e.g. "arm64-darwin25"), so a
+# future Ruby version's arch-triple naming doesn't silently ship the wrong
+# thing or silently skip the check.
+def stdlib_arch_subdir(stdlib_dir)
+  candidates = Dir.children(stdlib_dir).select { |name| File.file?(File.join(stdlib_dir, name, "rbconfig.rb")) }
+  unless candidates.size == 1
+    abort "error: expected exactly one arch subdir with rbconfig.rb under #{stdlib_dir}, " \
+      "found #{candidates.size}: #{candidates.inspect}"
+  end
+  candidates.first
+end
+
+# SHA256 over every file's relative path plus its content, under
+# lib/ruby/#{RUBY_ABI_VERSION}, excluding the arch subdir (which is expected
+# to differ across targets and is never bundled anyway). Used to turn "the
+# stdlib is identical across all three targets" from a standing assumption
+# into a build-time assertion before install_stdlib! copies from just one of
+# them.
+def stdlib_digest(install_dir)
+  stdlib_dir = File.join(install_dir, "lib", "ruby", RUBY_ABI_VERSION)
+  arch_subdir = stdlib_arch_subdir(stdlib_dir)
+
+  digest = Digest::SHA256.new
+  Dir.glob(File.join(stdlib_dir, "**", "*")).sort.each do |path|
+    next if File.directory?(path)
+
+    relative = path.delete_prefix("#{stdlib_dir}/")
+    next if relative.start_with?("#{arch_subdir}/")
+
+    digest << relative
+    digest << File.binread(path)
+  end
+  digest.hexdigest
+end
+
+def assert_stdlib_identical!(targets)
+  digests = targets.keys.to_h { |key| [key, stdlib_digest(install_dir_for(key))] }
+  return if digests.values.uniq.size == 1
+
+  abort "error: lib/ruby/#{RUBY_ABI_VERSION} differs across targets, expected byte-identical " \
+    "trees -- #{digests.inspect}"
+end
+
+# Copies the deny-listed stdlib plus INCLUDED_BUNDLED_GEMS into
+# Vendor/CRuby/stdlib/ -- one shared tree, not one per platform, since
+# assert_stdlib_identical! already proved the three installs match.
+def install_stdlib!(install_dir)
+  FileUtils.rm_rf(STDLIB_DEST)
+  FileUtils.mkdir_p(STDLIB_DEST)
+
+  stdlib_dir = File.join(install_dir, "lib", "ruby", RUBY_ABI_VERSION)
+  arch_subdir = stdlib_arch_subdir(stdlib_dir)
+
+  Dir.children(stdlib_dir).each do |entry|
+    next if entry == arch_subdir
+    next if EXCLUDED_STDLIB_ENTRIES.include?(entry)
+
+    FileUtils.cp_r(File.join(stdlib_dir, entry), STDLIB_DEST)
+  end
+
+  gems_dir = File.join(install_dir, "lib", "ruby", "gems", RUBY_ABI_VERSION, "gems")
+  INCLUDED_BUNDLED_GEMS.each do |gem_name|
+    matches = Dir.glob(File.join(gems_dir, "#{gem_name}-*"))
+    unless matches.size == 1
+      abort "error: expected exactly one #{gem_name}-* dir under #{gems_dir}, " \
+        "found #{matches.size}: #{matches.inspect}"
+    end
+
+    gem_lib = File.join(matches.first, "lib")
+    Dir.children(gem_lib).each do |child|
+      dest = File.join(STDLIB_DEST, child)
+      abort "error: #{gem_name} gem's lib/#{child} collides with an existing stdlib entry at #{dest}" if File.exist?(dest)
+
+      FileUtils.cp_r(File.join(gem_lib, child), STDLIB_DEST)
+    end
+  end
+
+  # Should be impossible given EXCLUDED_STDLIB_ENTRIES and INCLUDED_BUNDLED_GEMS
+  # are both pure-Ruby-only lists, but cheap to assert instead of trusting that.
+  compiled = Dir.glob(File.join(STDLIB_DEST, "**", "*.{bundle,so,dylib}"))
+  abort "error: unexpected compiled extension(s) bundled into stdlib: #{compiled.inspect}" unless compiled.empty?
+
+  files = Dir.glob(File.join(STDLIB_DEST, "**", "*")).select { |path| File.file?(path) }
+  total_bytes = files.sum { |path| File.size(path) }
+  puts "== stdlib installed: #{files.size} files, #{(total_bytes / 1024.0 / 1024.0).round(1)} MB, under #{STDLIB_DEST}"
+end
+
 def main
   check_host_ruby!
 
@@ -347,10 +535,19 @@ def main
   targets.each do |key, target|
     puts "== target: #{key}"
     configure_and_make!(key, target)
+    merge_static_extensions!(key)
     install_artifacts!(key, target)
   end
 
-  puts "== done -- static libs and headers installed under #{VENDOR_DIR}"
+  # lib/ruby/#{RUBY_ABI_VERSION} is identical across every target (confirmed
+  # by assert_stdlib_identical! below, not just assumed), so it's installed
+  # once from whichever target's install dir, not once per target.
+  # "macosx-arm64" specifically because TARGETS guarantees it's always
+  # enabled.
+  assert_stdlib_identical!(targets)
+  install_stdlib!(install_dir_for("macosx-arm64"))
+
+  puts "== done -- static libs, headers, and stdlib installed under #{VENDOR_DIR}"
 end
 
 main if $PROGRAM_NAME == __FILE__

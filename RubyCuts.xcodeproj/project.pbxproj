@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		C58C33063A0487769618DD11 /* stdlib in Resources */ = {isa = PBXBuildFile; fileRef = 9A3F8C9688AF025ABF09B066 /* stdlib */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		DB954DFA3031C79900D2B0BA /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -29,6 +33,7 @@
 		DB954E033031C79900D2B0BA /* RubyCutsUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RubyCutsUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		DB954F023031C79900D2B0BA /* Shared.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Shared.xcconfig; sourceTree = "<group>"; };
 		DB954F033031C79900D2B0BA /* Local.xcconfig.sample */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Local.xcconfig.sample; sourceTree = "<group>"; };
+		9A3F8C9688AF025ABF09B066 /* stdlib */ = {isa = PBXFileReference; lastKnownFileType = folder; name = stdlib; path = Vendor/CRuby/stdlib; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -81,6 +86,7 @@
 				DB954DFC3031C79900D2B0BA /* RubyCutsTests */,
 				DB954E063031C79900D2B0BA /* RubyCutsUITests */,
 				DB954F013031C79900D2B0BA /* Config */,
+				B6FC9488F397C37CBC11A183 /* Vendor */,
 				DB954DEB3031C79700D2B0BA /* Products */,
 			);
 			sourceTree = "<group>";
@@ -102,6 +108,14 @@
 				DB954F033031C79900D2B0BA /* Local.xcconfig.sample */,
 			);
 			path = Config;
+			sourceTree = "<group>";
+		};
+		B6FC9488F397C37CBC11A183 /* Vendor */ = {
+			isa = PBXGroup;
+			children = (
+				9A3F8C9688AF025ABF09B066 /* stdlib */,
+			);
+			name = Vendor;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -225,6 +239,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C58C33063A0487769618DD11 /* stdlib in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -261,7 +276,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "if [ ! -f \"${CRUBY_DIR}/lib/${PLATFORM_NAME}/libruby-static.a\" ]; then\n    echo \"error: CRuby not built for ${PLATFORM_NAME}. Run: ruby scripts/build-cruby.rb\"\n    exit 1\nfi\n";
+			shellScript = "if [ ! -f \"${CRUBY_DIR}/lib/${PLATFORM_NAME}/libruby-static.a\" ]; then\n    echo \"error: CRuby not built for ${PLATFORM_NAME}. Run: ruby scripts/build-cruby.rb\"\n    exit 1\nfi\nif [ ! -d \"${CRUBY_DIR}/stdlib\" ]; then\n    echo \"error: CRuby stdlib not bundled. Run: ruby scripts/build-cruby.rb\"\n    exit 1\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
