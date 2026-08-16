@@ -52,7 +52,7 @@ CFLAGS="-pipe -Os -fvisibility=hidden" \
 - `--disable-shared` -- we want a static archive to link into the app bundle, not a `.dylib` a sandboxed app can't load from an arbitrary path.
 - `--disable-dln` -- disables Ruby's own dynamic-library loading (`dlopen`-based `require` of C extensions). The app never loads a `.so` at runtime; every extension it needs is compiled in statically.
 - `--with-static-linked-ext` -- links C extensions (`zlib`, `stringio`, etc.) into the static archive itself instead of building them as separate loadable objects that `--disable-dln` would make unreachable.
-- `--without-openssl --without-psych` -- **no TLS and no YAML in this slice.** This is what keeps slice 1 cheap: with no third-party static libraries (OpenSSL, libyaml) to cross-compile and merge, packaging is a plain `make install` plus a copy, and the `ar`-explode / `lipo`-merge machinery a real fat static lib would need never has to exist yet. `net/http` over TLS and `psych` come back in slice 3, once that merge step is built.
+- `--without-openssl --without-psych` -- **no TLS and no YAML in this slice.** This is what keeps slice 1 cheap: with no third-party static libraries (OpenSSL, libyaml) to cross-compile and merge into `libruby-static.a`, packaging is a plain `make install` plus a copy, and the `ar`-explode machinery a merged archive would need never has to exist yet. `net/http` over TLS and `psych` come back in slice 3, once that merge step is built.
 - `--without-bigdecimal --without-readline` -- neither is needed for evaluating expressions from Swift; `readline` in particular expects a real TTY, which doesn't exist in an app sandbox.
 - `-fvisibility=hidden` -- keeps the archive's non-public symbols out of the app binary's exported symbol table.
 
@@ -63,7 +63,8 @@ The macOS arm64 target builds natively (no `--host` cross-compile flag), since t
 - **No iOS.** The iOS-specific configure overrides (`ac_cv_func_{backtrace,system,syscall,__syscall,getentropy,dup3,pipe2}=no`, a stub `sys/vnode.h`, `--without-fiddle` for App Store review, `--host=arm-iphone-darwin`) are known from the xord/cruby recipe and land in slice 2.
 - **No OpenSSL / libyaml**, as above -- `require 'net/http'` won't establish a TLS connection and `require 'yaml'` won't load. Slice 3.
 - **No stdlib `.rb` files bundled.** `require 'json'`, `require 'csv'`, and friends won't work yet -- only core classes and methods that don't need a `.rb` file on `$LOAD_PATH`. Bundling `lib/ruby/3.4.0/` and wiring the load path is the very next slice.
-- **No x86_64.** Intel Mac and Intel simulator support come with the fat-lib work in slice 2.
+
+**No x86_64, ever.** This isn't a deferred slice -- RubyCuts targets Apple Silicon only. `ARCHS = arm64` in `Config/Shared.xcconfig` enforces this at the project level, so an Intel Mac or an Intel simulator destination won't build. `TARGETS` in `scripts/build-cruby.rb` should never grow an x86_64 row.
 
 ## Header layout
 

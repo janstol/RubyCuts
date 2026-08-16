@@ -4,6 +4,9 @@
 // error — see Local.xcconfig.sample for what goes in it.
 #include? "Local.xcconfig"
 
+// Apple Silicon only, permanently -- there's no plan to ever build an x86_64 slice. Without this, Release/Archive builds (which don't have ONLY_ACTIVE_ARCH) would try to link x86_64 against an arm64-only libruby-static.a and fail.
+ARCHS = arm64
+
 // Embedded CRuby. Built by scripts/build-cruby.rb into Vendor/CRuby/, which is git-ignored -- see docs/embedding-cruby.md. The app target's Run Script build phase fails fast with a pointer to that script if this is missing.
 CRUBY_DIR = $(SRCROOT)/Vendor/CRuby
 HEADER_SEARCH_PATHS = $(inherited) $(CRUBY_DIR)/include
