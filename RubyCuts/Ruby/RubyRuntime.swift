@@ -68,7 +68,31 @@ final class RubyRuntime {
             throw RubyError.initializationFailed("rubycuts_init failed with status \(status)")
         }
 
+        // Match a normal `ruby` interpreter boot, which has `RbConfig` defined
+        // from the first line of any script. A normal boot gets that from
+        // RubyGems bootstrap (it requires rbconfig during startup); `rubycuts_init`
+        // boots with `--disable-gems`, so that bootstrap is skipped and `RbConfig`
+        // is never defined. Without this, stdlib files that reference `RbConfig`
+        // without an explicit `require 'rbconfig'` (resolv.rb's `WINDOWS`
+        // constant, fileutils.rb, ...) raise
+        // `NameError: uninitialized constant RbConfig` in a fresh process.
+        // The sanitized `rbconfig.rb` is on `$LOAD_PATH` (sanitize_rbconfig! in
+        // scripts/build-cruby.rb), so `require 'rbconfig'` resolves it.
+        loadRbConfig()
         configureTLS()
+    }
+
+    /// Eagerly loads the sanitized `rbconfig.rb` so `RbConfig` is defined at boot,
+    /// matching a normal MRI boot (see ``bootIfNeeded``). Best-effort and
+    /// non-fatal: if the file is missing or rejected, Ruby itself still works --
+    /// only `RbConfig`-dependent stdlib paths degrade (failing later with a
+    /// `NameError` when something references `RbConfig`).
+    private func loadRbConfig() {
+        do {
+            _ = try evalRaw("require 'rbconfig'")
+        } catch {
+            // Non-fatal: RbConfig-dependent stdlib paths degrade.
+        }
     }
 
     /// Loads the bundled Mozilla CA bundle (`stdlib/cacert.pem`) into OpenSSL's

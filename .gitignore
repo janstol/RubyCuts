@@ -11,5 +11,7 @@ Config/Local.xcconfig
 *.hmap
 *.ipa
 *.dSYM.zip
+*.profraw
+*.profdata
 /Vendor/CRuby/
 /.build-cruby/

@@ -15,6 +15,24 @@ import Testing
 @Suite(.serialized)
 struct RubyRuntimeTests {
 
+    // MARK: - Boot parity with a normal `ruby` interpreter
+
+    @Test func rbConfigIsDefinedAtBoot() throws {
+        // Guards `RubyRuntime.loadRbConfig()` (run from `bootIfNeeded`): a normal
+        // `ruby` interpreter loads rbconfig.rb during startup so RbConfig is
+        // defined before any code runs, but our minimal `rubycuts_init` boot
+        // does not. Without loadRbConfig(), stdlib files that reference RbConfig
+        // without an explicit `require 'rbconfig'` (resolv.rb's `WINDOWS`
+        // constant, fileutils.rb) raise `NameError: uninitialized constant
+        // RbConfig` in a fresh process -- which is exactly what the real app
+        // hit doing `require 'net/http'`. Placed first in this `.serialized`
+        // suite so, in its source-order run, only boot has had a chance to load
+        // rbconfig; if boot stops loading it, this fails before later tests
+        // (logger, fileutils) mask the regression by loading rbconfig themselves.
+        let defined = try RubyRuntime.shared.evaluate("defined?(RbConfig)")
+        #expect(defined == "constant")
+    }
+
     @Test func addsIntegers() throws {
         #expect(try RubyRuntime.shared.evaluate("1 + 1") == "2")
     }
