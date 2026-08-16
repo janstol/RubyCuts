@@ -1,0 +1,5 @@
+// Shared build configuration, committed to the repo. Pulls in a
+// contributor's local, git-ignored settings (signing team, etc.) if present.
+// The `?` makes the include optional, so a missing Local.xcconfig is not an
+// error — see Local.xcconfig.sample for what goes in it.
+#include? "Local.xcconfig"

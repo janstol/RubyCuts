@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        destination:
+          - "platform=macOS"
+          - "platform=iOS Simulator,name=iPhone 16"
+    steps:
+      - uses: actions/checkout@v4
+
+      # TODO: macos-latest currently ships Xcode 15.x, well short of the
+      # Xcode 26 / Swift 6 toolchain this project needs. This path is
+      # unverified until we have a remote to actually run CI against —
+      # confirm the available version on the runner and adjust once the
+      # first real run happens.
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app
+
+      - name: Build and test
+        run: |
+          xcodebuild -project RubyCuts.xcodeproj -scheme RubyCuts \
+            -destination '${{ matrix.destination }}' \
+            CODE_SIGNING_ALLOWED=NO \
+            test

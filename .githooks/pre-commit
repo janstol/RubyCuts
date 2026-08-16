@@ -1,0 +1,19 @@
+#!/bin/sh
+# Advisory swift-format lint for staged Swift files. Never blocks the commit
+# — it just prints warnings so they're visible before pushing. Enable with:
+#   git config core.hooksPath .githooks
+
+if ! command -v swift >/dev/null 2>&1; then
+    exit 0
+fi
+
+files=$(git diff --cached --name-only --diff-filter=ACM -- '*.swift')
+
+if [ -z "$files" ]; then
+    exit 0
+fi
+
+echo "swift-format lint (advisory, staged files only):"
+echo "$files" | xargs swift format lint --configuration .swift-format 2>&1
+
+exit 0

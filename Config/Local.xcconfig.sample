@@ -1,0 +1,5 @@
+// Copy this file to Local.xcconfig (git-ignored) and fill in your own
+// signing team to build and run on a device. Not needed for
+// simulator/macOS builds run with CODE_SIGN_STYLE = Automatic and no team.
+//
+// DEVELOPMENT_TEAM = YOUR_TEAM_ID
