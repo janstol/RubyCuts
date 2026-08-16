@@ -30,7 +30,14 @@ final class RubyRuntime {
     /// - Throws: `RubyError.evaluationFailed` if `code` fails to parse or raises.
     func evaluate(_ code: String) throws -> String {
         try bootIfNeeded()
+        return try evalRaw(code)
+    }
 
+    /// Evaluates `code` against the already-booted VM. The caller must have booted
+    /// first (via `bootIfNeeded`); this is the no-boot wrapper `evaluate` builds
+    /// on, and the one boot itself uses for one-time setup that mustn't re-enter
+    /// `bootIfNeeded` (which `evaluate` would do).
+    private func evalRaw(_ code: String) throws -> String {
         var errorMessage: UnsafeMutablePointer<CChar>?
         let result = code.withCString { codePointer in
             rubycuts_eval_to_string(codePointer, &errorMessage)
@@ -60,6 +67,46 @@ final class RubyRuntime {
         guard status == 0 else {
             throw RubyError.initializationFailed("rubycuts_init failed with status \(status)")
         }
+
+        configureTLS()
+    }
+
+    /// Loads the bundled Mozilla CA bundle (`stdlib/cacert.pem`) into OpenSSL's
+    /// shared default cert store so `Net::HTTP` over HTTPS can verify peers.
+    ///
+    /// OpenSSL's compiled-in `--openssldir` is a build-machine path that doesn't
+    /// exist on device, so `OpenSSL::SSL::SSLContext::DEFAULT_CERT_STORE.set_default_paths` (run when `openssl/ssl.rb` loads) finds no trusted roots and every
+    /// HTTPS request fails with "unable to get local issuer certificate". Populating
+    /// that one shared store with our bundled PEM -- which `Net::HTTP`'s
+    /// `SSLContext#set_params` assigns to every connection that doesn't set its own
+    /// `cert_store` -- fixes verification with no per-call configuration and no
+    /// `SSL_CERT_FILE` env var (Ruby's openssl ext doesn't honor one). `$LOAD_PATH.first` is the bundled stdlib dir (the single load-path entry), so the PEM is
+    /// locatable in Ruby without a Swift-to-Ruby path round-trip.
+    ///
+    /// Best-effort and non-fatal: if the bundle is missing or rejected, Ruby itself
+    /// still works -- only TLS peer verification degrades (failing later with a
+    /// cert error). Requiring openssl here is eager, but only when a bundle is
+    /// present, and it's a one-time cost on the first `evaluate` (boot).
+    private func configureTLS() {
+        guard Self.bundledCACertURL() != nil else { return }
+        let code =
+            "require 'openssl'; "
+            + "OpenSSL::SSL::SSLContext::DEFAULT_CERT_STORE.add_file("
+            + "File.join($LOAD_PATH.first, 'cacert.pem'))"
+        do {
+            _ = try evalRaw(code)
+        } catch {
+            // Non-fatal: TLS verification degrades; Ruby itself still works.
+        }
+    }
+
+    /// Locates the bundled CA bundle: `stdlib/cacert.pem`. Returns `nil` if the
+    /// stdlib or the PEM is missing -- a build that skipped the
+    /// `install_ca_bundle!` step in `scripts/build-cruby.rb`.
+    private static func bundledCACertURL() -> URL? {
+        guard let stdlibURL = bundledStdlibURL() else { return nil }
+        let cacertURL = stdlibURL.appending(component: "cacert.pem")
+        return FileManager.default.fileExists(atPath: cacertURL.path) ? cacertURL : nil
     }
 
     /// Locates the bundled CRuby stdlib directory: `RubyCuts.app/Contents/Resources/stdlib` on macOS, `RubyCuts.app/stdlib` on iOS. `RubyCutsTests` is app-hosted (`TEST_HOST`/`BUNDLE_LOADER` in the project), so `Bundle.main` during a test run resolves to `RubyCuts.app` too.

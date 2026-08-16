@@ -47,6 +47,19 @@ LIBYAML_TARBALL_URL = "https://github.com/yaml/libyaml/releases/download/#{LIBYA
 LIBYAML_TARBALL_PATH = File.join(SRC_DIR, "yaml-#{LIBYAML_VERSION_PIN}.tar.gz")
 LIBYAML_SOURCE_DIR = File.join(SRC_DIR, "yaml-#{LIBYAML_VERSION_PIN}")
 
+# Mozilla CA bundle (curl's cacert.pem) shipped as OpenSSL's trust store.
+# OpenSSL's compiled-in --openssldir is a build-machine path that doesn't exist
+# on device, so OpenSSL::SSL::SSLContext::DEFAULT_CERT_STORE.set_default_paths
+# (run when openssl/ssl.rb loads) finds no roots and every HTTPS request fails
+# with "unable to get local issuer certificate". RubyRuntime loads this PEM into
+# that shared default store at boot. curl rotates cacert.pem as CAs change; the
+# SHA256 pin keeps builds reproducible and forces a conscious refresh (re-fetch
+# the file, update the pin) when CAs roll. SHA256 cross-checked against the
+# cacert.pem.sha256 curl publishes alongside the file.
+CACERT_PEM_URL = "https://curl.se/ca/cacert.pem"
+CACERT_PEM_PATH = File.join(SRC_DIR, "cacert.pem")
+CACERT_SHA256 = "f66dff1bdf8f96060b8177976f8b7d9254bc89bc4db933d769f7384d28480bc9"
+
 IOS_DEPLOYMENT_TARGET = "18.0" # matches IPHONEOS_DEPLOYMENT_TARGET in the project
 
 # Functions the iOS SDK declares but doesn't let an app call. Autoconf finds them and Ruby then emits calls that fail App Store review or crash. From the xord/cruby recipe.
@@ -166,6 +179,7 @@ def download_and_verify!
   download_and_verify_tarball!(TARBALL_URL, TARBALL_PATH, RUBY_VERSION_SHA256, "ruby-#{RUBY_VERSION_PIN}.tar.gz")
   download_and_verify_tarball!(OPENSSL_TARBALL_URL, OPENSSL_TARBALL_PATH, OPENSSL_SHA256, "openssl-#{OPENSSL_VERSION_PIN}.tar.gz")
   download_and_verify_tarball!(LIBYAML_TARBALL_URL, LIBYAML_TARBALL_PATH, LIBYAML_SHA256, "yaml-#{LIBYAML_VERSION_PIN}.tar.gz")
+  download_and_verify_tarball!(CACERT_PEM_URL, CACERT_PEM_PATH, CACERT_SHA256, "cacert.pem")
 end
 
 def download_and_verify_tarball!(url, path, sha256, label)
@@ -740,6 +754,20 @@ def sanitize_rbconfig!(install_dir)
   puts "== sanitized rbconfig.rb installed under #{STDLIB_DEST}"
 end
 
+# Ships the Mozilla CA bundle (curl's cacert.pem) at the stdlib root. It bundles
+# via the existing stdlib folder reference (no new Xcode resource entry) and is
+# locatable at runtime as $LOAD_PATH.first/cacert.pem, which RubyRuntime loads
+# into OpenSSL::SSL::SSLContext::DEFAULT_CERT_STORE at boot. Lives under stdlib/
+# rather than its own resource because that's the one folder reference already
+# wired into Copy Bundle Resources -- adding a sibling would mean hand-editing the
+# pbxproj, and sanitize_rbconfig! already ships a non-stdlib file the same way.
+def install_ca_bundle!
+  abort "error: cacert.pem not downloaded -- run download_and_verify! first" unless File.exist?(CACERT_PEM_PATH)
+  dest = File.join(STDLIB_DEST, "cacert.pem")
+  FileUtils.cp(CACERT_PEM_PATH, dest)
+  puts "== CA bundle installed: #{File.size(dest)} bytes (Mozilla/curl cacert.pem) under #{STDLIB_DEST}"
+end
+
 def main
   check_host_ruby!
 
@@ -775,6 +803,7 @@ def main
   assert_stdlib_identical!(targets)
   install_stdlib!(install_dir_for("macosx-arm64"))
   sanitize_rbconfig!(install_dir_for("macosx-arm64"))
+  install_ca_bundle!
 
   puts "== done -- static libs, headers, and stdlib installed under #{VENDOR_DIR}"
 end

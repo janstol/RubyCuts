@@ -155,6 +155,24 @@ struct RubyRuntimeTests {
         #expect(result == "tls-ok")
     }
 
+    @Test func trustsBundledCACertificates() throws {
+        // Proves the boot wiring (RubyRuntime.configureTLS) loaded the bundled
+        // Mozilla CA bundle into OpenSSL's shared default cert store -- the one
+        // Net::HTTP's SSLContext#set_params assigns to every HTTPS connection
+        // that doesn't set its own cert_store. The first cert in cacert.pem is a
+        // self-signed trusted root; verifying it against DEFAULT_CERT_STORE
+        // succeeds only if the store actually contains it. An empty store (boot
+        // wiring broken, or the bundle missing from the build) rejects it, so
+        // this catches regressions offline -- no network, no live handshake.
+        let result = try RubyRuntime.shared.evaluate(
+            "require 'openssl'; "
+                + "pem = File.read(File.join($LOAD_PATH.first, 'cacert.pem')); "
+                + "cert = OpenSSL::X509::Certificate.new(pem); "
+                + "OpenSSL::SSL::SSLContext::DEFAULT_CERT_STORE.verify(cert) ? 'trusted' : 'untrusted'"
+        )
+        #expect(result == "trusted")
+    }
+
     @Test func loadPathIsExactlyTheBundledStdlib() throws {
         // The test that would have caught a dev-machine-only pass: without this, macOS
         // could keep working via stale .build-cruby paths seeded by ruby_init_loadpath()
