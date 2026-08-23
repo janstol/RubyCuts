@@ -208,4 +208,142 @@ struct RubyRuntimeTests {
         #expect(result == "Shift_JIS")
     }
 
+    // MARK: - run(_:): STDOUT/STDERR capture (Phase 4 partial -- ARGV/STDIN/ENV
+    // are deferred to the App Intents slice; this covers STDOUT/STDERR + error)
+
+    @Test func runCapturesPutsToStdout() {
+        // `puts` writes to $stdout; the captured stdout must hold it.
+        let result = RubyRuntime.shared.run("puts 'hello'")
+        #expect(result.stdout == "hello\n")
+        #expect(result.stderr.isEmpty)
+        #expect(result.errorMessage == nil)
+    }
+
+    @Test func runCapturesStderrExplicitly() {
+        // Writing to $stderr directly is captured separately from stdout.
+        let result = RubyRuntime.shared.run("$stderr.puts 'warn'")
+        #expect(result.stderr == "warn\n")
+        #expect(result.stdout.isEmpty)
+    }
+
+    @Test func runReturnsLastExpressionValue() {
+        // The last expression's to_s mirrors evaluate(); a bare expression with
+        // no puts has empty stdout but a meaningful result.
+        let result = RubyRuntime.shared.run("1 + 2")
+        #expect(result.result == "3")
+        #expect(result.stdout.isEmpty)
+        #expect(!result.hasError)
+    }
+
+    @Test func runRaisesPopulateErrorAndPreservePartialStdout() {
+        // A script that prints then raises: stdout holds what printed before the
+        // raise, and the error message is set -- the console shows both. This is
+        // the reason `run` is non-throwing (evaluate's throws path would drop the
+        // partial stdout).
+        let result = RubyRuntime.shared.run("puts 'before'; raise 'boom'")
+        #expect(result.stdout == "before\n")
+        #expect(result.hasError)
+        #expect(result.errorMessage == "boom")
+    }
+
+    @Test func runRestoresStdoutAfterRunning() {
+        // Capture must restore $stdout/$stderr afterward, or a later evaluate
+        // would silently write to a StringIO and return empty. Drives a `run`,
+        // then a plain `evaluate` whose puts should reach the real stdout (the
+        // returned result proves the eval ran; the point is it didn't error).
+        _ = RubyRuntime.shared.run("puts 'captured'")
+        // After run, $stdout must be the real STDOUT again (not a StringIO),
+        // otherwise this evaluate writes into the stale capture buffer.
+        let restored = try? RubyRuntime.shared.evaluate(
+            "$stdout == STDOUT ? 'restored' : 'still-captured'"
+        )
+        #expect(restored == "restored")
+    }
+
+    // MARK: - Top-level jumps (return/break/...) -- the shim's non-RAISE tag path
+    //
+    // Guards rubycuts_shim.c's rc_error_message_for_state: rb_eval_string_protect
+    // surfaces a top-level `return` as TAG_RETURN (not TAG_RAISE), and ec->errinfo
+    // is internal throw data, not a Ruby object. The old shim called
+    // rb_obj_as_string on it and crashed the process (SIGSEGV inside rb_longjmp),
+    // reproduced by running `return {}` in the console. The shim now synthesizes a
+    // message for non-RAISE tags. Kept in this serialized suite (not a separate
+    // one) so all VM-driving tests share one serial execution contract.
+
+    @Test func topLevelReturnDoesNotCrash() {
+        let result = RubyRuntime.shared.run("return {}")
+        #expect(result.hasError)
+        // Matches MRI's LocalJumpError wording for a top-level return.
+        #expect(result.errorMessage == "unexpected return")
+        #expect(result.stdout.isEmpty)
+    }
+
+    @Test func topLevelBreakReportsAnErrorWithoutCrashing() {
+        // A bare `break` at the top level is a syntax error (a real TAG_RAISE
+        // exception), not a TAG_BREAK jump -- so this exercises the shim's normal
+        // exception-message path, not the synthesized-message path. It must not
+        // crash and must report some error.
+        let result = RubyRuntime.shared.run("break")
+        #expect(result.hasError)
+    }
+
+    @Test func evaluateSurvivesTopLevelReturn() {
+        // The fix is in the shim, so evaluate (not just run) is protected too: a
+        // top-level return throws RubyError rather than crashing the runner.
+        #expect(throws: RubyError.self) {
+            _ = try RubyRuntime.shared.evaluate("return 1")
+        }
+    }
+
+    @Test func vmIsUsableAfterATopLevelReturn() throws {
+        // The throw data must be cleared so the VM is clean for later evals -- a
+        // corrupted errinfo would surface as a crash or stale error next time.
+        _ = RubyRuntime.shared.run("return {}")
+        let ok = try RubyRuntime.shared.evaluate("1 + 1")
+        #expect(ok == "2")
+    }
+
+    // MARK: - exit!/abort hardening
+    //
+    // Guards RubyRuntime.hardenProcessExit: exit!/abort call the real C exit()
+    // directly, bypassing rb_eval_string_protect's catch, so a bare `exit!`
+    // would kill the host app. Boot overrides Kernel#exit!/#abort to raise a
+    // catchable SystemExit instead, so the run fails rather than the app dying.
+
+    @Test func exitBangDoesNotKillTheHost() {
+        // Before the override this terminated the test runner. Now it surfaces as
+        // a SystemExit error and the process keeps running.
+        let result = RubyRuntime.shared.run("exit!")
+        #expect(result.hasError)
+        #expect(result.errorMessage == "SystemExit")
+    }
+
+    @Test func exitBangWithStatusIsCatchable() {
+        let result = RubyRuntime.shared.run("exit!(2)")
+        #expect(result.hasError)
+        #expect(result.errorMessage == "SystemExit")
+    }
+
+    @Test func abortDoesNotKillTheHost() {
+        // abort routes through exit! internally; the override makes it raise too.
+        let result = RubyRuntime.shared.run("abort")
+        #expect(result.hasError)
+        #expect(result.errorMessage == "SystemExit")
+    }
+
+    @Test func plainExitIsAlreadySafe() {
+        // Regression guard: plain `exit` raises SystemExit natively (no override
+        // needed) and was always caught. The message is MRI's "exit" string, not
+        // "SystemExit" like the exit! override produces -- the point here is just
+        // that it's caught and doesn't kill the host.
+        let result = RubyRuntime.shared.run("exit")
+        #expect(result.hasError)
+    }
+
+    @Test func vmIsUsableAfterAnExitBang() throws {
+        _ = RubyRuntime.shared.run("exit!")
+        let ok = try RubyRuntime.shared.evaluate("1 + 1")
+        #expect(ok == "2")
+    }
+
 }

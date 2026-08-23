@@ -54,17 +54,66 @@ int rubycuts_init(const char *stdlib_path) {
     return 0;
 }
 
+// RUBY_TAG_RAISE (0x6) is the only rb_eval_string_protect state where
+// rb_errinfo() holds a real Ruby exception object. The enum `ruby_tag_type` is
+// in CRuby's internal vm_core.h, not exposed by the public <ruby.h>, so the
+// value is pinned here. It has been stable across the entire CRuby 3.x ABI
+// (and since 1.9); this project pins CRuby 3.4.9 and updates it by hand, so a
+// bump is the place to re-check this constant.
+//
+// Why this matters: for every other nonzero state (return/break/next/redo/
+// retry/throw/fatal at the top level of the eval'd string), ec->errinfo points
+// at internal throw data, NOT a Ruby object. Calling rb_obj_as_string on that
+// throw data crashes the process -- rb_funcall hits `uncallable_object`, the
+// resulting rb_raise -> rb_longjmp then SIGSEGVs inside the longjmp mechanics
+// (seen via a repro running `return {}`). So the exception message is only
+// extracted for TAG_RAISE; all other states get a synthesized message matching
+// what `ruby -e` would raise (LocalJumpError: unexpected return, ...).
+#define RC_TAG_RAISE 0x6
+
+/// Returns a malloc'd human-readable message for a nonzero protect `state`.
+/// The caller frees it with `rubycuts_free`. For TAG_RAISE the message comes from
+/// the raised exception's `to_s`; for any other tag it is synthesized. Always
+/// clears `ec->errinfo` (the throw data / exception) before returning.
+static char *rc_error_message_for_state(int state) {
+    if (state == RC_TAG_RAISE) {
+        VALUE error = rb_errinfo();
+        rb_set_errinfo(Qnil);
+        if (error != Qnil) {
+            VALUE message = rb_obj_as_string(error);
+            return strdup(StringValueCStr(message));
+        }
+        return strdup("unknown Ruby error");
+    }
+
+    // A non-exception non-local exit. ec->errinfo is throw data, not an object
+    // -- clear it (a plain pointer store, safe) and synthesize a message. The
+    // wording mirrors MRI's LocalJumpError messages for top-level jumps.
+    rb_set_errinfo(Qnil);
+    switch (state) {
+        case 0x1: return strdup("unexpected return");
+        case 0x2: return strdup("unexpected break");
+        case 0x3: return strdup("unexpected next");
+        case 0x4: return strdup("unexpected retry");
+        case 0x5: return strdup("unexpected redo");
+        case 0x7: return strdup("unexpected throw");
+        case 0x8: return strdup("fatal error");
+        default: return strdup("unexpected control flow");
+    }
+}
+
 char *rubycuts_eval_to_string(const char *code, char **error_out) {
     int state = 0;
     // rb_eval_string_protect, never rb_eval_string: a raised exception in rb_eval_string longjmps past this C frame (and the Swift frames above it), which is undefined behavior. The _protect variant reports failure through `state` instead, letting us return normally either way.
     VALUE result = rb_eval_string_protect(code, &state);
 
     if (state != 0) {
-        VALUE error = rb_errinfo();
-        rb_set_errinfo(Qnil);
         if (error_out != NULL) {
-            VALUE message = rb_obj_as_string(error);
-            *error_out = strdup(StringValueCStr(message));
+            *error_out = rc_error_message_for_state(state);
+        } else {
+            // No caller interest in the message, but still clear errinfo so the
+            // throw data / exception doesn't leak into the next eval.
+            rb_set_errinfo(Qnil);
         }
         return NULL;
     }

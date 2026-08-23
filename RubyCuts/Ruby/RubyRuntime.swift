@@ -33,6 +33,68 @@ final class RubyRuntime {
         return try evalRaw(code)
     }
 
+    /// Runs `code` as a script with `$stdout`/`$stderr` captured, returning a
+    /// ``RunResult`` holding the captured output, the last expression's `to_s`,
+    /// and the exception message if it raised.
+    ///
+    /// Capture is done entirely in Ruby, not in the C shim: a fixed setup string
+    /// redirects `$stdout`/`$stderr` to `StringIO` objects stashed in `$cap_out`
+    /// /`$cap_err`, then `code` runs via ``evalRaw`` (the same path
+    /// ``evaluate`` uses, so user code never gets string-escaped into a wrapper),
+    /// then the captured strings are read back and `$stdout`/`$stderr` restored.
+    /// Five short evals per run -- cheap, and it leaves the C shim untouched.
+    ///
+    /// **Non-throwing on purpose:** so stdout/stderr captured *before* a raise
+    /// survive alongside the error message (the console shows all three), which
+    /// ``evaluate``'s `throws` path would drop. Boot failure is returned as a
+    /// `RunResult` with `errorMessage` set, not thrown.
+    ///
+    /// **Known follow-up:** like ``evaluate``, this is synchronous and runs on
+    /// the main actor, so a long-running script blocks the UI -- the "live
+    /// console" streams only after the run completes, not as it goes. True
+    /// streaming needs the VM off the main actor (the redesign flagged on this
+    /// type), and is deferred. For typical short scripts the run is instant.
+    ///
+    /// **Known follow-up:** if the script reassigns `$stdout`/`$stderr` itself,
+    /// that output isn't captured -- arguably correct (the script redirected
+    /// it), and an edge case for V1.
+    func run(_ code: String) -> RunResult {
+        do {
+            try bootIfNeeded()
+        } catch {
+            return RunResult(
+                stdout: "", stderr: "", result: "",
+                errorMessage: Self.describe(error)
+            )
+        }
+
+        // Redirect $stdout/$stderr to StringIO. Fixed string -- no user code,
+        // so no escaping concerns. Best-effort: if `require 'stringio'` fails
+        // (stringio should be a statically-linked extension), the run still
+        // proceeds, just with empty captured streams.
+        _ = try? evalRaw(
+            "require 'stringio'; "
+                + "$cap_out = StringIO.new; $cap_err = StringIO.new; "
+                + "$stdout = $cap_out; $stderr = $cap_err"
+        )
+        // Always restore, even if `code` raises (evalRaw throws on raise).
+        defer {
+            _ = try? evalRaw("$stdout = STDOUT; $stderr = STDERR")
+        }
+
+        var result = RunResult(stdout: "", stderr: "", result: "", errorMessage: nil)
+        do {
+            result.result = try evalRaw(code)
+        } catch {
+            result.errorMessage = Self.describe(error)
+        }
+
+        // Read back whatever was printed before the run ended (or raised).
+        result.stdout = (try? evalRaw("$cap_out.string")) ?? ""
+        result.stderr = (try? evalRaw("$cap_err.string")) ?? ""
+        return result
+    }
+
     /// Evaluates `code` against the already-booted VM. The caller must have booted
     /// first (via `bootIfNeeded`); this is the no-boot wrapper `evaluate` builds
     /// on, and the one boot itself uses for one-time setup that mustn't re-enter
@@ -80,6 +142,47 @@ final class RubyRuntime {
         // scripts/build-cruby.rb), so `require 'rbconfig'` resolves it.
         loadRbConfig()
         configureTLS()
+        hardenProcessExit()
+    }
+
+    /// Overrides `Kernel#exit!` and `Kernel#abort` to raise a catchable
+    /// `SystemExit` instead of terminating the host process.
+    ///
+    /// `exit!` (and `abort`, which routes through it) calls the real C `exit()`
+    /// directly, bypassing `rb_eval_string_protect`'s catch -- so a script
+    /// containing `exit!` would kill the whole app, not just fail the run. Plain
+    /// `exit` already raises `SystemExit`, which `_protect` catches as a normal
+    /// exception, so it needs no override. Redefining `exit!`/`abort` in Ruby
+    /// shadows the C implementations: a `def` in `module Kernel` replaces the
+    /// registered C method, and the raised `SystemExit` is caught downstream as
+    /// `TAG_RAISE` and surfaced as a run error -- exactly the "script exits ->
+    /// run fails" behavior the PRD wants for both the console and App Intents.
+    ///
+    /// Best-effort and non-fatal: if the redefine fails, Ruby itself still works
+    /// -- only `exit!`/`abort` would still terminate the host.
+    private func hardenProcessExit() {
+        let code = """
+            module Kernel
+              def exit!(status = true)
+                code = case status
+                       when true then 0
+                       when false then 1
+                       when nil then 0
+                       else status.to_i
+                       end
+                raise SystemExit.new(code)
+              end
+              def abort(msg = nil)
+                $stderr.puts msg if msg
+                raise SystemExit.new(1)
+              end
+            end
+            """
+        do {
+            _ = try evalRaw(code)
+        } catch {
+            // Non-fatal: exit!/abort would still terminate the host.
+        }
     }
 
     /// Eagerly loads the sanitized `rbconfig.rb` so `RbConfig` is defined at boot,
@@ -122,6 +225,19 @@ final class RubyRuntime {
         } catch {
             // Non-fatal: TLS verification degrades; Ruby itself still works.
         }
+    }
+
+    /// Maps a thrown ``RubyError`` to a short human-readable string for
+    /// ``run(_:)``'s `errorMessage` field. `evaluate` throws the same error;
+    /// `run` catches it and surfaces the message instead.
+    private static func describe(_ error: Error) -> String {
+        if let rubyError = error as? RubyError {
+            switch rubyError {
+            case .evaluationFailed(let message): return message
+            case .initializationFailed(let message): return message
+            }
+        }
+        return error.localizedDescription
     }
 
     /// Locates the bundled CA bundle: `stdlib/cacert.pem`. Returns `nil` if the

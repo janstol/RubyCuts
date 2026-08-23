@@ -4,7 +4,7 @@ import SwiftUI
 struct RubyCutsApp: App {
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ScriptListView()
         }
     }
 }
