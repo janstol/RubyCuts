@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 
 @testable import RubyCuts
@@ -344,6 +345,59 @@ struct RubyRuntimeTests {
         _ = RubyRuntime.shared.run("exit!")
         let ok = try RubyRuntime.shared.evaluate("1 + 1")
         #expect(ok == "2")
+    }
+
+    // MARK: - "Run Ruby Script" App Intent integration (output-side, Phase 5)
+    //
+    // The one VM-driving contract for the App Intents slice: seed a temp-dir
+    // store, resolve a stored script through the ``ScriptEntity`` picker path
+    // (entity -> ``Script`` -> ``ScriptStore/source(of:)``), run it via
+    // ``runToOutput(_:)``, and confirm the captured `$stdout` flows out to the
+    // intent's return value. Kept in this `.serialized` suite -- not a second
+    // one -- so all VM-driving tests share one serial execution contract (the
+    // cross-suite double-load hazard the suite header warns about). The pure
+    // ``output(from:)`` decision is covered separately in `IntentOutputTests`.
+
+    @Test func runRubyScriptIntentFlowsStdoutOut() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appending(component: "RubyCutsTests-\(UUID().uuidString)")
+        let store = ScriptStore(directoryURL: dir)
+        try store.ensureDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let script = try store.create(name: "intent-smoke", source: "puts 'from-script'")
+        let entity = ScriptEntity(script)
+
+        // The intent's resolve path: ``ScriptEntity/script`` ->
+        // ``ScriptStore/source(of:)`` -> ``runToOutput(_:)``.
+        let resolved = try #require(entity.script)
+        let source = try store.source(of: resolved)
+        let output = try runToOutput(source)
+
+        #expect(output == "from-script\n")
+    }
+
+    @Test func runRubyScriptIntentFailsOnRaise() throws {
+        // Same path as above but the script raises: ``runToOutput`` throws a
+        // ``RubyRunError`` carrying the Ruby message, which the intent surfaces
+        // in Shortcuts. Proves the error contract, not just the happy path.
+        let dir = FileManager.default.temporaryDirectory
+            .appending(component: "RubyCutsTests-\(UUID().uuidString)")
+        let store = ScriptStore(directoryURL: dir)
+        try store.ensureDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let script = try store.create(name: "intent-fail", source: "raise 'boom'")
+        let entity = ScriptEntity(script)
+
+        let resolved = try #require(entity.script)
+        let source = try store.source(of: resolved)
+
+        let error = try #require(throws: RubyRunError.self) {
+            try runToOutput(source)
+        }
+
+        #expect(error.message == "boom")
     }
 
 }
