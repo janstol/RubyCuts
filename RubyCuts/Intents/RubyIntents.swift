@@ -1,6 +1,15 @@
 import AppIntents
 import Foundation
 
+/// Text-input options used at each text `@Parameter` below: multiline, with
+/// autocorrect / smart quotes / smart dashes / auto-capitalization all off.
+/// Shortcuts' defaults (smart quotes, sentence capitalization, autocorrect)
+/// would silently mangle Ruby source or piped data -- e.g. turning `'hi'` into
+/// `'hi'` with curly quotes, which is a syntax error in Ruby. Inlined at each
+/// `@Parameter` (rather than shared via a `let`) because the App Intents
+/// metadata extractor parses each `@Parameter`'s arguments at compile time and
+/// requires a direct `String.IntentInputOptions` initializer call.
+
 /// The error surfaced in Shortcuts when a "Run ..." Ruby intent fails. Conforms
 /// to `CustomLocalizedStringResourceConvertible`, which is the protocol the App
 /// Intents failure UI actually reads -- the PRD 3.1 contract that a failed run
@@ -73,13 +82,19 @@ private func combinedMessage(_ result: RunResult) -> String {
 /// next Shortcut action to consume, or throws a ``RubyRunError`` describing the
 /// failure.
 ///
+/// `input` carries the ARGV/STDIN/ENV a Shortcut forwarded in; it defaults to
+/// ``RunInput/empty`` so callers that don't pass input (the existing test paths)
+/// stay on the no-input run. The pure ``output(from:)`` contract is unchanged,
+/// so `IntentOutputTests` is unaffected -- this is the only side-effectful
+/// caller.
+///
 /// `@MainActor` because ``RubyRuntime/shared`` is pinned to the main actor (the
 /// VM is single-threaded); the App Intent `perform()` is `@MainActor` too, so
 /// the call site is already there. The same long-script-blocks-UI caveat as the
 /// console applies -- true backgrounding is the later threading redesign.
 @MainActor
-func runToOutput(_ source: String) throws -> String {
-    let result = RubyRuntime.shared.run(source)
+func runToOutput(_ source: String, input: RunInput = .empty) throws -> String {
+    let result = RubyRuntime.shared.run(source, input: input)
     return try output(from: result).get()
 }
 
@@ -88,11 +103,62 @@ func runToOutput(_ source: String) throws -> String {
 /// the code raises or writes to `$stderr`, surfacing the Ruby message in the
 /// Shortcuts failure UI.
 ///
-/// This is the whole-product point of PRD 3.1 -- composing Ruby from Shortcuts
-/// -- without the ARGV/STDIN/ENV input half (deferred to the Phase 4 input
-/// slice; this is the output side only).
+/// The three input parameters are all optional with empty defaults, so a simple
+/// `puts "hi"` isn't cluttered with required fields -- ARGV/STDIN/Environment
+/// are filled only when the script reads input. ARGV is a Shortcuts List of
+/// strings (each becomes one `ARGV` element); STDIN is a string piped from a
+/// previous action (fed to `$stdin`); Environment is a `KEY=value`-per-line
+/// text field parsed by ``parseEnv(_:)`` into `ENV` entries.
 struct RunInlineRubyIntent: AppIntent {
-    @Parameter(title: "Code")
+    @Parameter(
+        title: "ARGV",
+        description: "One ARGV element per list entry. e.g. two entries make ARGV[0] and ARGV[1].",
+        default: []
+    )
+    var argv: [String]
+
+    @Parameter(
+        title: "STDIN",
+        description: "Text piped from the previous action. Read it in Ruby with $stdin.read.",
+        default: "",
+        inputOptions: String.IntentInputOptions(
+            capitalizationType: .none,
+            multiline: true,
+            autocorrect: false,
+            smartQuotes: false,
+            smartDashes: false
+        )
+    )
+    var stdin: String
+
+    @Parameter(
+        title: "Environment",
+        description: "One KEY=value per line. Example: TOKEN=secret sets ENV[\"TOKEN\"].",
+        default: "",
+        inputOptions: String.IntentInputOptions(
+            capitalizationType: .none,
+            multiline: true,
+            autocorrect: false,
+            smartQuotes: false,
+            smartDashes: false
+        )
+    )
+    var env: String
+
+    // Code is declared last so Shortcuts renders the input fields above it and
+    // the (multiline) code editor below -- the script is the main payload, so it
+    // gets the large field under the smaller inputs.
+    @Parameter(
+        title: "Code",
+        description: "Ruby to run, e.g. puts ARGV[0] or puts $stdin.read.",
+        inputOptions: String.IntentInputOptions(
+            capitalizationType: .none,
+            multiline: true,
+            autocorrect: false,
+            smartQuotes: false,
+            smartDashes: false
+        )
+    )
     var code: String
 
     static let title: LocalizedStringResource = "Run Inline Ruby"
@@ -103,7 +169,8 @@ struct RunInlineRubyIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult & ReturnsValue<String> {
-        .result(value: try runToOutput(code))
+        let input = RunInput(argv: argv, stdin: stdin, env: parseEnv(env))
+        return .result(value: try runToOutput(code, input: input))
     }
 }
 
@@ -118,8 +185,46 @@ struct RunInlineRubyIntent: AppIntent {
 /// read throws and the intent fails with "script not found" -- acceptable for
 /// V1 (noted in the PRD).
 struct RunRubyScriptIntent: AppIntent {
-    @Parameter(title: "Script")
+    @Parameter(
+        title: "Script",
+        description: "A saved Ruby script from your library."
+    )
     var script: ScriptEntity
+
+    @Parameter(
+        title: "ARGV",
+        description: "One ARGV element per list entry. e.g. two entries make ARGV[0] and ARGV[1].",
+        default: []
+    )
+    var argv: [String]
+
+    @Parameter(
+        title: "STDIN",
+        description: "Text piped from the previous action. Read it in Ruby with $stdin.read.",
+        default: "",
+        inputOptions: String.IntentInputOptions(
+            capitalizationType: .none,
+            multiline: true,
+            autocorrect: false,
+            smartQuotes: false,
+            smartDashes: false
+        )
+    )
+    var stdin: String
+
+    @Parameter(
+        title: "Environment",
+        description: "One KEY=value per line. Example: TOKEN=secret sets ENV[\"TOKEN\"].",
+        default: "",
+        inputOptions: String.IntentInputOptions(
+            capitalizationType: .none,
+            multiline: true,
+            autocorrect: false,
+            smartQuotes: false,
+            smartDashes: false
+        )
+    )
+    var env: String
 
     static let title: LocalizedStringResource = "Run Ruby Script"
 
@@ -133,6 +238,7 @@ struct RunRubyScriptIntent: AppIntent {
             throw RubyRunError(message: "script not found")
         }
         let source = try ScriptStore.userScripts.source(of: resolved)
-        return .result(value: try runToOutput(source))
+        let input = RunInput(argv: argv, stdin: stdin, env: parseEnv(env))
+        return .result(value: try runToOutput(source, input: input))
     }
 }

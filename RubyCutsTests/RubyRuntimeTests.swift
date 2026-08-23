@@ -400,4 +400,77 @@ struct RubyRuntimeTests {
         #expect(error.message == "boom")
     }
 
+    // MARK: - run(_:input:) -- ARGV / STDIN / ENV plumbing (Phase 4 input side)
+    //
+    // The VM-driving contract for the input slice: a non-empty ``RunInput``
+    // reaches the script as `ARGV` / `$stdin` / `ENV`, an empty one runs today's
+    // plain capture path, and the teardown restores prior state so a Shortcut
+    // run's env never bleeds into a later console `evaluate`. Same `.serialized`
+    // suite as every other VM-driving test -- the single interpreter is
+    // non-thread-safe, so all VM work shares one serial execution contract.
+
+    @Test func runReceivesArgv() {
+        let result = RubyRuntime.shared.run("puts ARGV[0]", input: RunInput(argv: ["hello"]))
+        #expect(result.stdout == "hello\n")
+        #expect(!result.hasError)
+    }
+
+    @Test func runReceivesStdin() {
+        let result = RubyRuntime.shared.run("puts $stdin.read", input: RunInput(stdin: "data"))
+        #expect(result.stdout == "data\n")
+        #expect(!result.hasError)
+    }
+
+    @Test func runReceivesEnv() {
+        let result = RubyRuntime.shared.run(
+            "puts ENV['MYKEY']", input: RunInput(env: [("MYKEY", "val")])
+        )
+        #expect(result.stdout == "val\n")
+        #expect(!result.hasError)
+    }
+
+    @Test func runReceivesArgvStdinAndEnvTogether() {
+        // All three channels coexist: ARGV joins, $stdin reads, ENV looks up.
+        let input = RunInput(argv: ["a", "b"], stdin: "data", env: [("K", "v")])
+        let result = RubyRuntime.shared.run(
+            "puts ARGV.join(','); puts $stdin.read; puts ENV['K']", input: input
+        )
+        #expect(result.stdout == "a,b\ndata\nv\n")
+        #expect(!result.hasError)
+    }
+
+    @Test func runWithEmptyInputLeavesArgvEmpty() {
+        // The opt-in path: an empty RunInput runs the plain capture (no
+        // ARGV setup), so ARGV is its default empty array.
+        let result = RubyRuntime.shared.run("puts ARGV.length", input: .empty)
+        #expect(result.stdout == "0\n")
+        #expect(!result.hasError)
+    }
+
+    @Test func envRunDoesNotLeakIntoLaterEvaluations() throws {
+        // Teardown must restore each ENV key to its prior state (absent here),
+        // so a value a Shortcut run set doesn't bleed into the console or the
+        // next run. `ENV['RC_X']` returns nil after teardown -> `nil.to_s` == "".
+        _ = RubyRuntime.shared.run(
+            "puts ENV['RC_X']", input: RunInput(env: [("RC_X", "secret")])
+        )
+        let leaked = try RubyRuntime.shared.evaluate("ENV['RC_X'].to_s")
+        #expect(leaked == "")
+    }
+
+    @Test func envRunRestoresAPreviouslyPresentValue() throws {
+        // When the key already had a value before the run, teardown restores
+        // that prior value rather than deleting the key. Set a baseline in the
+        // VM, run with an input that overwrites it, then confirm the baseline
+        // survived.
+        _ = try RubyRuntime.shared.evaluate("ENV['RC_Y'] = 'original'")
+        _ = RubyRuntime.shared.run(
+            "puts ENV['RC_Y']", input: RunInput(env: [("RC_Y", "overwritten")])
+        )
+        let restored = try RubyRuntime.shared.evaluate("ENV['RC_Y']")
+        #expect(restored == "original")
+        // Clean up the baseline so no test state leaks forward.
+        _ = try? RubyRuntime.shared.evaluate("ENV.delete('RC_Y')")
+    }
+
 }

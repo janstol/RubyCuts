@@ -55,10 +55,29 @@ final class RubyRuntime {
     /// streaming needs the VM off the main actor (the redesign flagged on this
     /// type), and is deferred. For typical short scripts the run is instant.
     ///
+    /// **Input is opt-in.** With an empty ``RunInput`` (the default) this is
+    /// byte-for-byte today's path: the five-eval StringIO capture, no
+    /// `require 'base64'`, no ARGV/`$stdin`/ENV setup, so the in-app console and
+    /// every existing caller pay zero overhead. A non-empty `input` runs one
+    /// extra setup eval before `code` (and one teardown eval in the existing
+    /// `defer`) that injects *only* the channels `input` provides, via base64:
+    /// Swift base64-encodes the values into plain ASCII literals and Ruby
+    /// `Base64.decode64`s them back. Base64 is safe in a double-quoted literal
+    /// (its alphabet is `A-Za-z0-9+/=`, no quotes/backslashes/`#{}`), so there's
+    /// no string-escaping and it round-trips arbitrary bytes -- including NULs.
+    /// The base64 transport lives here, not in the script: a user's `.rb` just
+    /// reads `ARGV[0]`, `$stdin.read`, `ENV["KEY"]` as normal Ruby.
+    ///
+    /// **Teardown always runs:** the `defer` restores `$stdout`/`$stderr` and,
+    /// when input was provided, ARGV/`$stdin`/ENV -- even if `code` raised. ENV
+    /// teardown restores each key to its prior value (or deletes it if it was
+    /// absent before setup set it), so a value a Shortcut run set never leaks
+    /// into a later console `evaluate("ENV['X']")` or the next run.
+    ///
     /// **Known follow-up:** if the script reassigns `$stdout`/`$stderr` itself,
     /// that output isn't captured -- arguably correct (the script redirected
     /// it), and an edge case for V1.
-    func run(_ code: String) -> RunResult {
+    func run(_ code: String, input: RunInput = .empty) -> RunResult {
         do {
             try bootIfNeeded()
         } catch {
@@ -77,8 +96,23 @@ final class RubyRuntime {
                 + "$cap_out = StringIO.new; $cap_err = StringIO.new; "
                 + "$stdout = $cap_out; $stderr = $cap_err"
         )
-        // Always restore, even if `code` raises (evalRaw throws on raise).
+
+        // Inject ARGV/$stdin/ENV only when the caller actually provided input.
+        // An empty RunInput skips this (and the matching teardown below), so the
+        // no-input path is exactly today's five-eval capture -- the base64
+        // transport never runs.
+        let hasInput = !input.isEmpty
+        if hasInput {
+            _ = try? evalRaw(Self.inputSetup(for: input))
+        }
+        // Always restore, even if `code` raises (evalRaw throws on raise). Input
+        // teardown fires before the stdout/stderr restore; it touches ARGV/
+        // $stdin/ENV only, so it doesn't affect the captured buffers already
+        // read above the restore.
         defer {
+            if hasInput {
+                _ = try? evalRaw(Self.inputTeardown(for: input))
+            }
             _ = try? evalRaw("$stdout = STDOUT; $stderr = STDERR")
         }
 
@@ -225,6 +259,79 @@ final class RubyRuntime {
         } catch {
             // Non-fatal: TLS verification degrades; Ruby itself still works.
         }
+    }
+
+    /// Builds the one-time setup Ruby that injects `input`'s channels into the
+    /// VM before the user's code runs. Each value is base64-encoded by Swift and
+    /// decoded in Ruby, so the embedded literals are plain ASCII with no
+    /// escaping (see ``run(_:input:)``). Only the channels `input` provides are
+    /// set, so a run with ARGV-only doesn't touch `$stdin` or `ENV`.
+    private static func inputSetup(for input: RunInput) -> String {
+        var parts: [String] = ["require 'base64'"]
+
+        if !input.argv.isEmpty {
+            let encoded = input.argv.map { "\"\(base64($0))\"" }.joined(separator: ", ")
+            parts.append(
+                "$rc_argv_backup = ARGV.dup; "
+                    + "ARGV.replace([\(encoded)].map { |s| Base64.decode64(s) })"
+            )
+        }
+
+        if !input.stdin.isEmpty {
+            parts.append(
+                "$rc_stdin_backup = $stdin; "
+                    + "$stdin = StringIO.new(Base64.decode64(\"\(base64(input.stdin))\"))"
+            )
+        }
+
+        if !input.env.isEmpty {
+            let pairs = input.env.map { (k, v) in
+                "[\"\(base64(k))\", \"\(base64(v))\"]"
+            }.joined(separator: ", ")
+            parts.append(
+                "$rc_env_backup = {}; "
+                    + "[\(pairs)].each { |k, v| dk = Base64.decode64(k); "
+                    + "$rc_env_backup[dk] = ENV[dk]; ENV[dk] = Base64.decode64(v) }"
+            )
+        }
+
+        return parts.joined(separator: "; ")
+    }
+
+    /// Builds the teardown Ruby that restores the channels ``inputSetup(for:)``
+    /// mutated, in the same order setup touched them. Restores ARGV and
+    /// `$stdin` from their saved backups, and restores each ENV key to its prior
+    /// value (deleting it if it was absent before setup set it), then clears the
+    /// backup globals. Runs in `run`'s `defer`, so it fires even when the user's
+    /// code raised -- the point being a Shortcut run's env never bleeds into a
+    /// later console evaluation or the next run.
+    private static func inputTeardown(for input: RunInput) -> String {
+        var parts: [String] = []
+
+        if !input.argv.isEmpty {
+            parts.append("ARGV.replace($rc_argv_backup); $rc_argv_backup = nil")
+        }
+        if !input.stdin.isEmpty {
+            parts.append("$stdin = $rc_stdin_backup; $rc_stdin_backup = nil")
+        }
+        if !input.env.isEmpty {
+            // Parenthesize the assignment: Ruby's ternary binds tighter than
+            // `=`, so `v.nil? ? ENV.delete(k) : ENV[k] = v` would mis-parse.
+            parts.append(
+                "$rc_env_backup.each { |k, v| v.nil? ? ENV.delete(k) : (ENV[k] = v) }; "
+                    + "$rc_env_backup = nil"
+            )
+        }
+
+        return parts.joined(separator: "; ")
+    }
+
+    /// Base64-encodes `string` for embedding in a Ruby double-quoted literal.
+    /// Standard base64 (with `+`/`/`/`=`) is safe in such a literal: its
+    /// alphabet contains no quote, backslash, or `#`, so no Ruby string-escaping
+    /// is needed, and it round-trips arbitrary bytes including NULs.
+    private static func base64(_ string: String) -> String {
+        Data(string.utf8).base64EncodedString()
     }
 
     /// Maps a thrown ``RubyError`` to a short human-readable string for
