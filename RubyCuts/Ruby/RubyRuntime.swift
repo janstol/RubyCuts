@@ -189,6 +189,7 @@ final class RubyRuntime {
         configureTLS()
         hardenProcessExit()
         installNativeBridge()
+        installGemPaths()
     }
 
     /// Overrides `Kernel#exit!` and `Kernel#abort` to raise a catchable
@@ -249,6 +250,43 @@ final class RubyRuntime {
         }
     }
 
+    /// Appends every installed gem's `lib/` directory to `$LOAD_PATH`, so a
+    /// gem installed in a previous run is requireable from a fresh boot.
+    /// `GemInstaller` calls ``appendLoadPath(_:)`` directly right after a
+    /// successful install, so a gem is requireable without restarting the
+    /// app -- this is only the boot-time half of that contract.
+    ///
+    /// Best-effort and non-fatal, matching the rest of boot: a corrupt or
+    /// unreadable gem store just means gems degrade, not that Ruby itself
+    /// fails to boot.
+    private func installGemPaths() {
+        guard let gems = try? GemStore.installedGems.list() else { return }
+        for gem in gems {
+            appendLoadPath(gem.libURL)
+        }
+    }
+
+    /// Appends `directory` to `$LOAD_PATH` if it isn't already there.
+    ///
+    /// **Append, never prepend:** ``configureTLS()`` reads `$LOAD_PATH.first`
+    /// to locate `cacert.pem`, and stdlib should always win over a
+    /// same-named gem. The path crosses into Ruby base64-encoded via
+    /// ``base64(_:)``, the same transport ``run(_:input:)`` uses, so
+    /// arbitrary path characters need no Ruby string-escaping.
+    ///
+    /// Best-effort: a failed eval here just means one gem's directory
+    /// doesn't join `$LOAD_PATH`, not that the caller's larger operation
+    /// (boot, or a fresh install) fails.
+    func appendLoadPath(_ directory: URL) {
+        let pathB64 = Self.base64(directory.path)
+        let code = """
+            require 'base64'
+            path = Base64.decode64("\(pathB64)")
+            $LOAD_PATH << path unless $LOAD_PATH.include?(path)
+            """
+        _ = try? evalRaw(code)
+    }
+
     /// Eagerly loads the sanitized `rbconfig.rb` so `RbConfig` is defined at boot,
     /// matching a normal MRI boot (see ``bootIfNeeded``). Best-effort and
     /// non-fatal: if the file is missing or rejected, Ruby itself still works --
@@ -279,7 +317,9 @@ final class RubyRuntime {
     }
 
     /// Loads the bundled Mozilla CA bundle (`stdlib/cacert.pem`) into OpenSSL's
-    /// shared default cert store so `Net::HTTP` over HTTPS can verify peers.
+    /// shared default cert store so `Net::HTTP` over HTTPS can verify peers,
+    /// and redefines `OpenSSL::X509::Store#set_default_paths` to do the same
+    /// for any *other* store a gem builds itself.
     ///
     /// OpenSSL's compiled-in `--openssldir` is a build-machine path that doesn't
     /// exist on device, so `OpenSSL::SSL::SSLContext::DEFAULT_CERT_STORE.set_default_paths` (run when `openssl/ssl.rb` loads) finds no trusted roots and every
@@ -290,16 +330,32 @@ final class RubyRuntime {
     /// `SSL_CERT_FILE` env var (Ruby's openssl ext doesn't honor one). `$LOAD_PATH.first` is the bundled stdlib dir (the single load-path entry), so the PEM is
     /// locatable in Ruby without a Swift-to-Ruby path round-trip.
     ///
+    /// **The `set_default_paths` override is what Phase 7 gems need.** A gem
+    /// isn't obligated to rely on `Net::HTTP`'s `DEFAULT_CERT_STORE`
+    /// fallback -- `httparty`, for one, builds its own
+    /// `OpenSSL::X509::Store.new.tap { |s| s.set_default_paths }` and assigns
+    /// it directly as `http.cert_store`, bypassing `DEFAULT_CERT_STORE`
+    /// entirely. Since the real system default paths are always empty on
+    /// this platform anyway, redefining `set_default_paths` to load the
+    /// bundled PEM instead -- for every `X509::Store`, not just
+    /// `DEFAULT_CERT_STORE` -- fixes that gem and any future one built the
+    /// same way, without a per-gem patch.
+    ///
     /// Best-effort and non-fatal: if the bundle is missing or rejected, Ruby itself
     /// still works -- only TLS peer verification degrades (failing later with a
     /// cert error). Requiring openssl here is eager, but only when a bundle is
     /// present, and it's a one-time cost on the first `evaluate` (boot).
     private func configureTLS() {
         guard Self.bundledCACertURL() != nil else { return }
-        let code =
-            "require 'openssl'; "
-            + "OpenSSL::SSL::SSLContext::DEFAULT_CERT_STORE.add_file("
-            + "File.join($LOAD_PATH.first, 'cacert.pem'))"
+        let code = """
+            require 'openssl'
+            OpenSSL::SSL::SSLContext::DEFAULT_CERT_STORE.add_file(File.join($LOAD_PATH.first, 'cacert.pem'))
+            class OpenSSL::X509::Store
+              def set_default_paths
+                add_file(File.join($LOAD_PATH.first, 'cacert.pem'))
+              end
+            end
+            """
         do {
             _ = try evalRaw(code)
         } catch {
@@ -376,7 +432,10 @@ final class RubyRuntime {
     /// Standard base64 (with `+`/`/`/`=`) is safe in such a literal: its
     /// alphabet contains no quote, backslash, or `#`, so no Ruby string-escaping
     /// is needed, and it round-trips arbitrary bytes including NULs.
-    private static func base64(_ string: String) -> String {
+    ///
+    /// Internal (not `private`) so ``GemArchive`` can reuse the same
+    /// transport for filesystem paths, rather than re-deriving it.
+    static func base64(_ string: String) -> String {
         Data(string.utf8).base64EncodedString()
     }
 

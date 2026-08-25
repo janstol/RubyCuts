@@ -16,6 +16,7 @@ struct ScriptListView: View {
     /// list state.
     @State private var newName = "Untitled"
     @State private var isPresentingNewAlert = false
+    @State private var isPresentingGems = false
 
     init(library: ScriptLibrary = ScriptLibrary()) {
         // `_library = State(initialValue:)` lets previews and tests inject a
@@ -44,6 +45,16 @@ struct ScriptListView: View {
                     Label("New Script", systemImage: "plus")
                 }
             }
+            ToolbarItem(placement: .secondaryAction) {
+                Button {
+                    isPresentingGems = true
+                } label: {
+                    Label("Gems", systemImage: "shippingbox")
+                }
+            }
+        }
+        .sheet(isPresented: $isPresentingGems) {
+            GemListView()
         }
         .alert("New Script", isPresented: $isPresentingNewAlert) {
             TextField("Name", text: $newName)

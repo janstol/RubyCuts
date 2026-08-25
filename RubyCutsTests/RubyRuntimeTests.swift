@@ -192,15 +192,39 @@ struct RubyRuntimeTests {
         #expect(result == "trusted")
     }
 
-    @Test func loadPathIsExactlyTheBundledStdlib() throws {
+    @Test func setDefaultPathsOnAFreshStoreAlsoTrustsTheBundledCACertificates() throws {
+        // Found live, testing Phase 7: httparty doesn't rely on Net::HTTP's
+        // DEFAULT_CERT_STORE fallback -- it builds its own
+        // OpenSSL::X509::Store.new.tap(&:set_default_paths) and assigns it
+        // directly as the connection's cert_store, bypassing
+        // DEFAULT_CERT_STORE entirely. Guards RubyRuntime.configureTLS's
+        // redefinition of X509::Store#set_default_paths, which every store
+        // built that way -- not just DEFAULT_CERT_STORE -- now picks up.
+        let result = try RubyRuntime.shared.evaluate(
+            "require 'openssl'; "
+                + "pem = File.read(File.join($LOAD_PATH.first, 'cacert.pem')); "
+                + "cert = OpenSSL::X509::Certificate.new(pem); "
+                + "store = OpenSSL::X509::Store.new; store.set_default_paths; "
+                + "store.verify(cert) ? 'trusted' : 'untrusted'"
+        )
+        #expect(result == "trusted")
+    }
+
+    @Test func loadPathIsExactlyTheBundledStdlibPlusAnyInstalledGems() throws {
         // The test that would have caught a dev-machine-only pass: without this, macOS
         // could keep working via stale .build-cruby paths seeded by ruby_init_loadpath()
-        // while the same code silently ships broken on device.
-        let count = try RubyRuntime.shared.evaluate("$LOAD_PATH.length")
-        #expect(count == "1")
+        // while the same code silently ships broken on device. Widened for Phase 7:
+        // `installGemPaths()` now appends every installed gem's `lib/` dir after
+        // stdlib, so the old "exactly one entry" assertion no longer holds -- what
+        // must still hold is that stdlib leads (`configureTLS()` depends on that
+        // for locating `cacert.pem`) and every other entry sits under the gems root.
+        let firstEntry = try RubyRuntime.shared.evaluate("$LOAD_PATH.first")
+        #expect(firstEntry.hasSuffix("/stdlib"))
 
-        let lastEntry = try RubyRuntime.shared.evaluate("$LOAD_PATH.last")
-        #expect(lastEntry.hasSuffix("/stdlib"))
+        let gemsRoot = GemStore.installedGems.directoryURL.path
+        let remainingCode = "$LOAD_PATH.drop(1).all? { |p| p.start_with?(\"\(gemsRoot)\") }"
+        let remainingUnderGemsRoot = try RubyRuntime.shared.evaluate(remainingCode)
+        #expect(remainingUnderGemsRoot == "true")
     }
 
     @Test func reportsEncodingDatabaseIsLoaded() throws {
