@@ -162,6 +162,31 @@ struct GemResolverTests {
         }
     }
 
+    @Test func aDependencyAlreadySatisfiedByABundledGemIsNeverFetched() async throws {
+        // Mirrors what GemInstaller.installedVersionsByName() actually does
+        // since Phase 7's sqlite3 slice: seed `installed` with every
+        // BundledGem before resolving, so a gem that depends on sqlite3
+        // resolves as already-satisfied. `catalog` deliberately has no
+        // "sqlite3" entry -- if the resolver ever tried to fetch it despite
+        // the seed, StubRubyGemsAPI would raise `gemNotFound` and this test
+        // would fail, not silently pass.
+        let catalog: [String: [StubRubyGemsAPI.Version]] = [
+            "needs-sqlite3": [
+                StubRubyGemsAPI.Version("1.0.0", dependencies: [("sqlite3", ">= 0")])
+            ]
+        ]
+        let resolver = GemResolver(api: StubRubyGemsAPI(catalog: catalog))
+        let installed = ["sqlite3": try #require(GemVersion("2.9.6"))]
+
+        let plan = try await resolver.resolve(
+            name: "needs-sqlite3", requirement: nil, installed: installed
+        )
+
+        let names = Set(plan.map(\.name))
+        #expect(names == ["needs-sqlite3"])
+        #expect(!names.contains("sqlite3"))
+    }
+
     @Test func conflictingRequirementsProduceANamedError() async throws {
         // root depends on both a and b, which each pin a different, mutually
         // exclusive version of the same shared leaf gem -- a genuine conflict

@@ -49,4 +49,21 @@ struct GemLibraryTests {
         #expect(library.errorMessage != nil)
         #expect(library.gems.isEmpty)
     }
+
+    @Test func installingABundledGemSurfacesTheBundledMessageInsteadOfInstalling() async throws {
+        // sqlite3 is baked into the binary (see BundledGem) -- installing
+        // it through the sheet must explain that, not silently no-op or
+        // fail the C-extension check the way a genuinely unbundled
+        // C-extension gem would.
+        let store = try makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directoryURL) }
+        let installer = GemInstaller(api: AlwaysFailingRubyGemsAPI(), store: store)
+        let library = GemLibrary(store: store, installer: installer)
+
+        await library.install(name: "sqlite3", requirement: "")
+
+        let message = try #require(library.errorMessage)
+        #expect(message.contains("built into RubyCuts"))
+        #expect(library.gems.isEmpty)
+    }
 }

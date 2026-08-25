@@ -144,6 +144,9 @@ final class GemLibrary {
                 "'\(gem)' requires a C extension, which RubyCuts can't load. Only pure-Ruby gems are supported."
         case .archiveRejected(let gem, let detail):
             return "'\(gem)' couldn't be safely extracted: \(detail)"
+        case .alreadyBundled(let gem, let version):
+            return
+                "'\(gem)' is built into RubyCuts (version \(version)) and doesn't need installing."
         }
     }
 }

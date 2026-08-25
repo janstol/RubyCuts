@@ -161,6 +161,48 @@ struct RubyRuntimeTests {
         #expect(result == "yaml-ok")
     }
 
+    @Test func requiresSQLite3() throws {
+        // Proves the sqlite3 ext loaded (Init_sqlite3_native registered
+        // under the "sqlite3/sqlite3_native" feature name -- see
+        // install_sqlite3_ext_sources! in scripts/build-cruby.rb) and the
+        // amalgamation it's linked against actually works: open an
+        // in-memory DB, create a table, insert, and read the row back.
+        let result = try RubyRuntime.shared.evaluate(
+            "require 'sqlite3'; "
+                + "db = SQLite3::Database.new(':memory:'); "
+                + "db.execute('CREATE TABLE t (name TEXT)'); "
+                + "db.execute('INSERT INTO t VALUES (?)', ['ruby']); "
+                + "db.execute('SELECT name FROM t').first.first"
+        )
+        #expect(result == "ruby")
+
+        // Proves the SQLite version compiled in is the pinned amalgamation
+        // (see SQLITE_VERSION_PIN in scripts/build-cruby.rb), not whatever
+        // libsqlite3 the build machine's SDK happens to ship.
+        let version = try RubyRuntime.shared.evaluate("SQLite3::SQLITE_VERSION")
+        #expect(version.hasPrefix("3.53"))
+
+        // Proves -DSQLITE_ENABLE_FTS5 survived build_sqlite! and
+        // merge_static_extensions! -- an FTS5 virtual table only creates
+        // successfully if the amalgamation was actually compiled with it.
+        let fts5 = try RubyRuntime.shared.evaluate(
+            "db2 = SQLite3::Database.new(':memory:'); "
+                + "db2.execute('CREATE VIRTUAL TABLE docs USING fts5(body)'); 'fts5-ok'"
+        )
+        #expect(fts5 == "fts5-ok")
+    }
+
+    @Test func bundledSQLite3GemVersionMatchesTheVMsSQLite3Version() throws {
+        // The drift guard between BundledGem.all's Swift-side constant and
+        // the version actually baked into the VM (SQLITE3_GEM_VERSION_PIN
+        // in scripts/build-cruby.rb) -- a bumped pin that forgets to bump
+        // BundledGem.all would otherwise ship a Gems sheet lying about the
+        // version.
+        let bundled = try #require(BundledGem.all.first { $0.name == "sqlite3" })
+        let vmVersion = try RubyRuntime.shared.evaluate("require 'sqlite3'; SQLite3::VERSION")
+        #expect(bundled.version == vmVersion)
+    }
+
     @Test func requiresNetHTTPOverTLS() throws {
         // Offline proxy for TLS availability: net/http loads, Net::HTTP accepts
         // use_ssl=true, and an SSLContext builds (the real TLS primitive -- the

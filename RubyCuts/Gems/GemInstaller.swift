@@ -16,6 +16,14 @@ enum GemInstallerError: Error, Sendable {
     /// The archive itself was rejected as unsafe (a path escape, a
     /// symlink/hardlink, or a malformed `.gem`).
     case archiveRejected(gem: String, detail: String)
+
+    /// The gem requested at the top level is already baked into the app
+    /// (see ``BundledGem``) -- installing it would be a silent no-op at
+    /// best, so this is raised instead of quietly resolving to nothing. A
+    /// gem depended on *transitively* isn't affected: ``GemResolver``
+    /// already treats it as satisfied via the seed in
+    /// ``GemInstaller/installedVersionsByName()``.
+    case alreadyBundled(gem: String, version: String)
 }
 
 /// Orchestrates a gem install end to end: resolve dependencies, download and
@@ -47,6 +55,10 @@ struct GemInstaller {
     /// Returns the gems this call actually installed -- an already-satisfied
     /// dependency (per ``GemResolver``) is skipped and doesn't appear here.
     func install(name: String, requirement: String?) async throws -> [InstalledGem] {
+        if let bundled = BundledGem.all.first(where: { $0.name == name }) {
+            throw GemInstallerError.alreadyBundled(gem: bundled.name, version: bundled.version)
+        }
+
         let parsedRequirement = requirement.flatMap { GemRequirement($0) }
         let installedVersions = try installedVersionsByName()
 
@@ -62,12 +74,22 @@ struct GemInstaller {
         return installed
     }
 
+    /// Everything ``GemResolver`` should treat as already satisfied: every
+    /// ``BundledGem`` (seeded first, so a gem depending on `sqlite3`
+    /// resolves without a download) overlaid with whatever ``GemStore``
+    /// actually has on disk.
     private func installedVersionsByName() throws -> [String: GemVersion] {
-        try store.list().reduce(into: [:]) { result, gem in
+        var result: [String: GemVersion] = BundledGem.all.reduce(into: [:]) { result, bundled in
+            if let version = GemVersion(bundled.version) {
+                result[bundled.name] = version
+            }
+        }
+        for gem in try store.list() {
             if let version = GemVersion(gem.version) {
                 result[gem.name] = version
             }
         }
+        return result
     }
 
     private func installOne(_ target: ResolvedGem) async throws -> InstalledGem {

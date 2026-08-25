@@ -69,7 +69,23 @@ struct GemListView: View {
                 )
             }
 
+            bundledSection
             installedSection
+        }
+    }
+
+    /// Gems baked into the app binary at build time (see ``BundledGem``) --
+    /// no delete affordance, since there's nothing on disk to remove.
+    private var bundledSection: some View {
+        Section("Bundled") {
+            ForEach(BundledGem.all) { gem in
+                VStack(alignment: .leading) {
+                    Text(gem.name)
+                    Text(gem.version)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
         }
     }
 

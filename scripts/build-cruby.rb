@@ -47,6 +47,43 @@ LIBYAML_TARBALL_URL = "https://github.com/yaml/libyaml/releases/download/#{LIBYA
 LIBYAML_TARBALL_PATH = File.join(SRC_DIR, "yaml-#{LIBYAML_VERSION_PIN}.tar.gz")
 LIBYAML_SOURCE_DIR = File.join(SRC_DIR, "yaml-#{LIBYAML_VERSION_PIN}")
 
+# sqlite3 -- the one C-extension gem RubyCuts ships pre-compiled, since a
+# downloaded C extension can never be dlopen()ed under App Store W^X rules
+# (see docs/embedding-cruby.md). Two pins, not one: the SQLite C library
+# itself (compiled straight into libruby-static.a by build_sqlite!, from the
+# amalgamation -- not the SDK's own libsqlite3, which is a different, often
+# older, build) and the sqlite3 Ruby gem (whose ext/sqlite3 C sources feed a
+# statically-linked extension via install_sqlite3_ext_sources!, and whose
+# lib/ ships in Vendor/CRuby/stdlib/ via install_sqlite3_ruby_lib!).
+#
+# The SQLite version and SHA256 aren't chosen independently -- they're
+# lifted verbatim from the sqlite3 gem's own dependencies.yml pin, whose
+# comment records that this SHA256 was cross-checked against sqlite.org's
+# own published SHA3-256 for the same tarball
+# (025328da165109f48abccc6e7478508060804412bed2bd81d47e98ba1b72983b) --
+# the same "don't trust a lone hash" discipline as the OpenSSL/libyaml pins
+# above.
+SQLITE_VERSION_PIN = "3.53.2"
+SQLITE_TARBALL_SHA256 = "588ad51949419a56ebe81fe56193d510c559eb94c9a57748387860b5d3069316"
+SQLITE_TARBALL_URL = "https://sqlite.org/2026/sqlite-autoconf-3530200.tar.gz"
+SQLITE_TARBALL_PATH = File.join(SRC_DIR, "sqlite-autoconf-3530200.tar.gz")
+SQLITE_SOURCE_DIR = File.join(SRC_DIR, "sqlite-autoconf-3530200")
+
+# The latest non-prerelease `platform: "ruby"` sqlite3 gem version as of this
+# writing. SHA256 is rubygems.org's own published `sha` for this version
+# (from https://rubygems.org/api/v1/versions/sqlite3.json) -- the same value
+# RubyGemsAPI/GemInstaller verify a downloaded gem against at runtime, so
+# this pin is checked the identical way an app-installed gem would be.
+SQLITE3_GEM_VERSION_PIN = "2.9.6"
+SQLITE3_GEM_SHA256 = "956fe606956420d04ac7157d3ace620c8caba2135b2e05c76e483493da24d08e"
+SQLITE3_GEM_URL = "https://rubygems.org/downloads/sqlite3-#{SQLITE3_GEM_VERSION_PIN}.gem"
+SQLITE3_GEM_PATH = File.join(SRC_DIR, "sqlite3-#{SQLITE3_GEM_VERSION_PIN}.gem")
+# Where extract_sqlite3_gem! unpacks the gem's data.tar.gz payload -- a
+# .gem's own top-level tar has no version in its member names, so this dir
+# isn't named after SQLITE3_GEM_VERSION_PIN the way SQLITE_SOURCE_DIR is
+# named after SQLITE_VERSION_PIN.
+SQLITE3_GEM_SOURCE_DIR = File.join(SRC_DIR, "sqlite3-gem")
+
 # Mozilla CA bundle (curl's cacert.pem) shipped as OpenSSL's trust store.
 # OpenSSL's compiled-in --openssldir is a build-machine path that doesn't exist
 # on device, so OpenSSL::SSL::SSLContext::DEFAULT_CERT_STORE.set_default_paths
@@ -179,6 +216,12 @@ def download_and_verify!
   download_and_verify_tarball!(TARBALL_URL, TARBALL_PATH, RUBY_VERSION_SHA256, "ruby-#{RUBY_VERSION_PIN}.tar.gz")
   download_and_verify_tarball!(OPENSSL_TARBALL_URL, OPENSSL_TARBALL_PATH, OPENSSL_SHA256, "openssl-#{OPENSSL_VERSION_PIN}.tar.gz")
   download_and_verify_tarball!(LIBYAML_TARBALL_URL, LIBYAML_TARBALL_PATH, LIBYAML_SHA256, "yaml-#{LIBYAML_VERSION_PIN}.tar.gz")
+  download_and_verify_tarball!(
+    SQLITE_TARBALL_URL, SQLITE_TARBALL_PATH, SQLITE_TARBALL_SHA256, "sqlite-autoconf-3530200.tar.gz"
+  )
+  download_and_verify_tarball!(
+    SQLITE3_GEM_URL, SQLITE3_GEM_PATH, SQLITE3_GEM_SHA256, "sqlite3-#{SQLITE3_GEM_VERSION_PIN}.gem"
+  )
   download_and_verify_tarball!(CACERT_PEM_URL, CACERT_PEM_PATH, CACERT_SHA256, "cacert.pem")
 end
 
@@ -203,6 +246,8 @@ def extract!
   extract_tarball!(TARBALL_PATH, SOURCE_DIR, "ruby-#{RUBY_VERSION_PIN}", "configure")
   extract_tarball!(OPENSSL_TARBALL_PATH, OPENSSL_SOURCE_DIR, "openssl-#{OPENSSL_VERSION_PIN}", "Configure")
   extract_tarball!(LIBYAML_TARBALL_PATH, LIBYAML_SOURCE_DIR, "yaml-#{LIBYAML_VERSION_PIN}", "configure")
+  extract_tarball!(SQLITE_TARBALL_PATH, SQLITE_SOURCE_DIR, "sqlite-autoconf-3530200", "sqlite3.c")
+  extract_sqlite3_gem!
 end
 
 def extract_tarball!(tarball, dest_dir, label, marker)
@@ -213,6 +258,34 @@ def extract_tarball!(tarball, dest_dir, label, marker)
 
   puts "== extracting #{label}"
   sh!("tar", "xzf", tarball, "-C", SRC_DIR, chdir: ROOT)
+end
+
+# A `.gem` isn't a `.tar.gz` -- it's a plain, uncompressed tar (see
+# GemArchive.swift's own hand-rolled reader) containing metadata.gz,
+# data.tar.gz, and checksums.yaml.gz as flat members with no enclosing
+# directory, so extract_tarball!'s "gzip into SRC_DIR, expect a
+# same-named top-level dir" shape doesn't fit. Two untars instead: the
+# outer .gem into a scratch dir, then its data.tar.gz payload -- the part
+# that actually holds ext/ and lib/ -- into SQLITE3_GEM_SOURCE_DIR.
+# Idempotent, matching extract_tarball!'s marker-file check.
+def extract_sqlite3_gem!
+  if File.exist?(File.join(SQLITE3_GEM_SOURCE_DIR, "ext", "sqlite3", "extconf.rb"))
+    puts "== sqlite3-#{SQLITE3_GEM_VERSION_PIN}.gem already extracted"
+    return
+  end
+
+  puts "== extracting sqlite3-#{SQLITE3_GEM_VERSION_PIN}.gem"
+  outer_dir = File.join(SRC_DIR, "sqlite3-gem-outer")
+  FileUtils.rm_rf(outer_dir)
+  FileUtils.mkdir_p(outer_dir)
+  sh!("tar", "xf", SQLITE3_GEM_PATH, "-C", outer_dir, chdir: ROOT)
+
+  data_tarball = File.join(outer_dir, "data.tar.gz")
+  abort "error: data.tar.gz not found inside #{SQLITE3_GEM_PATH}" unless File.exist?(data_tarball)
+
+  FileUtils.rm_rf(SQLITE3_GEM_SOURCE_DIR)
+  FileUtils.mkdir_p(SQLITE3_GEM_SOURCE_DIR)
+  sh!("tar", "xzf", data_tarball, "-C", SQLITE3_GEM_SOURCE_DIR, chdir: ROOT)
 end
 
 def install_dir_for(key) = File.join(BUILD_DIR, key, "install")
@@ -228,6 +301,8 @@ def stub_include_dir_for(key) = File.join(BUILD_DIR, key, "stub-include")
 def openssl_install_dir_for(key) = File.join(BUILD_DIR, key, "openssl-install")
 
 def libyaml_install_dir_for(key) = File.join(BUILD_DIR, key, "libyaml-install")
+
+def sqlite_install_dir_for(key) = File.join(BUILD_DIR, key, "sqlite-install")
 
 def find_static_lib(install_dir)
   Dir.glob(File.join(install_dir, "lib", "lib*-static.a")).first
@@ -324,6 +399,97 @@ def patch_psych_extconf!
   File.write(path, contents.sub(target, replacement))
 end
 
+# The sqlite3 gem's ext/sqlite3/*.c and *.h files (its C binding glue --
+# Init_sqlite3_native and friends, not the SQLite library itself), copied
+# verbatim into CRuby's own ext/ tree so --with-static-linked-ext compiles
+# and registers them as a statically-linked extension, the same mechanism
+# that already builds stringio/json/socket/etc. Called from main alongside
+# patch_psych_extconf!, i.e. before any target's configure_and_make! runs --
+# CRuby's configure enumerates ext/*/extconf.rb at configure time, so the
+# files have to exist before that, not per-target.
+EXPECTED_SQLITE3_EXT_SOURCES = %w[
+  aggregator.c aggregator.h backup.c backup.h database.c database.h
+  exception.c exception.h sqlite3.c sqlite3_ruby.h statement.c statement.h
+  timespec.h
+].freeze
+
+def install_sqlite3_ext_sources!
+  dest_dir = File.join(SOURCE_DIR, "ext", "sqlite3")
+  if File.exist?(File.join(dest_dir, "sqlite3.c"))
+    puts "== ext/sqlite3 sources already installed"
+    return
+  end
+
+  gem_ext_dir = File.join(SQLITE3_GEM_SOURCE_DIR, "ext", "sqlite3")
+  sources = Dir.children(gem_ext_dir).select { |name| name.end_with?(".c", ".h") }.sort
+  unless sources == EXPECTED_SQLITE3_EXT_SOURCES.sort
+    abort "error: sqlite3 gem's ext/sqlite3/ no longer matches the expected .c/.h file " \
+      "list (found #{sources.inspect}, expected #{EXPECTED_SQLITE3_EXT_SOURCES.sort.inspect}) " \
+      "-- update install_sqlite3_ext_sources! and EXPECTED_SQLITE3_EXT_SOURCES in " \
+      "scripts/build-cruby.rb"
+  end
+
+  FileUtils.mkdir_p(dest_dir)
+  sources.each { |name| FileUtils.cp(File.join(gem_ext_dir, name), File.join(dest_dir, name)) }
+
+  # A trimmed copy of the gem's own ext/sqlite3/extconf.rb: the
+  # mini_portile2/pkg-config machinery that downloads and cross-compiles
+  # SQLite itself is gone (build_sqlite! already did that, into
+  # sqlite_install_dir_for(key), reached below via --with-sqlite3-dir --
+  # see configure_and_make!), and the sqlite3_enable_load_extension /
+  # sqlite3_load_extension have_func probes are dropped on purpose -- see
+  # the SQLITE_OMIT_LOAD_EXTENSION comment in build_sqlite! -- so
+  # database.c's `#ifdef HAVE_SQLITE3_*_LOAD_EXTENSION` guards never see
+  # those macros defined and compile the load_extension/enable_load_extension
+  # Ruby methods out entirely. `create_makefile("sqlite3/sqlite3_native")`
+  # matches lib/sqlite3.rb's fallback `require "sqlite3/sqlite3_native"`
+  # exactly, so the gem's own Ruby needs no patching.
+  File.write(File.join(dest_dir, "extconf.rb"), <<~RUBY)
+    # Generated by install_sqlite3_ext_sources! in scripts/build-cruby.rb.
+    require "mkmf"
+
+    dir_config("sqlite3")
+    append_cppflags("-DUSING_PACKAGED_LIBRARIES")
+    append_cflags("-fvisibility=hidden")
+
+    abort("could not find sqlite3.h") unless find_header("sqlite3.h")
+    unless find_library("sqlite3", "sqlite3_libversion_number", "sqlite3.h")
+      abort("could not find sqlite3")
+    end
+
+    %w[
+      rb_enc_interned_str_cstr rb_proc_arity rb_integer_pack
+      sqlite3_initialize sqlite3_backup_init sqlite3_column_database_name
+      sqlite3_open_v2 sqlite3_prepare_v2
+    ].each { |func| have_func(func) }
+    have_func("sqlite3_db_name", "sqlite3.h")
+    have_func("sqlite3_error_offset", "sqlite3.h")
+    have_type("sqlite3_int64", "sqlite3.h")
+    have_type("sqlite3_uint64", "sqlite3.h")
+
+    # CRuby's own --with-static-linked-ext build makes every HAVE_* macro
+    # visible to a source file only indirectly, through a generated
+    # extconf.h transitively #include'd by ruby.h/ruby/config.h -- fine for
+    # every file here except backup.c, whose very first line is
+    # `#ifdef HAVE_SQLITE3_BACKUP_INIT`, checked before that file includes
+    # anything at all. Under a normal standalone gem build $defs' `-DHAVE_*`
+    # flags land directly on the compiler command line (visible from a
+    # file's first token), so this asymmetry never shows up there -- it's
+    # specific to being folded into CRuby's own extconf.h convention.
+    # Re-appending $defs onto $CFLAGS puts the same `-DHAVE_*` flags
+    # directly on the compile line too, so backup.c's guard sees them
+    # regardless of include order. Confirmed necessary by a real cross build
+    # (an iphonesimulator-arm64 link failed on `_init_sqlite3_backup`
+    # undefined -- macOS's `-Wl,-undefined,dynamic_lookup` masked the same
+    # gap there, so trust this fix's necessity, not the lack of a macOS
+    # error).
+    append_cflags($defs.join(" "))
+
+    create_makefile("sqlite3/sqlite3_native")
+  RUBY
+  puts "== ext/sqlite3 sources + extconf.rb installed under #{dest_dir}"
+end
+
 # The iOS SDKs (device and simulator) don't ship sys/vnode.h. dir.c includes
 # it unconditionally under #ifdef __APPLE__ (dir.c:100) with no autoconf
 # guard around it, so the build hard-fails without a stub. It can't be an
@@ -359,6 +525,63 @@ def write_vnode_stub!(key)
 
     #endif
   C
+end
+
+# SQLite (the amalgamation, not the SDK's own libsqlite3 -- see the
+# SQLITE_VERSION_PIN comment for why). No `configure` at all: unlike
+# libyaml/OpenSSL, SQLite 3.49+'s autosetup-based configure isn't worth
+# cross-compiling against for what's ultimately a single translation unit
+# (sqlite3.c). Compiling it directly with the same feature-flag set the
+# gem's own packaged (mini_portile2) build uses -- minus load-extension
+# support, which is dropped on purpose (see the SQLITE_OMIT_LOAD_EXTENSION
+# flag below and install_sqlite3_ext_sources!'s comment) -- is simpler and
+# just as correct. Archived into an install prefix shaped exactly like
+# build_libyaml!'s (lib/libsqlite3.a + include/*.h), so ext/sqlite3's
+# dir_config("sqlite3") finds it via --with-sqlite3-dir the same way
+# psych's dir_config("libyaml") finds libyaml_install_dir_for. Called first
+# in the per-target loop, purely by convention (no ordering dependency on
+# libyaml/openssl). Idempotent (skips if libsqlite3.a already exists) and
+# out-of-tree, mirroring build_libyaml!.
+def build_sqlite!(key, target)
+  install_dir = sqlite_install_dir_for(key)
+  if File.exist?(File.join(install_dir, "lib", "libsqlite3.a"))
+    puts "== #{key} sqlite already built"
+    return
+  end
+
+  sdk_path = check_sdk!(target[:sdk])
+  build_dir = File.join(BUILD_DIR, key, "sqlite-build")
+  FileUtils.rm_rf(build_dir)
+  FileUtils.mkdir_p(build_dir)
+  FileUtils.mkdir_p(File.join(install_dir, "lib"))
+  FileUtils.mkdir_p(File.join(install_dir, "include"))
+
+  cc = ["xcrun", "--sdk", target[:sdk], "cc", "-arch", target[:arch]]
+  cflags = %w[
+    -Os -fPIC -fvisibility=hidden
+    -DSQLITE_ENABLE_FTS5 -DSQLITE_ENABLE_COLUMN_METADATA
+    -DSQLITE_ENABLE_DBSTAT_VTAB -DSQLITE_ENABLE_DBPAGE_VTAB
+    -DSQLITE_USE_URI=1 -DSQLITE_DEFAULT_WAL_SYNCHRONOUS=1
+    -DSQLITE_OMIT_LOAD_EXTENSION -DSQLITE_THREADSAFE=1
+  ]
+  cflags += ["-target", target[:triple], "-isysroot", sdk_path] if target[:triple]
+
+  env = { target[:deployment_target_env] => target[:deployment_target] }
+
+  puts "== compiling #{key} sqlite3.c"
+  sh!(
+    *cc, *cflags, "-c", File.join(SQLITE_SOURCE_DIR, "sqlite3.c"), "-o", "sqlite3.o",
+    chdir: build_dir, env: env
+  )
+
+  puts "== archiving #{key} libsqlite3.a"
+  sh!(
+    "libtool", "-static", "-o", File.join(install_dir, "lib", "libsqlite3.a"), "sqlite3.o",
+    chdir: build_dir
+  )
+
+  FileUtils.cp(File.join(SQLITE_SOURCE_DIR, "sqlite3.h"), File.join(install_dir, "include"))
+  FileUtils.cp(File.join(SQLITE_SOURCE_DIR, "sqlite3ext.h"), File.join(install_dir, "include"))
 end
 
 # libyaml (psych's C backend). Autoconf, so simpler than OpenSSL -- built
@@ -472,23 +695,26 @@ def configure_and_make!(key, target)
     # probing the host.
     "--with-openssl-dir=#{openssl_install_dir_for(key)}",
     "--with-libyaml-dir=#{libyaml_install_dir_for(key)}",
+    "--with-sqlite3-dir=#{sqlite_install_dir_for(key)}",
   ]
   configure_args << "--host=#{target[:host]}" if target[:host]
   # Cross-compiles need a base Ruby to run CRuby's own generator scripts during the build; check_host_ruby! already guarantees the host `ruby`'s minor version matches.
   configure_args << "--with-baseruby=#{RbConfig.ruby}" if target[:host]
 
   cflags = "-pipe -Os -fvisibility=hidden"
-  # The openssl/psych exts propagate -lssl/-lcrypto/-lyaml to the ruby
-  # executable's link: under --with-static-linked-ext the exts link into the
-  # ruby binary (not into lib*-static.a -- that move is merge_static_extensions!'s
-  # post-make job), so `make` has to find those libs on its link line. The
-  # per-target third-party install dirs go on the link search path for that.
-  # (The shipped libruby-static.a gets these libs folded in by
-  # merge_static_extensions! instead; this LDFLAGS only lets `make` link its
-  # intermediate ruby binary, which never ships.) libcrypto.a's one external
-  # ref, _CCRandomGenerateBytes, resolves from libSystem on both macOS and iOS,
-  # so no -framework Security is needed.
-  third_party_ldflags = "-L#{openssl_install_dir_for(key)}/lib -L#{libyaml_install_dir_for(key)}/lib"
+  # The openssl/psych/sqlite3 exts propagate -lssl/-lcrypto/-lyaml/-lsqlite3
+  # to the ruby executable's link: under --with-static-linked-ext the exts
+  # link into the ruby binary (not into lib*-static.a -- that move is
+  # merge_static_extensions!'s post-make job), so `make` has to find those
+  # libs on its link line. The per-target third-party install dirs go on
+  # the link search path for that. (The shipped libruby-static.a gets these
+  # libs folded in by merge_static_extensions! instead; this LDFLAGS only
+  # lets `make` link its intermediate ruby binary, which never ships.)
+  # libcrypto.a's one external ref, _CCRandomGenerateBytes, resolves from
+  # libSystem on both macOS and iOS, so no -framework Security is needed.
+  third_party_ldflags =
+    "-L#{openssl_install_dir_for(key)}/lib -L#{libyaml_install_dir_for(key)}/lib " \
+    "-L#{sqlite_install_dir_for(key)}/lib"
   env = {
     "CFLAGS" => cflags,
     target[:deployment_target_env] => target[:deployment_target],
@@ -566,10 +792,11 @@ def merge_static_extensions!(key)
     File.join(openssl_install_dir_for(key), "lib", "libssl.a"),
     File.join(openssl_install_dir_for(key), "lib", "libcrypto.a"),
     File.join(libyaml_install_dir_for(key), "lib", "libyaml.a"),
+    File.join(sqlite_install_dir_for(key), "lib", "libsqlite3.a"),
   ]
   third_party_archives.each do |archive|
     next if File.exist?(archive)
-    abort "error: #{archive} missing -- run build_openssl!/build_libyaml! before merge_static_extensions!"
+    abort "error: #{archive} missing -- run build_openssl!/build_libyaml!/build_sqlite! before merge_static_extensions!"
   end
 
   filelist_entries = [stripped, File.join(build_dir, "ext", "extinit.o")] + ext_archives + [
@@ -707,6 +934,40 @@ def install_stdlib!(install_dir)
   puts "== stdlib installed: #{files.size} files, #{(total_bytes / 1024.0 / 1024.0).round(1)} MB, under #{STDLIB_DEST}"
 end
 
+# Copies the sqlite3 gem's Ruby-side lib/ into Vendor/CRuby/stdlib/,
+# alongside the stdlib and INCLUDED_BUNDLED_GEMS entries install_stdlib!
+# already put there -- sqlite3 itself isn't in INCLUDED_BUNDLED_GEMS because
+# its source lives under .build-cruby/src (SQLITE3_GEM_SOURCE_DIR, fetched
+# directly from rubygems.org), not inside the CRuby install's own gems/
+# directory that INCLUDED_BUNDLED_GEMS reads from.
+#
+# lib/sqlite3.rb's own fallback (`require "sqlite3/#{ruby_minor}/sqlite3_native"`
+# rescued into `require "sqlite3/sqlite3_native"`) resolves against exactly
+# the feature name install_sqlite3_ext_sources!'s generated extconf.rb
+# registers via `create_makefile`, so nothing here needs to patch the gem's
+# Ruby to make that resolve.
+def install_sqlite3_ruby_lib!
+  gem_lib = File.join(SQLITE3_GEM_SOURCE_DIR, "lib")
+  %w[sqlite3.rb sqlite3].each do |entry|
+    dest = File.join(STDLIB_DEST, entry)
+    if File.exist?(dest)
+      abort "error: sqlite3 gem's lib/#{entry} collides with an existing stdlib entry at #{dest}"
+    end
+
+    FileUtils.cp_r(File.join(gem_lib, entry), STDLIB_DEST)
+  end
+
+  # Should be impossible -- the source gem ships no compiled extension --
+  # but cheap to assert instead of trusting that, matching install_stdlib!'s
+  # equivalent check.
+  compiled = Dir.glob(File.join(STDLIB_DEST, "sqlite3", "**", "*.{bundle,so,dylib}"))
+  unless compiled.empty?
+    abort "error: unexpected compiled extension(s) bundled from the sqlite3 gem: #{compiled.inspect}"
+  end
+
+  puts "== sqlite3 gem's lib/ installed under #{STDLIB_DEST}"
+end
+
 # Ships a sanitized rbconfig.rb at the stdlib root (the one $LOAD_PATH
 # entry, so `require 'rbconfig'` finds it). The arch subdir that holds the
 # unsanitized original is already skipped by install_stdlib! (detected by
@@ -782,12 +1043,14 @@ def main
   patch_vm_dump_system_guard!
   patch_bundled_gems!
   patch_psych_extconf!
+  install_sqlite3_ext_sources!
 
   targets = TARGETS.select { |_, target| target[:enabled] }
   abort "error: no targets enabled in TARGETS" if targets.empty?
 
   targets.each do |key, target|
     puts "== target: #{key}"
+    build_sqlite!(key, target)
     build_libyaml!(key, target)
     build_openssl!(key, target)
     configure_and_make!(key, target)
@@ -802,6 +1065,7 @@ def main
   # enabled.
   assert_stdlib_identical!(targets)
   install_stdlib!(install_dir_for("macosx-arm64"))
+  install_sqlite3_ruby_lib!
   sanitize_rbconfig!(install_dir_for("macosx-arm64"))
   install_ca_bundle!
 
