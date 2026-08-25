@@ -57,6 +57,7 @@ struct ConsoleOutputView: View {
                 Text(text)
                     .font(.system(.caption, design: .monospaced))
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.enabled)
             }
         }
     }

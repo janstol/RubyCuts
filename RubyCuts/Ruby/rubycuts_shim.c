@@ -136,3 +136,60 @@ char *rubycuts_eval_to_string(const char *code, char **error_out) {
 void rubycuts_free(char *string) {
     free(string);
 }
+
+// The installed native handler, and the RubyCuts::NativeError class it raises
+// through. Both are file-scope statics rather than something passed around --
+// rc_native_call (a Ruby-callable C function) has no way to receive extra
+// context beyond the VALUEs Ruby gives it, so the handler and error class have
+// to be reachable some other way. g_native_error_class needs no
+// rb_gc_register_address: once rb_define_class_under assigns it to a constant
+// under RubyCuts, the module's own constant table keeps it alive.
+static rubycuts_native_handler g_native_handler = NULL;
+static VALUE g_native_error_class = Qnil;
+
+static VALUE rc_native_call(VALUE self, VALUE name, VALUE args_json) {
+    if (g_native_handler == NULL) {
+        rb_raise(rb_eRuntimeError, "RubyCuts::Native bridge is not installed");
+    }
+
+    const char *name_cstr = StringValueCStr(name);
+    const char *args_json_cstr = StringValueCStr(args_json);
+
+    char *error_out = NULL;
+    char *result = g_native_handler(name_cstr, args_json_cstr, &error_out);
+
+    if (result != NULL) {
+        VALUE ruby_result = rb_utf8_str_new_cstr(result);
+        free(result);
+        return ruby_result;
+    }
+
+    // Copy the error into a Ruby string, and free the C buffer, before
+    // rb_exc_raise -- it longjmps past this frame, so nothing malloc'd may
+    // still be owned here when it fires. Same hazard rc_error_message_for_state
+    // documents around rb_eval_string_protect.
+    VALUE message = error_out != NULL
+        ? rb_utf8_str_new_cstr(error_out)
+        : rb_utf8_str_new_cstr("unknown native bridge error");
+    if (error_out != NULL) {
+        free(error_out);
+    }
+    VALUE exception = rb_exc_new_str(g_native_error_class, message);
+    rb_exc_raise(exception);
+}
+
+void rubycuts_install_native_bridge(rubycuts_native_handler handler) {
+    g_native_handler = handler;
+
+    // rb_define_module/rb_define_module_under/rb_define_class_under all reopen
+    // an existing definition rather than redefining it, so a second call here
+    // (bootIfNeeded runs this on every eval) just swaps the handler pointer.
+    VALUE rubycuts_module = rb_define_module("RubyCuts");
+    VALUE native_module = rb_define_module_under(rubycuts_module, "Native");
+    rb_define_module_function(native_module, "call", rc_native_call, 2);
+
+    if (g_native_error_class == Qnil) {
+        g_native_error_class =
+            rb_define_class_under(rubycuts_module, "NativeError", rb_eStandardError);
+    }
+}

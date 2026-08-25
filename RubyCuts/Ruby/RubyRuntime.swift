@@ -188,6 +188,7 @@ final class RubyRuntime {
         loadRbConfig()
         configureTLS()
         hardenProcessExit()
+        installNativeBridge()
     }
 
     /// Overrides `Kernel#exit!` and `Kernel#abort` to raise a catchable
@@ -227,6 +228,24 @@ final class RubyRuntime {
             _ = try evalRaw(code)
         } catch {
             // Non-fatal: exit!/abort would still terminate the host.
+        }
+    }
+
+    /// Installs the Swift-native capability bridge (``NativeBridge``) and evals
+    /// the Ruby prelude that defines `Device::Clipboard`/`Device::Notification`
+    /// on top of it.
+    ///
+    /// Best-effort and non-fatal, matching ``loadRbConfig()``/``configureTLS()``:
+    /// if the prelude eval fails, Ruby itself still works -- only the
+    /// `Device::*` capabilities degrade (an undefined-constant `NameError`, or
+    /// a `RuntimeError` from `RubyCuts::Native.call` if the C-side handler was
+    /// never installed).
+    private func installNativeBridge() {
+        rubycuts_install_native_bridge(rubycutsNativeTrampoline)
+        do {
+            _ = try evalRaw(NativeBridge.installDefaults())
+        } catch {
+            // Non-fatal: Device::* capabilities degrade; Ruby itself still works.
         }
     }
 
