@@ -78,6 +78,13 @@ int rubycuts_init(const char *stdlib_path) {
 static char *rc_error_message_for_state(int state) {
     if (state == RC_TAG_RAISE) {
         VALUE error = rb_errinfo();
+        // Stash the exception in a Ruby global before clearing errinfo, so
+        // Swift can still read its backtrace after this call returns. This
+        // is a deliberate GC root holding exactly one exception, overwritten
+        // on the next failed eval -- see rc_error_message_for_state's other
+        // branch, which sets it to Qnil so a non-raise failure can't leak a
+        // stale backtrace from an earlier raise.
+        rb_gv_set("$rc_last_error", error);
         rb_set_errinfo(Qnil);
         if (error != Qnil) {
             VALUE message = rb_obj_as_string(error);
@@ -89,6 +96,10 @@ static char *rc_error_message_for_state(int state) {
     // A non-exception non-local exit. ec->errinfo is throw data, not an object
     // -- clear it (a plain pointer store, safe) and synthesize a message. The
     // wording mirrors MRI's LocalJumpError messages for top-level jumps.
+    // $rc_last_error is reset to Qnil here too: this failure has no exception
+    // object, and without this the backtrace reader would otherwise surface
+    // the trace of some earlier, unrelated raise.
+    rb_gv_set("$rc_last_error", Qnil);
     rb_set_errinfo(Qnil);
     switch (state) {
         case 0x1: return strdup("unexpected return");

@@ -77,6 +77,12 @@ final class RubyRuntime {
     /// **Known follow-up:** if the script reassigns `$stdout`/`$stderr` itself,
     /// that output isn't captured -- arguably correct (the script redirected
     /// it), and an edge case for V1.
+    ///
+    /// On a raise, ``RunResult/backtrace`` carries the Ruby frames from the
+    /// exception's `backtrace`, read via the C shim's `$rc_last_error` global
+    /// before it can be overwritten by a later eval. Empty on a clean run and
+    /// on non-exception control-flow failures (a top-level `return`/`break`/
+    /// `throw`), which have no exception object to read frames from.
     func run(_ code: String, input: RunInput = .empty) -> RunResult {
         do {
             try bootIfNeeded()
@@ -121,6 +127,11 @@ final class RubyRuntime {
             result.result = try evalRaw(code)
         } catch {
             result.errorMessage = Self.describe(error)
+            // Read the backtrace here, before anything else evals -- the shim
+            // stashes the exception (or nil) in $rc_last_error on every failed
+            // eval, and the next eval below (reading $cap_out) would otherwise
+            // overwrite it before we get a chance to read this failure's trace.
+            result.backtrace = readBacktrace()
         }
 
         // Read back whatever was printed before the run ended (or raised).
@@ -230,6 +241,22 @@ final class RubyRuntime {
         } catch {
             // Non-fatal: RbConfig-dependent stdlib paths degrade.
         }
+    }
+
+    /// Reads the backtrace of the exception the shim stashed in
+    /// `$rc_last_error` for the eval that just failed. `&.` covers
+    /// `$rc_last_error` being `nil` (a non-raise tag, or nothing ever set it);
+    /// `|| []` covers `Exception#backtrace` itself returning `nil`. Best-effort
+    /// via `try?`, matching how ``configureTLS()``/``loadRbConfig()`` degrade --
+    /// a failure here just means an empty backtrace, not a failed run.
+    ///
+    /// Must be called before any other eval runs, since the next failed eval
+    /// overwrites `$rc_last_error` (see the shim's `rc_error_message_for_state`).
+    private func readBacktrace() -> [String] {
+        guard let joined = try? evalRaw(#"($rc_last_error&.backtrace || []).join("\n")"#),
+            !joined.isEmpty
+        else { return [] }
+        return joined.components(separatedBy: "\n")
     }
 
     /// Loads the bundled Mozilla CA bundle (`stdlib/cacert.pem`) into OpenSSL's

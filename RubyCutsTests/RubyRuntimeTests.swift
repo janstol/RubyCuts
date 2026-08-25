@@ -247,6 +247,33 @@ struct RubyRuntimeTests {
         #expect(result.errorMessage == "boom")
     }
 
+    @Test func runPopulatesBacktraceOnRaise() {
+        // A raise from inside a method: the backtrace holds at least the
+        // method's frame and the top-level call site, in that order (innermost
+        // first, matching Exception#backtrace).
+        let result = RubyRuntime.shared.run("def foo\n  raise 'boom'\nend\nfoo")
+        #expect(result.hasError)
+        #expect(!result.backtrace.isEmpty)
+        #expect(result.backtrace.first?.contains("foo") == true)
+    }
+
+    @Test func runLeavesBacktraceEmptyOnACleanRun() {
+        let result = RubyRuntime.shared.run("1 + 2")
+        #expect(!result.hasError)
+        #expect(result.backtrace.isEmpty)
+    }
+
+    @Test func backtraceDoesNotLeakFromAPreviousRun() {
+        // Guards the read-order choice in `run`: the backtrace must be read
+        // right after the failing eval, before any later eval (e.g. reading
+        // $cap_out.string) can overwrite $rc_last_error. A raise followed by a
+        // clean run must leave the clean run's backtrace empty.
+        _ = RubyRuntime.shared.run("raise 'boom'")
+        let result = RubyRuntime.shared.run("1 + 1")
+        #expect(!result.hasError)
+        #expect(result.backtrace.isEmpty)
+    }
+
     @Test func runRestoresStdoutAfterRunning() {
         // Capture must restore $stdout/$stderr afterward, or a later evaluate
         // would silently write to a StringIO and return empty. Drives a `run`,
@@ -277,6 +304,17 @@ struct RubyRuntimeTests {
         // Matches MRI's LocalJumpError wording for a top-level return.
         #expect(result.errorMessage == "unexpected return")
         #expect(result.stdout.isEmpty)
+    }
+
+    @Test func topLevelReturnLeavesBacktraceEmpty() {
+        // Guards the shim's non-RAISE-tag branch: a top-level return has no
+        // exception object, so $rc_last_error must be Qnil, not a stale
+        // exception from an earlier raise. Self-contained (raises first) so
+        // the guard doesn't depend on source-order relative to other tests.
+        _ = RubyRuntime.shared.run("raise 'boom'")
+        let result = RubyRuntime.shared.run("return {}")
+        #expect(result.hasError)
+        #expect(result.backtrace.isEmpty)
     }
 
     @Test func topLevelBreakReportsAnErrorWithoutCrashing() {
@@ -397,7 +435,9 @@ struct RubyRuntimeTests {
             try runToOutput(source)
         }
 
-        #expect(error.message == "boom")
+        // The combined message leads with the exception's `to_s`, followed by
+        // its backtrace (see ``combinedMessage(_:)`` in RubyIntents.swift).
+        #expect(error.message.hasPrefix("boom\n"))
     }
 
     // MARK: - run(_:input:) -- ARGV / STDIN / ENV plumbing (Phase 4 input side)

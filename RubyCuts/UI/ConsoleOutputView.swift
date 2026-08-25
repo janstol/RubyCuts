@@ -33,6 +33,9 @@ struct ConsoleOutputView: View {
             if let errorMessage = result.errorMessage {
                 section("Error", text: errorMessage, tint: .red)
             }
+            if !result.backtrace.isEmpty {
+                section("Backtrace", text: result.backtrace.joined(separator: "\n"), tint: .red)
+            }
             // The last expression's value is only meaningful on a clean run with
             // a non-empty result -- `puts`-only scripts end in `nil` (""), and a
             // raised script reports via `errorMessage` above.
@@ -77,7 +80,11 @@ struct ConsoleOutputView: View {
             stdout: "printed before crash",
             stderr: "",
             result: "",
-            errorMessage: "undefined method 'foo' for nil (NoMethodError)"
+            errorMessage: "undefined method 'foo' for nil (NoMethodError)",
+            backtrace: [
+                "rubycuts:3:in 'foo'",
+                "rubycuts:1:in '<main>'",
+            ]
         )
     )
     .frame(maxWidth: 400, maxHeight: 200)

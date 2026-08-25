@@ -8,12 +8,9 @@ import Foundation
 /// safe to pass across actors even though ``RubyRuntime`` itself is
 /// `@MainActor`-isolated. The console view holds one of these in `@State`.
 ///
-/// **Known follow-up:** `errorMessage` is the exception's `to_s` (the message),
-/// not a full formatted backtrace. `rb_eval_string_protect` suppresses the
-/// top-level backtrace print a normal `ruby -e` would do, so a richer trace
-/// needs explicit `error.backtrace` capture -- deferred until a run actually
-/// needs it. The in-app console and the App Intent error surface both start
-/// here, with the message alone.
+/// `backtrace` is empty on a clean run, and also on a non-exception
+/// control-flow failure (a top-level `return`/`break`/`throw`), since
+/// neither has an exception object to read frames from.
 struct RunResult: Sendable {
     /// Everything the script wrote to `$stdout` (`puts`, `print`, `$>.write`).
     var stdout: String
@@ -28,6 +25,11 @@ struct RunResult: Sendable {
 
     /// The Ruby exception's `to_s` when the script raised; `nil` on a clean run.
     var errorMessage: String?
+
+    /// The raised exception's `backtrace`, one frame per element. Empty on a
+    /// clean run and on non-exception control-flow failures -- see the type's
+    /// doc comment.
+    var backtrace: [String] = []
 
     /// `true` when the script raised. Convenience for the view layer.
     var hasError: Bool { errorMessage != nil }

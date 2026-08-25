@@ -62,14 +62,18 @@ func output(from result: RunResult) -> Result<String, RubyRunError> {
     return .success(result.stdout)
 }
 
-/// Joins a ``RunResult``'s error message and stderr into a single failure
-/// string, skipping whichever half is empty so the output isn't padded with a
-/// blank line. Order is error-first (the raise is usually the headline), stderr
-/// second (the context around it).
+/// Joins a ``RunResult``'s error message, backtrace, and stderr into a single
+/// failure string, skipping whichever parts are empty so the output isn't
+/// padded with blank lines. Order is error message first (the headline), then
+/// the backtrace (the frames that raise came from), then stderr (the context
+/// around it).
 private func combinedMessage(_ result: RunResult) -> String {
     var parts: [String] = []
     if let message = result.errorMessage, !message.isEmpty {
         parts.append(message)
+    }
+    if !result.backtrace.isEmpty {
+        parts.append(result.backtrace.joined(separator: "\n"))
     }
     if !result.stderr.isEmpty {
         parts.append(result.stderr)

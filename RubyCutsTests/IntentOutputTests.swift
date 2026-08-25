@@ -67,6 +67,34 @@ struct IntentOutputTests {
         #expect(error.message == "boom\nwarn\n")
     }
 
+    @Test func crashWithBacktraceIncludesTheTraceInTheMessage() throws {
+        let result = RunResult(
+            stdout: "", stderr: "", result: "", errorMessage: "boom",
+            backtrace: ["eval:2:in 'Object#foo'", "eval:4:in '<main>'"]
+        )
+
+        let error = try #require(throws: RubyRunError.self) {
+            try Self.output(from: result).get()
+        }
+
+        #expect(error.message == "boom\neval:2:in 'Object#foo'\neval:4:in '<main>'")
+    }
+
+    @Test func backtraceIsOrderedBetweenMessageAndStderr() throws {
+        // Order is message, then backtrace, then stderr -- the trace belongs
+        // directly under the raise it describes.
+        let result = RunResult(
+            stdout: "", stderr: "warn\n", result: "", errorMessage: "boom",
+            backtrace: ["eval:1:in '<main>'"]
+        )
+
+        let error = try #require(throws: RubyRunError.self) {
+            try Self.output(from: result).get()
+        }
+
+        #expect(error.message == "boom\neval:1:in '<main>'\nwarn\n")
+    }
+
     @Test func emptyCrashAndEmptyStderrSucceedsWithEmptyStdout() throws {
         // A boot failure surfaces as a `RunResult` with `errorMessage` set, so
         // it fails -- but a genuinely empty result (no error, no stderr) is a

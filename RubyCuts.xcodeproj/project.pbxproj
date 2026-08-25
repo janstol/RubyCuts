@@ -28,12 +28,12 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		9A3F8C9688AF025ABF09B066 /* stdlib */ = {isa = PBXFileReference; lastKnownFileType = folder; name = stdlib; path = Vendor/CRuby/stdlib; sourceTree = SOURCE_ROOT; };
 		DB954DEA3031C79700D2B0BA /* RubyCuts.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = RubyCuts.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		DB954DF93031C79900D2B0BA /* RubyCutsTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RubyCutsTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		DB954E033031C79900D2B0BA /* RubyCutsUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RubyCutsUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		DB954F023031C79900D2B0BA /* Shared.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Shared.xcconfig; sourceTree = "<group>"; };
 		DB954F033031C79900D2B0BA /* Local.xcconfig.sample */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Local.xcconfig.sample; sourceTree = "<group>"; };
-		9A3F8C9688AF025ABF09B066 /* stdlib */ = {isa = PBXFileReference; lastKnownFileType = folder; name = stdlib; path = Vendor/CRuby/stdlib; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -79,6 +79,14 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		B6FC9488F397C37CBC11A183 /* Vendor */ = {
+			isa = PBXGroup;
+			children = (
+				9A3F8C9688AF025ABF09B066 /* stdlib */,
+			);
+			name = Vendor;
+			sourceTree = "<group>";
+		};
 		DB954DE13031C79700D2B0BA = {
 			isa = PBXGroup;
 			children = (
@@ -108,14 +116,6 @@
 				DB954F033031C79900D2B0BA /* Local.xcconfig.sample */,
 			);
 			path = Config;
-			sourceTree = "<group>";
-		};
-		B6FC9488F397C37CBC11A183 /* Vendor */ = {
-			isa = PBXGroup;
-			children = (
-				9A3F8C9688AF025ABF09B066 /* stdlib */,
-			);
-			name = Vendor;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -354,6 +354,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = G5G9929B89;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -416,6 +417,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = G5G9929B89;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -447,6 +449,7 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -490,6 +493,7 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
