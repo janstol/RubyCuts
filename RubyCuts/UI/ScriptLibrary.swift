@@ -75,6 +75,22 @@ final class ScriptLibrary {
         return script
     }
 
+    /// Renames the script and returns the ``Script`` at its new URL. On
+    /// failure, sets ``errorMessage`` and returns `nil`; ``scripts`` is left
+    /// consistent by re-`list`ing. Mirrors ``create(name:)`` exactly.
+    func rename(_ script: Script, to newName: String) -> Script? {
+        errorMessage = nil
+        let renamed: Script
+        do {
+            renamed = try store.rename(script, to: newName)
+        } catch {
+            errorMessage = Self.describe(error)
+            return nil
+        }
+        refresh()
+        return renamed
+    }
+
     /// Deletes the script's file and re-lists. Sets ``errorMessage`` on failure.
     ///
     /// On failure the file wasn't removed, so `scripts` is already consistent

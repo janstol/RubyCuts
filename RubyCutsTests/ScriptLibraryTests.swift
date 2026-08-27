@@ -85,6 +85,40 @@ struct ScriptLibraryTests {
         #expect(library.errorMessage == nil)
     }
 
+    @Test func renameUpdatesTheScriptAndTheList() throws {
+        let store = try makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directoryURL) }
+
+        let library = ScriptLibrary(store: store)
+        let script = try #require(library.create(name: "before"))
+
+        let renamed = library.rename(script, to: "after")
+
+        #expect(renamed?.name == "after")
+        #expect(library.scripts.count == 1)
+        #expect(library.scripts.first == renamed)
+        #expect(library.errorMessage == nil)
+    }
+
+    @Test func renameWithEmptyNameSetsErrorAndReturnsNil() throws {
+        let store = try makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directoryURL) }
+
+        let library = ScriptLibrary(store: store)
+        let script = try #require(library.create(name: "before"))
+
+        // The store rejects empty/whitespace-only names; the VM surfaces
+        // that as an error message and returns nil, same as `create`.
+        let renamed = library.rename(script, to: "   ")
+
+        #expect(renamed == nil)
+        #expect(library.errorMessage != nil)
+        // The rename never happened, so the original script is still listed
+        // under its old name.
+        #expect(library.scripts.count == 1)
+        #expect(library.scripts.first?.name == "before")
+    }
+
     @Test func createWithEmptyNameSetsErrorAndReturnsNil() throws {
         let store = try makeStore()
         defer { try? FileManager.default.removeItem(at: store.directoryURL) }

@@ -18,6 +18,17 @@ struct ScriptListView: View {
     @State private var isPresentingNewAlert = false
     @State private var isPresentingGems = false
 
+    /// The script being renamed, and the name typed into the rename alert.
+    /// Mirrors ``newName``/``isPresentingNewAlert`` above: `renameTarget`
+    /// non-`nil` drives the alert's presentation, so there's no separate
+    /// `isPresenting` flag to keep in sync with it.
+    @State private var renameTarget: Script?
+    @State private var renameName = ""
+
+    /// The script pending deletion confirmation, set by the context menu and
+    /// by `.onDelete`. Non-`nil` drives the confirmation dialog below.
+    @State private var pendingDelete: Script?
+
     init(library: ScriptLibrary = ScriptLibrary()) {
         // `_library = State(initialValue:)` lets previews and tests inject a
         // VM seeded against a temp-dir store; the default still works for the
@@ -30,60 +41,101 @@ struct ScriptListView: View {
             content
                 .navigationTitle("Scripts")
                 .navigationDestination(for: Script.self) { script in
-                    ScriptEditorView(script: script, store: library.storeForEditing)
+                    ScriptEditorView(script: script, store: library.storeForEditing) {
+                        message in
+                        library.errorMessage = message
+                    }
                 }
-        }
-        .task {
-            library.refresh()
-        }
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    newName = "Untitled"
-                    isPresentingNewAlert = true
-                } label: {
-                    Label("New Script", systemImage: "plus")
+                .task {
+                    library.refresh()
                 }
-            }
-            ToolbarItem(placement: .secondaryAction) {
-                Button {
-                    isPresentingGems = true
-                } label: {
-                    Label("Gems", systemImage: "shippingbox")
+                .toolbar {
+                    ToolbarItem(placement: .primaryAction) {
+                        Button {
+                            newName = "Untitled"
+                            isPresentingNewAlert = true
+                        } label: {
+                            Label("New Script", systemImage: "plus")
+                        }
+                    }
+                    ToolbarItem(placement: .automatic) {
+                        Button {
+                            isPresentingGems = true
+                        } label: {
+                            Label("Gems", systemImage: "shippingbox")
+                        }
+                    }
                 }
-            }
-        }
-        .sheet(isPresented: $isPresentingGems) {
-            GemListView()
-        }
-        .alert("New Script", isPresented: $isPresentingNewAlert) {
-            TextField("Name", text: $newName)
-            Button("Create") {
-                createNew()
-            }
-            Button("Cancel", role: .cancel) {}
-        }
-        .alert(
-            "Error",
-            isPresented: .init(
-                get: { library.errorMessage != nil },
-                set: { if !$0 { library.errorMessage = nil } }
-            )
-        ) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(library.errorMessage ?? "")
+                .sheet(isPresented: $isPresentingGems) {
+                    GemListView()
+                }
+                .alert("New Script", isPresented: $isPresentingNewAlert) {
+                    TextField("Name", text: $newName)
+                    Button("Create") {
+                        createNew()
+                    }
+                    Button("Cancel", role: .cancel) {}
+                }
+                .alert(
+                    "Rename Script",
+                    isPresented: .init(
+                        get: { renameTarget != nil },
+                        set: { if !$0 { renameTarget = nil } }
+                    )
+                ) {
+                    TextField("Name", text: $renameName)
+                    Button("Rename") {
+                        renameCurrentTarget()
+                    }
+                    Button("Cancel", role: .cancel) {
+                        renameTarget = nil
+                    }
+                }
+                .alert(
+                    "Error",
+                    isPresented: .init(
+                        get: { library.errorMessage != nil },
+                        set: { if !$0 { library.errorMessage = nil } }
+                    )
+                ) {
+                    Button("OK", role: .cancel) {}
+                } message: {
+                    Text(library.errorMessage ?? "")
+                }
+                .confirmationDialog(
+                    "Delete Script",
+                    isPresented: .init(
+                        get: { pendingDelete != nil },
+                        set: { if !$0 { pendingDelete = nil } }
+                    ),
+                    presenting: pendingDelete
+                ) { script in
+                    Button("Delete \(script.name)", role: .destructive) {
+                        library.delete(script)
+                        pendingDelete = nil
+                    }
+                    Button("Cancel", role: .cancel) {
+                        pendingDelete = nil
+                    }
+                } message: { script in
+                    Text("\"\(script.name)\" can't be recovered once deleted.")
+                }
         }
     }
 
     @ViewBuilder
     private var content: some View {
         if library.scripts.isEmpty {
-            ContentUnavailableView(
-                "No Scripts Yet",
-                systemImage: "doc.text",
-                description: Text("Tap + to create a Ruby script.")
-            )
+            ContentUnavailableView {
+                Label("No Scripts Yet", systemImage: "doc.text")
+            } description: {
+                Text("Create a Ruby script to run it from the app or from a Shortcut.")
+            } actions: {
+                Button("New Script") {
+                    newName = "Untitled"
+                    isPresentingNewAlert = true
+                }
+            }
         } else {
             List {
                 ForEach(library.scripts) { script in
@@ -91,18 +143,32 @@ struct ScriptListView: View {
                         Text(script.name)
                     }
                     .contextMenu {
+                        Button("Rename") {
+                            renameTarget = script
+                            renameName = script.name
+                        }
                         Button("Delete", role: .destructive) {
-                            library.delete(script)
+                            pendingDelete = script
                         }
                     }
                 }
                 .onDelete { indexSet in
-                    for index in indexSet {
-                        library.delete(library.scripts[index])
+                    // A confirmation dialog can only present one script at a
+                    // time, so a multi-row swipe/delete only ever offers the
+                    // first -- matching the context menu's single-script
+                    // confirmation rather than a batch one.
+                    if let index = indexSet.first {
+                        pendingDelete = library.scripts[index]
                     }
                 }
             }
         }
+    }
+
+    private func renameCurrentTarget() {
+        guard let script = renameTarget else { return }
+        renameTarget = nil
+        _ = library.rename(script, to: renameName)
     }
 
     private func createNew() {
