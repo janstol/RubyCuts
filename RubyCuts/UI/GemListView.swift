@@ -10,6 +10,10 @@ struct GemListView: View {
     @State private var gemName = ""
     @State private var gemRequirement = ""
 
+    /// The gem pending deletion confirmation, set by the context menu and by
+    /// `.onDelete`. Non-`nil` drives the confirmation dialog below.
+    @State private var pendingDelete: InstalledGem?
+
     init(library: GemLibrary = GemLibrary()) {
         // `_library = State(initialValue:)` lets previews and tests inject a
         // VM seeded against a temp-dir store, matching `ScriptListView`.
@@ -44,6 +48,24 @@ struct GemListView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(library.errorMessage ?? "")
+        }
+        .confirmationDialog(
+            "Delete Gem",
+            isPresented: .init(
+                get: { pendingDelete != nil },
+                set: { if !$0 { pendingDelete = nil } }
+            ),
+            presenting: pendingDelete
+        ) { gem in
+            Button("Delete \(gem.name)", role: .destructive) {
+                library.delete(gem)
+                pendingDelete = nil
+            }
+            Button("Cancel", role: .cancel) {
+                pendingDelete = nil
+            }
+        } message: { gem in
+            Text("\"\(gem.name)\" will need to be reinstalled to use it again.")
         }
     }
 
@@ -110,13 +132,17 @@ struct GemListView: View {
                     }
                     .contextMenu {
                         Button("Delete", role: .destructive) {
-                            library.delete(gem)
+                            pendingDelete = gem
                         }
                     }
                 }
                 .onDelete { indexSet in
-                    for index in indexSet {
-                        library.delete(library.gems[index])
+                    // A confirmation dialog can only present one gem at a
+                    // time, so a multi-row swipe/delete only ever offers the
+                    // first -- matching the context menu's single-gem
+                    // confirmation rather than a batch one.
+                    if let index = indexSet.first {
+                        pendingDelete = library.gems[index]
                     }
                 }
             }
