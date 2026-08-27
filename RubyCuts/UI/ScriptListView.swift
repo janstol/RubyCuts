@@ -9,7 +9,7 @@ import SwiftUI
 /// VM's `errorMessage`, and a `#Preview` on a temp-dir store with mock data.
 struct ScriptListView: View {
     @State private var library: ScriptLibrary
-    @State private var path = NavigationPath()
+    @State private var selection: Script?
 
     /// Name being typed into the "new script" alert, and whether the alert is
     /// showing. Kept here on the view (not the VM) because it's UI state, not
@@ -37,15 +37,10 @@ struct ScriptListView: View {
     }
 
     var body: some View {
-        NavigationStack(path: $path) {
+        NavigationSplitView {
             content
                 .navigationTitle("Scripts")
-                .navigationDestination(for: Script.self) { script in
-                    ScriptEditorView(script: script, store: library.storeForEditing) {
-                        message in
-                        library.errorMessage = message
-                    }
-                }
+                .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 320)
                 .task {
                     library.refresh()
                 }
@@ -112,6 +107,9 @@ struct ScriptListView: View {
                 ) { script in
                     Button("Delete \(script.name)", role: .destructive) {
                         library.delete(script)
+                        if selection == script {
+                            selection = nil
+                        }
                         pendingDelete = nil
                     }
                     Button("Cancel", role: .cancel) {
@@ -120,6 +118,17 @@ struct ScriptListView: View {
                 } message: { script in
                     Text("\"\(script.name)\" can't be recovered once deleted.")
                 }
+        } detail: {
+            if let selection {
+                ScriptEditorView(script: selection, store: library.storeForEditing) {
+                    message in
+                    library.errorMessage = message
+                }
+                .id(selection)
+            } else {
+                ContentUnavailableView(
+                    "No Script Selected", systemImage: "doc.text")
+            }
         }
     }
 
@@ -137,20 +146,19 @@ struct ScriptListView: View {
                 }
             }
         } else {
-            List {
+            List(selection: $selection) {
                 ForEach(library.scripts) { script in
-                    NavigationLink(value: script) {
-                        Text(script.name)
-                    }
-                    .contextMenu {
-                        Button("Rename") {
-                            renameTarget = script
-                            renameName = script.name
+                    Text(script.name)
+                        .tag(script)
+                        .contextMenu {
+                            Button("Rename") {
+                                renameTarget = script
+                                renameName = script.name
+                            }
+                            Button("Delete", role: .destructive) {
+                                pendingDelete = script
+                            }
                         }
-                        Button("Delete", role: .destructive) {
-                            pendingDelete = script
-                        }
-                    }
                 }
                 .onDelete { indexSet in
                     // A confirmation dialog can only present one script at a
@@ -168,7 +176,10 @@ struct ScriptListView: View {
     private func renameCurrentTarget() {
         guard let script = renameTarget else { return }
         renameTarget = nil
-        _ = library.rename(script, to: renameName)
+        guard let renamed = library.rename(script, to: renameName) else { return }
+        if selection == script {
+            selection = renamed
+        }
     }
 
     private func createNew() {
@@ -177,7 +188,7 @@ struct ScriptListView: View {
         // something usable; the store also rejects empty/whitespace-only names.
         let resolved = name.isEmpty ? "Untitled" : name
         if let script = library.create(name: resolved) {
-            path.append(script)
+            selection = script
         }
     }
 }

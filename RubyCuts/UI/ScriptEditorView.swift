@@ -29,9 +29,9 @@ import SwiftUI
 /// here is local to the detail surface, not list state -- ``onSaveError`` is
 /// a narrow, one-directional exception to that for the autosave case above,
 /// not a reference to the list VM itself. Renaming the file is out of scope
-/// here: it moves the script's identity in the list view's `NavigationPath`,
-/// which needs the navigation rework Wave B's `NavigationSplitView` item
-/// brings; rename is reachable from the list row instead.
+/// here: it's reachable from the list row's context menu instead, and giving
+/// the editor's own title a rename affordance (an `onRename` callback) is its
+/// own follow-up item.
 struct ScriptEditorView: View {
     let script: Script
     let store: ScriptStore
