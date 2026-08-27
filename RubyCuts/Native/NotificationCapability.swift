@@ -13,12 +13,24 @@ import UserNotifications
 /// synchronous Ruby callback, so the script gets back `nil` and can't learn
 /// whether delivery actually succeeded. What the handler *can* check
 /// synchronously is ``cachedAuthorizationStatus``, refreshed by
-/// ``refreshAuthorizationStatus()`` at launch and scene activation -- and it
-/// raises an actionable ``NativeBridgeError`` when that cache says
-/// notifications are denied or still undetermined, rather than silently
-/// posting a request that's certain to be dropped. A cache miss (permission
-/// revoked in Settings since the last refresh) still means the script gets
-/// no error even though delivery fails -- best-effort by construction.
+/// ``refreshAuthorizationStatus()`` at scene activation -- and it raises an
+/// actionable ``NativeBridgeError`` when that cache says notifications are
+/// denied or still undetermined, rather than silently posting a request
+/// that's certain to be dropped. A cache miss (permission revoked in Settings
+/// since the last refresh) still means the script gets no error even though
+/// delivery fails -- best-effort by construction.
+///
+/// **Permission is requested just-in-time, not at launch.** There's no
+/// notification prompt anywhere in `RubyCutsApp` -- the first time a script
+/// calls `Device::Notification.notify` while the status is
+/// `.notDetermined`, ``post(title:body:)`` kicks off the system request on a
+/// detached task and still throws, because the request is async and this
+/// call can't await it. The OS prompt then appears once the run returns and
+/// the main actor is free to show it; a second `Device::Notification.notify`
+/// call after the user grants or denies succeeds or fails accordingly. This
+/// two-call shape is a real user-visible consequence of `RubyRuntime` running
+/// the VM on the main actor (see its doc comment's known follow-up), not a
+/// bug to hide.
 enum NotificationCapability {
     /// The last-known authorization status, read synchronously by
     /// ``post(title:body:)``. Production code only ever sets this via
@@ -28,10 +40,10 @@ enum NotificationCapability {
     static var cachedAuthorizationStatus: UNAuthorizationStatus = .notDetermined
 
     /// Re-reads the current authorization status from
-    /// `UNUserNotificationCenter` into ``cachedAuthorizationStatus``. Call at
-    /// launch (after requesting authorization) and on scene activation, since
-    /// the user can flip notification permission in Settings while the app
-    /// is backgrounded.
+    /// `UNUserNotificationCenter` into ``cachedAuthorizationStatus``. Call on
+    /// scene activation, since the user can flip notification permission in
+    /// Settings while the app is backgrounded, and after the just-in-time
+    /// request in ``post(title:body:)`` resolves.
     @MainActor
     static func refreshAuthorizationStatus() async {
         let settings = await UNUserNotificationCenter.current().notificationSettings()
@@ -75,8 +87,23 @@ enum NotificationCapability {
                     "notifications are denied -- enable them in Settings to use Device::Notification"
             )
         case .notDetermined:
+            // Permission is asked for just-in-time, on the first call, rather
+            // than at launch (see `RubyCutsApp`). Nothing in `UserNotifications`
+            // can be awaited from here -- `post` runs synchronously from inside
+            // a Ruby callback while `RubyRuntime` holds the main actor for the
+            // whole run (see this type's doc comment) -- so the request is
+            // kicked off detached and this call still has to fail. The OS
+            // prompt appears once the run returns and the main actor is free;
+            // a second `Device::Notification.notify` call after granting
+            // succeeds.
+            Task.detached {
+                _ = try? await UNUserNotificationCenter.current()
+                    .requestAuthorization(options: [.alert, .sound])
+                await refreshAuthorizationStatus()
+            }
             throw NativeBridgeError(
-                message: "notification permission hasn't been granted yet"
+                message:
+                    "requesting notification permission -- allow it, then run the script again"
             )
         @unknown default:
             throw NativeBridgeError(
