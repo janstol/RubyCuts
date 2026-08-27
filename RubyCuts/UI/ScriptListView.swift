@@ -18,12 +18,14 @@ struct ScriptListView: View {
     @State private var isPresentingNewAlert = false
     @State private var isPresentingGems = false
 
-    /// The script being renamed, and the name typed into the rename alert.
-    /// Mirrors ``newName``/``isPresentingNewAlert`` above: `renameTarget`
-    /// non-`nil` drives the alert's presentation, so there's no separate
-    /// `isPresenting` flag to keep in sync with it.
+    /// The script being renamed, driving a ``RenameSheet``. Non-`nil` drives
+    /// the sheet's presentation, so there's no separate `isPresenting` flag
+    /// to keep in sync with it. Rename used to be an `.alert` with a
+    /// `TextField`, but on macOS that field reliably opened empty across
+    /// repeated presentations regardless of how the backing state was
+    /// plumbed -- a known SwiftUI/AppKit issue with `.alert`'s text field,
+    /// not an app bug. A sheet with its own local state sidesteps it.
     @State private var renameTarget: Script?
-    @State private var renameName = ""
 
     /// The script pending deletion confirmation, set by the context menu and
     /// by `.onDelete`. Non-`nil` drives the confirmation dialog below.
@@ -71,19 +73,24 @@ struct ScriptListView: View {
                     }
                     Button("Cancel", role: .cancel) {}
                 }
-                .alert(
-                    "Rename Script",
+                .sheet(
                     isPresented: .init(
                         get: { renameTarget != nil },
                         set: { if !$0 { renameTarget = nil } }
                     )
                 ) {
-                    TextField("Name", text: $renameName)
-                    Button("Rename") {
-                        renameCurrentTarget()
-                    }
-                    Button("Cancel", role: .cancel) {
-                        renameTarget = nil
+                    if let target = renameTarget {
+                        RenameSheet(scriptName: target.name) { newName in
+                            renameTarget = nil
+                            guard let renamed = library.rename(target, to: newName) else {
+                                return
+                            }
+                            if selection == target {
+                                selection = renamed
+                            }
+                        } onCancel: {
+                            renameTarget = nil
+                        }
                     }
                 }
                 .alert(
@@ -119,11 +126,19 @@ struct ScriptListView: View {
                     Text("\"\(script.name)\" can't be recovered once deleted.")
                 }
         } detail: {
-            if let selection {
-                ScriptEditorView(script: selection, store: library.storeForEditing) {
-                    message in
-                    library.errorMessage = message
-                }
+            if let script = selection {
+                ScriptEditorView(
+                    script: script,
+                    store: library.storeForEditing,
+                    onSaveError: { library.errorMessage = $0 },
+                    onRename: { newName in
+                        guard let renamed = library.rename(script, to: newName) else {
+                            return nil
+                        }
+                        selection = renamed
+                        return renamed
+                    }
+                )
                 .id(selection)
             } else {
                 ContentUnavailableView(
@@ -153,7 +168,6 @@ struct ScriptListView: View {
                         .contextMenu {
                             Button("Rename") {
                                 renameTarget = script
-                                renameName = script.name
                             }
                             Button("Delete", role: .destructive) {
                                 pendingDelete = script
@@ -173,15 +187,6 @@ struct ScriptListView: View {
         }
     }
 
-    private func renameCurrentTarget() {
-        guard let script = renameTarget else { return }
-        renameTarget = nil
-        guard let renamed = library.rename(script, to: renameName) else { return }
-        if selection == script {
-            selection = renamed
-        }
-    }
-
     private func createNew() {
         let name = newName.trimmingCharacters(in: .whitespacesAndNewlines)
         // Defaulting the field to "Untitled" means an empty submit still creates
@@ -190,6 +195,74 @@ struct ScriptListView: View {
         if let script = library.create(name: resolved) {
             selection = script
         }
+    }
+}
+
+/// A single-field rename dialog, reached from the list row's context menu.
+/// Deliberately a sheet with its own local `@State` rather than an `.alert`
+/// with a `TextField` -- the alert version reliably opened with an empty
+/// field on macOS across repeated presentations, confirmed live testing,
+/// regardless of how the backing state was plumbed. That's a known
+/// SwiftUI/AppKit issue with `.alert`'s text field, not something app-level
+/// state management can work around; a sheet's content is a fresh view with
+/// its own state each time it's presented, which sidesteps it entirely.
+private struct RenameSheet: View {
+    let scriptName: String
+    let onCommit: (String) -> Void
+    let onCancel: () -> Void
+
+    @State private var name: String
+    @FocusState private var isNameFocused: Bool
+
+    init(scriptName: String, onCommit: @escaping (String) -> Void, onCancel: @escaping () -> Void) {
+        self.scriptName = scriptName
+        self.onCommit = onCommit
+        self.onCancel = onCancel
+        self._name = State(initialValue: scriptName)
+    }
+
+    private var trimmedName: String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var body: some View {
+        NavigationStack {
+            // A plain padded field, not a `Form` -- a `Form` here rendered
+            // the field flush against the sheet's edges with a stray
+            // full-width divider and no room to breathe, since a
+            // single-row Form doesn't get the grouped-section insets that
+            // make a `Form` look right. This is simple enough not to need
+            // `Form`'s section machinery anyway.
+            TextField("Name", text: $name)
+                .focused($isNameFocused)
+                .onSubmit {
+                    if !trimmedName.isEmpty {
+                        onCommit(trimmedName)
+                    }
+                }
+                .padding()
+                .navigationTitle("Rename Script")
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel", role: .cancel, action: onCancel)
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Rename") {
+                            onCommit(trimmedName)
+                        }
+                        .disabled(trimmedName.isEmpty)
+                    }
+                }
+        }
+        .onAppear {
+            isNameFocused = true
+        }
+        // Same macOS sheet-sizing issue as `GemListView` -- without an
+        // explicit frame the sheet can collapse to fit almost nothing. No
+        // `minHeight` here (unlike `GemListView`'s list-based one): a fixed
+        // one left dead space below this single field, since the toolbar's
+        // button bar pins to the window bottom regardless of content height.
+        .frame(minWidth: 320)
     }
 }
 

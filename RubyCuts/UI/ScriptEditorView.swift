@@ -28,10 +28,13 @@ import SwiftUI
 /// The editor holds its own error state (not the list VM's) because an error
 /// here is local to the detail surface, not list state -- ``onSaveError`` is
 /// a narrow, one-directional exception to that for the autosave case above,
-/// not a reference to the list VM itself. Renaming the file is out of scope
-/// here: it's reachable from the list row's context menu instead, and giving
-/// the editor's own title a rename affordance (an `onRename` callback) is its
-/// own follow-up item.
+/// not a reference to the list VM itself. Renaming is also reachable here on
+/// iOS/iPadOS, through the editable navigation title, in addition to the
+/// list row's context menu. macOS doesn't get a title-based rename
+/// affordance -- confirmed live that neither a plain editable title binding
+/// nor `.navigationDocument` unlocks one outside a `DocumentGroup` app -- so
+/// there the context menu (a sheet, not an alert; see
+/// `ScriptListView.RenameSheet`) is the only rename path.
 struct ScriptEditorView: View {
     let script: Script
     let store: ScriptStore
@@ -42,7 +45,20 @@ struct ScriptEditorView: View {
     /// don't care about this can ignore it.
     var onSaveError: (String) -> Void = { _ in }
 
+    /// Called when the user commits a new name in the editable title
+    /// (iOS/iPadOS only -- see the type doc comment). Returns the renamed
+    /// ``Script`` on success and `nil` on failure -- the list view owns the
+    /// store mutation and surfaces the error, and `nil` tells the editor to
+    /// revert the title text. Defaults to a no-op that always fails, so
+    /// previews and tests that don't wire it simply can't rename.
+    var onRename: (String) -> Script? = { _ in nil }
+
     @State private var source: String = ""
+
+    /// The name shown in the editable navigation title on iOS/iPadOS. Seeded
+    /// from `script.name` and committed through ``onRename`` when the user
+    /// finishes editing it. Unused on macOS, where the title is static.
+    @State private var editableName = ""
 
     /// The source as of the last successful save, used only to derive
     /// ``isDirty``. Set alongside `source` when the script loads, and again
@@ -83,27 +99,37 @@ struct ScriptEditorView: View {
                     .background(.regularMaterial)
             }
         }
-        .navigationTitle(script.name)
         #if os(macOS)
+            // An editable `.navigationTitle` binding doesn't get a
+            // click-to-rename affordance here -- confirmed live, and
+            // `.navigationDocument` doesn't unlock it either. Apple's docs
+            // scope `.navigationDocument` to document-based (`DocumentGroup`)
+            // apps; RubyCuts is a plain `WindowGroup`, and making it one
+            // is a much bigger change than this item. So the title stays
+            // static on macOS, and the context-menu rename (now a sheet,
+            // see `ScriptListView.RenameSheet`) is the only rename path
+            // there.
+            .navigationTitle(script.name)
             .navigationSubtitle(isDirty ? "Edited" : "")
+        #else
+            // On iOS/iPadOS an editable title binding does present a
+            // click/tap-to-rename affordance without needing
+            // `.navigationDocument`.
+            .navigationTitle($editableName)
+            .onChange(of: editableName) { _, newValue in commitRename(to: newValue) }
         #endif
         .toolbar {
-            #if !os(macOS)
-                // No `navigationSubtitle` on iOS/iPadOS, so the modified
-                // marker rides along in a custom title view instead.
-                ToolbarItem(placement: .principal) {
-                    VStack(spacing: 0) {
-                        Text(script.name)
-                            .font(.headline)
-                        if isDirty {
-                            Text("Edited")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-            #endif
             ToolbarItemGroup(placement: .primaryAction) {
+                #if !os(macOS)
+                    // No `navigationSubtitle` on iOS/iPadOS, so the modified
+                    // marker rides along in the toolbar instead, now that the
+                    // title itself is an editable binding.
+                    if isDirty {
+                        Text("Edited")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                #endif
                 Button {
                     run()
                 } label: {
@@ -133,6 +159,7 @@ struct ScriptEditorView: View {
             // Read on demand: source isn't held on the model, only loaded here
             // when the editor appears. A read failure shows an alert rather than
             // crashing the view; the editor opens empty.
+            editableName = script.name
             do {
                 source = try store.source(of: script)
                 savedSource = source
@@ -167,11 +194,30 @@ struct ScriptEditorView: View {
     /// may be disappearing, so the local alert may never be seen -- report
     /// through ``onSaveError`` instead) from the explicit Save button (the
     /// editor is guaranteed visible, so the local alert works as before).
-    private func save(silent: Bool = false) {
+    /// Returns whether the save succeeded, so ``commitRename(to:)`` can tell
+    /// whether it's safe to move the file out from under the old URL.
+    ///
+    /// A silent autosave first checks that `script.url` still exists.
+    /// Renaming or deleting the open script from the list changes `selection`,
+    /// which tears this view down via `.id(selection)` -- but that happens
+    /// *after* the file's already moved or gone, so `.onDisappear`'s autosave
+    /// would otherwise write to a stale path and resurrect a phantom copy of
+    /// a script that was just renamed or deleted out from under it (confirmed
+    /// live: a rename left a duplicate file that only showed up after an app
+    /// restart triggered a fresh directory scan). Skipping is strictly better
+    /// than that: at worst it loses the last few keystrokes in that narrow
+    /// race, which is the same tradeoff "autosave, not confirm-on-leave"
+    /// already accepts everywhere else, not new data loss.
+    @discardableResult
+    private func save(silent: Bool = false) -> Bool {
+        if silent && !FileManager.default.fileExists(atPath: script.url.path) {
+            return true
+        }
         do {
             try store.write(script, source: source)
             savedSource = source
             errorMessage = nil
+            return true
         } catch {
             let message = error.localizedDescription
             if silent {
@@ -180,6 +226,29 @@ struct ScriptEditorView: View {
                 errorMessage = message
                 showError = true
             }
+            return false
+        }
+    }
+
+    /// Commits an edit to ``editableName`` as a rename. Order matters here:
+    /// a rename moves the file out from under `script.url`, so unsaved
+    /// source has to reach the *old* URL first, before ``onRename`` moves it.
+    private func commitRename(to newValue: String) {
+        let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != script.name else {
+            editableName = script.name
+            return
+        }
+        if isDirty {
+            guard save() else {
+                // Renaming on top of a failed save would strand the edits
+                // under a URL nothing points at anymore.
+                editableName = script.name
+                return
+            }
+        }
+        if onRename(trimmed) == nil {
+            editableName = script.name
         }
     }
 
@@ -230,7 +299,17 @@ private struct ScriptEditorPreview: View {
 
     var body: some View {
         NavigationStack {
-            ScriptEditorView(script: script, store: store)
+            ScriptEditorView(
+                script: script,
+                store: store,
+                onRename: { newName in
+                    guard let renamed = try? store.rename(script, to: newName) else {
+                        return nil
+                    }
+                    script = renamed
+                    return renamed
+                }
+            )
         }
         .frame(minWidth: 500, minHeight: 400)
     }
