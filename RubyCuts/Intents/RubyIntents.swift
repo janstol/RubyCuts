@@ -92,13 +92,12 @@ private func combinedMessage(_ result: RunResult) -> String {
 /// so `IntentOutputTests` is unaffected -- this is the only side-effectful
 /// caller.
 ///
-/// `@MainActor` because ``RubyRuntime/shared`` is pinned to the main actor (the
-/// VM is single-threaded); the App Intent `perform()` is `@MainActor` too, so
-/// the call site is already there. The same long-script-blocks-UI caveat as the
-/// console applies -- true backgrounding is the later threading redesign.
-@MainActor
-func runToOutput(_ source: String, input: RunInput = .empty) throws -> String {
-    let result = RubyRuntime.shared.run(source, input: input)
+/// `async` because ``RubyRuntime/shared`` runs on its own dedicated thread
+/// (see its doc comment), not whichever actor calls in -- both `perform()`
+/// call sites already `await` here, so nothing about the Shortcuts contract
+/// changes.
+func runToOutput(_ source: String, input: RunInput = .empty) async throws -> String {
+    let result = await RubyRuntime.shared.run(source, input: input)
     return try output(from: result).get()
 }
 
@@ -174,7 +173,7 @@ struct RunInlineRubyIntent: AppIntent {
     @MainActor
     func perform() async throws -> some IntentResult & ReturnsValue<String> {
         let input = RunInput(argv: argv, stdin: stdin, env: parseEnv(env))
-        return .result(value: try runToOutput(code, input: input))
+        return .result(value: try await runToOutput(code, input: input))
     }
 }
 
@@ -243,6 +242,6 @@ struct RunRubyScriptIntent: AppIntent {
         }
         let source = try ScriptStore.userScripts.source(of: resolved)
         let input = RunInput(argv: argv, stdin: stdin, env: parseEnv(env))
-        return .result(value: try runToOutput(source, input: input))
+        return .result(value: try await runToOutput(source, input: input))
     }
 }

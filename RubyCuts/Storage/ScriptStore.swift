@@ -22,11 +22,12 @@ enum ScriptStoreError: Error {
 /// Phase 2 items 1-3) until the Apple Developer portal capability is enabled;
 /// ``list()`` is the single method `NSMetadataQuery` will replace.
 ///
-/// **Known follow-up:** like ``RubyRuntime``, the I/O methods here are
-/// synchronous. File reads/writes for small scripts are fast, so this is fine
-/// for the walking skeleton. Backgrounding long writes (a large script pasted
-/// in, or enumerating a directory with many files) is a later-phase concern,
-/// mirroring the "long-running script blocks UI" note in `RubyRuntime.swift`.
+/// **Known follow-up:** the I/O methods here are synchronous and run on
+/// whatever actor calls them, unlike ``RubyRuntime`` (which now has its own
+/// dedicated thread -- see its doc comment). File reads/writes for small
+/// scripts are fast, so this is fine for the walking skeleton. Backgrounding
+/// long writes (a large script pasted in, or enumerating a directory with
+/// many files) is a later-phase concern.
 ///
 /// Like ``Script``, every member is `nonisolated` to opt out of the app target's
 /// MainActor-by-default isolation: the store holds no actor-coupled state (only

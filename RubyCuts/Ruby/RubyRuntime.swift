@@ -1,7 +1,7 @@
 import Foundation
 
 /// An error raised while evaluating Ruby code through ``RubyRuntime``.
-enum RubyError: Error {
+enum RubyError: Error, Sendable {
     /// Evaluation failed, either because `code` didn't parse or because it raised. The associated string is the Ruby exception's `to_s`, e.g. `"undefined method 'foo' for nil"`.
     case evaluationFailed(String)
 
@@ -11,13 +11,26 @@ enum RubyError: Error {
 
 /// A single embedded CRuby VM, booted once and reused for the life of the process.
 ///
-/// Ruby's VM isn't thread-safe, and `RUBY_INIT_STACK` (expanded inside `rubycuts_init`) records the *initializing thread's* stack bounds for the garbage collector to scan -- every call into the VM has to happen from that same thread afterward. Pinning this type to `@MainActor` is the simplest way to guarantee that.
+/// Ruby's VM isn't thread-safe, and `RUBY_INIT_STACK` (expanded inside `rubycuts_init`) records the *initializing thread's* stack bounds for the garbage collector to scan -- every call into the VM has to happen from that same thread afterward. This type is an `actor` whose executor is ``RubyVMExecutor``, a dedicated thread that boots the VM on its own entry frame and then services every later call from that same frame -- the compiler enforces "always the VM thread" the same way it enforces any other actor's isolation, and callers `await` in rather than blocking whichever thread they're on.
 ///
-/// **Known follow-up:** because every call runs on the main actor, a long-running script blocks the UI. Giving Ruby its own dedicated thread is a real redesign -- the VM would need to move off `@MainActor` entirely, and every call site would need to hop threads -- not a small addition, so it's left for a later phase rather than smuggled in here.
-@MainActor
-final class RubyRuntime {
+/// Every method below is a plain synchronous actor method with no internal
+/// suspension point -- deliberately: a suspension partway through a
+/// multi-eval sequence like ``run(_:input:)`` would let another queued job
+/// run in between and interleave with it, corrupting things like the
+/// ARGV/ENV backup globals that sequence relies on. All the `await` a caller
+/// does is the one hop onto the VM thread to run the whole method.
+actor RubyRuntime {
     /// The process-wide Ruby VM. `ruby_init` can't be re-run once the VM is torn down (which this type never does), so this is the only instance to use.
     static let shared = RubyRuntime()
+
+    private let vmExecutor = RubyVMExecutor()
+
+    /// Backs this actor with ``vmExecutor`` instead of the default global
+    /// executor, so every call into `RubyRuntime` runs on the dedicated VM
+    /// thread ``RubyVMExecutor`` owns.
+    nonisolated var unownedExecutor: UnownedSerialExecutor {
+        vmExecutor.asUnownedSerialExecutor()
+    }
 
     private init() {}
 
@@ -49,11 +62,14 @@ final class RubyRuntime {
     /// ``evaluate``'s `throws` path would drop. Boot failure is returned as a
     /// `RunResult` with `errorMessage` set, not thrown.
     ///
-    /// **Known follow-up:** like ``evaluate``, this is synchronous and runs on
-    /// the main actor, so a long-running script blocks the UI -- the "live
-    /// console" streams only after the run completes, not as it goes. True
-    /// streaming needs the VM off the main actor (the redesign flagged on this
-    /// type), and is deferred. For typical short scripts the run is instant.
+    /// **Known follow-up:** the main actor is free while this runs (callers
+    /// `await` it), but `run` itself is still one synchronous unit on the VM
+    /// thread -- the "live console" streams only after the run completes, not
+    /// as it goes, and there's still no way to cancel a run in progress.
+    /// Streaming needs a hook inside the eval loop itself (a `RUBY_EVENT_LINE`
+    /// callback is the planned mechanism, tracked as its own backlog item
+    /// alongside cancellation), not just getting off the main actor. For
+    /// typical short scripts the run is instant either way.
     ///
     /// **Input is opt-in.** With an empty ``RunInput`` (the default) this is
     /// byte-for-byte today's path: the five-eval StringIO capture, no
@@ -241,10 +257,17 @@ final class RubyRuntime {
     /// `Device::*` capabilities degrade (an undefined-constant `NameError`, or
     /// a `RuntimeError` from `RubyCuts::Native.call` if the C-side handler was
     /// never installed).
+    ///
+    /// Only the Ruby-side surface (`Device::Clipboard`, `Device::Notification`)
+    /// is defined here, from ``NativeBridge/preludeSource``, a `nonisolated`
+    /// `String` that needs no actor hop from the VM thread. The Swift-side
+    /// handlers those calls eventually dispatch to are registered lazily, on
+    /// the main actor, the first time one actually fires -- see
+    /// ``NativeBridge/registerDefaultsIfNeeded()``.
     private func installNativeBridge() {
         rubycuts_install_native_bridge(rubycutsNativeTrampoline)
         do {
-            _ = try evalRaw(NativeBridge.installDefaults())
+            _ = try evalRaw(NativeBridge.preludeSource)
         } catch {
             // Non-fatal: Device::* capabilities degrade; Ruby itself still works.
         }
@@ -368,7 +391,12 @@ final class RubyRuntime {
     /// decoded in Ruby, so the embedded literals are plain ASCII with no
     /// escaping (see ``run(_:input:)``). Only the channels `input` provides are
     /// set, so a run with ARGV-only doesn't touch `$stdin` or `ENV`.
-    private static func inputSetup(for input: RunInput) -> String {
+    ///
+    /// `nonisolated`: a pure string builder called synchronously from
+    /// ``run(_:input:)``, which runs on the VM thread, not the main actor --
+    /// without this it would default to `@MainActor` (this app target's
+    /// default isolation) and that call wouldn't compile.
+    private nonisolated static func inputSetup(for input: RunInput) -> String {
         var parts: [String] = ["require 'base64'"]
 
         if !input.argv.isEmpty {
@@ -407,7 +435,10 @@ final class RubyRuntime {
     /// backup globals. Runs in `run`'s `defer`, so it fires even when the user's
     /// code raised -- the point being a Shortcut run's env never bleeds into a
     /// later console evaluation or the next run.
-    private static func inputTeardown(for input: RunInput) -> String {
+    ///
+    /// `nonisolated`, matching ``inputSetup(for:)`` -- called synchronously
+    /// from `run`'s VM-thread-isolated `defer`.
+    private nonisolated static func inputTeardown(for input: RunInput) -> String {
         var parts: [String] = []
 
         if !input.argv.isEmpty {
@@ -435,14 +466,22 @@ final class RubyRuntime {
     ///
     /// Internal (not `private`) so ``GemArchive`` can reuse the same
     /// transport for filesystem paths, rather than re-deriving it.
-    static func base64(_ string: String) -> String {
+    ///
+    /// `nonisolated`: called synchronously from ``appendLoadPath(_:)`` (VM-
+    /// thread-isolated) as well as from other actors entirely -- a pure
+    /// function with no VM or main-actor state, so it needs no isolation of
+    /// its own.
+    nonisolated static func base64(_ string: String) -> String {
         Data(string.utf8).base64EncodedString()
     }
 
     /// Maps a thrown ``RubyError`` to a short human-readable string for
     /// ``run(_:)``'s `errorMessage` field. `evaluate` throws the same error;
     /// `run` catches it and surfaces the message instead.
-    private static func describe(_ error: Error) -> String {
+    ///
+    /// `nonisolated`: called synchronously from `run`, which runs on the VM
+    /// thread, not the main actor.
+    private nonisolated static func describe(_ error: Error) -> String {
         if let rubyError = error as? RubyError {
             switch rubyError {
             case .evaluationFailed(let message): return message
@@ -455,7 +494,10 @@ final class RubyRuntime {
     /// Locates the bundled CA bundle: `stdlib/cacert.pem`. Returns `nil` if the
     /// stdlib or the PEM is missing -- a build that skipped the
     /// `install_ca_bundle!` step in `scripts/build-cruby.rb`.
-    private static func bundledCACertURL() -> URL? {
+    ///
+    /// `nonisolated`: called synchronously from ``configureTLS()``, which
+    /// runs on the VM thread, not the main actor.
+    private nonisolated static func bundledCACertURL() -> URL? {
         guard let stdlibURL = bundledStdlibURL() else { return nil }
         let cacertURL = stdlibURL.appending(component: "cacert.pem")
         return FileManager.default.fileExists(atPath: cacertURL.path) ? cacertURL : nil
@@ -464,7 +506,11 @@ final class RubyRuntime {
     /// Locates the bundled CRuby stdlib directory: `RubyCuts.app/Contents/Resources/stdlib` on macOS, `RubyCuts.app/stdlib` on iOS. `RubyCutsTests` is app-hosted (`TEST_HOST`/`BUNDLE_LOADER` in the project), so `Bundle.main` during a test run resolves to `RubyCuts.app` too.
     ///
     /// - Returns: The resource's URL, or `nil` if it's missing -- a build that skipped `scripts/build-cruby.rb`, or a stale bundle from before this resource was wired up.
-    private static func bundledStdlibURL() -> URL? {
+    ///
+    /// `nonisolated`: called synchronously from ``bootIfNeeded()`` and
+    /// ``bundledCACertURL()``, both of which run on the VM thread, not the
+    /// main actor.
+    private nonisolated static func bundledStdlibURL() -> URL? {
         guard let resourceURL = Bundle.main.resourceURL else { return nil }
         let stdlibURL = resourceURL.appending(component: "stdlib", directoryHint: .isDirectory)
 

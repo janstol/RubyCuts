@@ -3,10 +3,10 @@ import UserNotifications
 
 /// The `Device::Notification` capability: post a local notification from
 /// Ruby. This is the "tell the user something" primitive PRD 3.5 asks for --
-/// a local notification rather than a blocking alert, because `RubyRuntime`
-/// blocks the main actor for the whole script run (see its doc comment), and
-/// because a Shortcut can run a script with the app backgrounded, where only
-/// a notification is visible at all.
+/// a local notification rather than a blocking alert, because a script runs
+/// synchronously inside one call into ``RubyRuntime`` (a plain UI alert would
+/// have nothing to interrupt), and because a Shortcut can run a script with
+/// the app backgrounded, where only a notification is visible at all.
 ///
 /// Posting is fire-and-forget: `UNUserNotificationCenter.add(_:)` is async,
 /// and nothing in `UserNotifications` can be awaited from inside a
@@ -25,12 +25,19 @@ import UserNotifications
 /// calls `Device::Notification.notify` while the status is
 /// `.notDetermined`, ``post(title:body:)`` kicks off the system request on a
 /// detached task and still throws, because the request is async and this
-/// call can't await it. The OS prompt then appears once the run returns and
-/// the main actor is free to show it; a second `Device::Notification.notify`
-/// call after the user grants or denies succeeds or fails accordingly. This
-/// two-call shape is a real user-visible consequence of `RubyRuntime` running
-/// the VM on the main actor (see its doc comment's known follow-up), not a
-/// bug to hide.
+/// call can't await it. The OS prompt then appears once the run returns; a
+/// second `Device::Notification.notify` call after the user grants or denies
+/// succeeds or fails accordingly.
+///
+/// **This two-call shape is no longer forced.** It was originally justified
+/// by `RubyRuntime` holding the main actor for the whole script run, which
+/// left nothing free to show the permission sheet mid-run. Now that
+/// `RubyRuntime` runs on its own dedicated thread (see its doc comment), the
+/// main actor is free while a script runs, so `post(title:body:)` could
+/// instead block the VM thread awaiting the request directly and turn this
+/// into one call. Left as a follow-up rather than folded into the threading
+/// change that unblocked it -- that would mix a UX change into a pure
+/// threading change.
 enum NotificationCapability {
     /// The last-known authorization status, read synchronously by
     /// ``post(title:body:)``. Production code only ever sets this via
@@ -65,7 +72,9 @@ enum NotificationCapability {
     }
 
     /// The Ruby surface this capability adds: `Device::Notification.notify(title, body)`.
-    static let preludeSource = """
+    /// `nonisolated` so `NativeBridge.preludeSource` can read it from the VM
+    /// thread with no main-actor hop -- it's a plain `String` constant.
+    nonisolated static let preludeSource = """
         module Device
           module Notification
             def self.notify(title, body)
@@ -90,12 +99,13 @@ enum NotificationCapability {
             // Permission is asked for just-in-time, on the first call, rather
             // than at launch (see `RubyCutsApp`). Nothing in `UserNotifications`
             // can be awaited from here -- `post` runs synchronously from inside
-            // a Ruby callback while `RubyRuntime` holds the main actor for the
-            // whole run (see this type's doc comment) -- so the request is
-            // kicked off detached and this call still has to fail. The OS
-            // prompt appears once the run returns and the main actor is free;
-            // a second `Device::Notification.notify` call after granting
-            // succeeds.
+            // a Ruby callback on the VM thread, and this function itself isn't
+            // async -- so the request is kicked off detached and this call
+            // still has to fail. The OS prompt appears once the request
+            // resolves; a second `Device::Notification.notify` call after
+            // granting succeeds. (This could become one call now that the VM
+            // thread is free to await the request directly -- see this type's
+            // doc comment.)
             Task.detached {
                 _ = try? await UNUserNotificationCenter.current()
                     .requestAuthorization(options: [.alert, .sound])

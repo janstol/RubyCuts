@@ -32,8 +32,9 @@ enum GemInstallerError: Error, Sendable {
 /// without an app restart. (``RubyRuntime/bootIfNeeded()`` does the same
 /// append at boot for gems installed in a previous run.)
 ///
-/// Runs on the main actor: extraction goes through ``GemArchive``, which
-/// drives the `@MainActor`-pinned ``RubyRuntime``.
+/// The type itself is on the main actor; extraction hops onto ``RubyRuntime``'s
+/// dedicated VM thread through ``GemArchive/extract(gemFileURL:destination:)``,
+/// which is `async`.
 @MainActor
 struct GemInstaller {
     let api: RubyGemsAPI
@@ -106,7 +107,7 @@ struct GemInstaller {
 
         let extractedURL = tempRoot.appending(component: "extracted")
         do {
-            try GemArchive.extract(gemFileURL: gemFileURL, destination: extractedURL)
+            try await GemArchive.extract(gemFileURL: gemFileURL, destination: extractedURL)
         } catch GemArchiveError.containsCExtension(let detail) {
             throw GemInstallerError.cExtension(gem: target.name, detail: detail)
         } catch GemArchiveError.unsafeArchive(let detail) {
@@ -116,7 +117,7 @@ struct GemInstaller {
         let gem = try store.install(
             from: extractedURL, name: target.name, version: target.version.raw
         )
-        RubyRuntime.shared.appendLoadPath(gem.libURL)
+        await RubyRuntime.shared.appendLoadPath(gem.libURL)
         return gem
     }
 

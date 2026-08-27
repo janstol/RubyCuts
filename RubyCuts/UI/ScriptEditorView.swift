@@ -252,21 +252,17 @@ struct ScriptEditorView: View {
         }
     }
 
-    /// Runs the current source through the embedded Ruby VM. The VM itself
-    /// is still synchronous and on the main actor (see
-    /// ``RubyRuntime/run(_:)``'s known-follow-up note), so this only buys a
-    /// spinner and a disabled Run/Save pair for the run's duration -- the app
-    /// is not responsive or cancellable while it runs, and neither will be
-    /// possible until that off-main-actor VM work lands.
+    /// Runs the current source through the embedded Ruby VM. `RubyRuntime`
+    /// runs on its own dedicated thread now (see its doc comment), so
+    /// `await`ing it here suspends this task rather than blocking the main
+    /// actor -- the window stays draggable, the list stays scrollable, and
+    /// the spinner keeps animating for the whole run. Still not cancellable:
+    /// that needs a hook inside the eval loop itself, tracked as its own
+    /// backlog item.
     private func run() {
         isRunning = true
         Task {
-            // Without this yield, `isRunning` flips true and the VM call
-            // below blocks the actor before SwiftUI ever commits a frame, so
-            // the spinner is set and cleared within one render pass and never
-            // actually appears. Looks removable; isn't.
-            await Task.yield()
-            runResult = RubyRuntime.shared.run(source)
+            runResult = await RubyRuntime.shared.run(source)
             isRunning = false
         }
     }

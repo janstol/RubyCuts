@@ -14,211 +14,216 @@ private final class FixtureBundleMarker {}
 // Drives `RubyRuntime.shared` (through `GemArchive.extract`, and through the
 // `gzip(_:)` helper below), so this suite joins the same `.serialized`
 // contract `RubyRuntimeTests` documents: the embedded VM is a single
-// non-thread-safe interpreter.
-@MainActor
-@Suite(.serialized)
-struct GemArchiveTests {
+// non-thread-safe interpreter. Nested under ``EmbeddedRubyTests`` so
+// `.serialized` covers `RubyRuntimeTests` and `NativeBridgeTests` too -- see
+// that type's doc comment.
+extension EmbeddedRubyTests {
+    @MainActor
+    @Suite(.serialized)
+    struct GemArchiveTests {
 
-    // MARK: - A real .gem fixture
+        // MARK: - A real .gem fixture
 
-    @Test func extractsARealGemFixture() throws {
-        let gemURL = try Self.fixtureURL("rubycuts_fixture-0.0.1.gem")
-        let destination = Self.tempDirectory()
-        defer { try? FileManager.default.removeItem(at: destination) }
+        @Test func extractsARealGemFixture() async throws {
+            let gemURL = try Self.fixtureURL("rubycuts_fixture-0.0.1.gem")
+            let destination = Self.tempDirectory()
+            defer { try? FileManager.default.removeItem(at: destination) }
 
-        try GemArchive.extract(gemFileURL: gemURL, destination: destination)
+            try await GemArchive.extract(gemFileURL: gemURL, destination: destination)
 
-        let mainFile = destination.appending(component: "lib/rubycuts_fixture.rb")
-        let nestedFile = destination.appending(component: "lib/rubycuts_fixture/nested.rb")
-        #expect(FileManager.default.fileExists(atPath: mainFile.path))
-        #expect(FileManager.default.fileExists(atPath: nestedFile.path))
+            let mainFile = destination.appending(component: "lib/rubycuts_fixture.rb")
+            let nestedFile = destination.appending(component: "lib/rubycuts_fixture/nested.rb")
+            #expect(FileManager.default.fileExists(atPath: mainFile.path))
+            #expect(FileManager.default.fileExists(atPath: nestedFile.path))
 
-        let nestedContents = try String(contentsOf: nestedFile, encoding: .utf8)
-        #expect(nestedContents.contains("nested-ok"))
-    }
-
-    // MARK: - Safety: path escapes
-
-    @Test func rejectsAnEntryThatEscapesViaDotDot() throws {
-        let gemURL = try Self.makeMaliciousGem(innerEntries: [
-            (name: "../../etc/evil.rb", content: Data("evil".utf8), typeflag: "0", linkname: "")
-        ])
-        let destination = Self.tempDirectory()
-        defer { try? FileManager.default.removeItem(at: destination) }
-
-        #expect(throws: GemArchiveError.self) {
-            try GemArchive.extract(gemFileURL: gemURL, destination: destination)
+            let nestedContents = try String(contentsOf: nestedFile, encoding: .utf8)
+            #expect(nestedContents.contains("nested-ok"))
         }
-    }
 
-    @Test func rejectsAnAbsolutePathEntry() throws {
-        let gemURL = try Self.makeMaliciousGem(innerEntries: [
-            (name: "/etc/evil.rb", content: Data("evil".utf8), typeflag: "0", linkname: "")
-        ])
-        let destination = Self.tempDirectory()
-        defer { try? FileManager.default.removeItem(at: destination) }
+        // MARK: - Safety: path escapes
 
-        #expect(throws: GemArchiveError.self) {
-            try GemArchive.extract(gemFileURL: gemURL, destination: destination)
+        @Test func rejectsAnEntryThatEscapesViaDotDot() async throws {
+            let gemURL = try await Self.makeMaliciousGem(innerEntries: [
+                (name: "../../etc/evil.rb", content: Data("evil".utf8), typeflag: "0", linkname: "")
+            ])
+            let destination = Self.tempDirectory()
+            defer { try? FileManager.default.removeItem(at: destination) }
+
+            await #expect(throws: GemArchiveError.self) {
+                try await GemArchive.extract(gemFileURL: gemURL, destination: destination)
+            }
         }
-    }
 
-    @Test func rejectsASymlinkEntry() throws {
-        let gemURL = try Self.makeMaliciousGem(innerEntries: [
-            (name: "lib/evil.rb", content: Data(), typeflag: "2", linkname: "/etc/passwd")
-        ])
-        let destination = Self.tempDirectory()
-        defer { try? FileManager.default.removeItem(at: destination) }
+        @Test func rejectsAnAbsolutePathEntry() async throws {
+            let gemURL = try await Self.makeMaliciousGem(innerEntries: [
+                (name: "/etc/evil.rb", content: Data("evil".utf8), typeflag: "0", linkname: "")
+            ])
+            let destination = Self.tempDirectory()
+            defer { try? FileManager.default.removeItem(at: destination) }
 
-        #expect(throws: GemArchiveError.self) {
-            try GemArchive.extract(gemFileURL: gemURL, destination: destination)
+            await #expect(throws: GemArchiveError.self) {
+                try await GemArchive.extract(gemFileURL: gemURL, destination: destination)
+            }
         }
-    }
 
-    // MARK: - Safety: C extensions
+        @Test func rejectsASymlinkEntry() async throws {
+            let gemURL = try await Self.makeMaliciousGem(innerEntries: [
+                (name: "lib/evil.rb", content: Data(), typeflag: "2", linkname: "/etc/passwd")
+            ])
+            let destination = Self.tempDirectory()
+            defer { try? FileManager.default.removeItem(at: destination) }
 
-    @Test func refusesAGemContainingAnExtconf() throws {
-        let gemURL = try Self.makeMaliciousGem(innerEntries: [
-            (name: "lib/foo.rb", content: Data("puts 1".utf8), typeflag: "0", linkname: ""),
-            (
-                name: "ext/foo/extconf.rb", content: Data("create_makefile('foo')".utf8),
-                typeflag: "0", linkname: ""
-            ),
-        ])
-        let destination = Self.tempDirectory()
-        defer { try? FileManager.default.removeItem(at: destination) }
-
-        do {
-            try GemArchive.extract(gemFileURL: gemURL, destination: destination)
-            Issue.record("expected extract to throw on a C-extension gem")
-        } catch GemArchiveError.containsCExtension(let detail) {
-            #expect(detail.contains("extconf.rb"))
-        } catch {
-            Issue.record("expected GemArchiveError.containsCExtension, got \(error)")
+            await #expect(throws: GemArchiveError.self) {
+                try await GemArchive.extract(gemFileURL: gemURL, destination: destination)
+            }
         }
-    }
 
-    // MARK: - Fixture helpers
+        // MARK: - Safety: C extensions
 
-    private static func fixtureURL(_ name: String) throws -> URL {
-        let bundle = Bundle(for: FixtureBundleMarker.self)
-        // Whether `PBXFileSystemSynchronizedRootGroup` preserves the
-        // `Fixtures/` subdirectory in `Copy Bundle Resources` (vs. flattening
-        // it) isn't guaranteed, so try both.
-        if let url = bundle.url(forResource: name, withExtension: nil, subdirectory: "Fixtures") {
-            return url
+        @Test func refusesAGemContainingAnExtconf() async throws {
+            let gemURL = try await Self.makeMaliciousGem(innerEntries: [
+                (name: "lib/foo.rb", content: Data("puts 1".utf8), typeflag: "0", linkname: ""),
+                (
+                    name: "ext/foo/extconf.rb", content: Data("create_makefile('foo')".utf8),
+                    typeflag: "0", linkname: ""
+                ),
+            ])
+            let destination = Self.tempDirectory()
+            defer { try? FileManager.default.removeItem(at: destination) }
+
+            do {
+                try await GemArchive.extract(gemFileURL: gemURL, destination: destination)
+                Issue.record("expected extract to throw on a C-extension gem")
+            } catch GemArchiveError.containsCExtension(let detail) {
+                #expect(detail.contains("extconf.rb"))
+            } catch {
+                Issue.record("expected GemArchiveError.containsCExtension, got \(error)")
+            }
         }
-        if let url = bundle.url(forResource: name, withExtension: nil) {
-            return url
+
+        // MARK: - Fixture helpers
+
+        private static func fixtureURL(_ name: String) throws -> URL {
+            let bundle = Bundle(for: FixtureBundleMarker.self)
+            // Whether `PBXFileSystemSynchronizedRootGroup` preserves the
+            // `Fixtures/` subdirectory in `Copy Bundle Resources` (vs. flattening
+            // it) isn't guaranteed, so try both.
+            if let url = bundle.url(forResource: name, withExtension: nil, subdirectory: "Fixtures")
+            {
+                return url
+            }
+            if let url = bundle.url(forResource: name, withExtension: nil) {
+                return url
+            }
+            throw TestFixtureError.fixtureNotFound(name)
         }
-        throw TestFixtureError.fixtureNotFound(name)
-    }
 
-    private static func tempDirectory() -> URL {
-        FileManager.default.temporaryDirectory
-            .appending(component: "RubyCutsTests-gem-extract-\(UUID().uuidString)")
-    }
+        private static func tempDirectory() -> URL {
+            FileManager.default.temporaryDirectory
+                .appending(component: "RubyCutsTests-gem-extract-\(UUID().uuidString)")
+        }
 
-    /// Builds a `.gem` (an outer, uncompressed tar containing one
-    /// `data.tar.gz` entry) whose inner tar holds exactly `innerEntries`,
-    /// hand-built to exercise ``GemArchive``'s safety rules -- no real
-    /// `gem build` can produce a path-escaping or symlinked entry, since
-    /// RubyGems itself won't let you.
-    private static func makeMaliciousGem(
-        innerEntries: [(name: String, content: Data, typeflag: Character, linkname: String)]
-    ) throws -> URL {
-        let innerTar = tar(innerEntries)
-        let gzippedInner = try gzip(innerTar)
-        let outerTar = tar([
-            (name: "data.tar.gz", content: gzippedInner, typeflag: "0", linkname: "")
-        ])
+        /// Builds a `.gem` (an outer, uncompressed tar containing one
+        /// `data.tar.gz` entry) whose inner tar holds exactly `innerEntries`,
+        /// hand-built to exercise ``GemArchive``'s safety rules -- no real
+        /// `gem build` can produce a path-escaping or symlinked entry, since
+        /// RubyGems itself won't let you.
+        private static func makeMaliciousGem(
+            innerEntries: [(name: String, content: Data, typeflag: Character, linkname: String)]
+        ) async throws -> URL {
+            let innerTar = tar(innerEntries)
+            let gzippedInner = try await gzip(innerTar)
+            let outerTar = tar([
+                (name: "data.tar.gz", content: gzippedInner, typeflag: "0", linkname: "")
+            ])
 
-        let gemURL = tempDirectory().appendingPathExtension("gem")
-        try FileManager.default.createDirectory(
-            at: gemURL.deletingLastPathComponent(), withIntermediateDirectories: true
-        )
-        try outerTar.write(to: gemURL)
-        return gemURL
-    }
-
-    /// A minimal ustar tar builder: real enough for
-    /// ``GemArchive/tarReaderSource``'s reader (which doesn't validate the
-    /// checksum field), but not a general-purpose tar writer.
-    private static func tar(
-        _ entries: [(name: String, content: Data, typeflag: Character, linkname: String)]
-    ) -> Data {
-        entries.reduce(into: Data()) { data, entry in
-            data += tarEntry(
-                name: entry.name, content: entry.content, typeflag: entry.typeflag,
-                linkname: entry.linkname
+            let gemURL = tempDirectory().appendingPathExtension("gem")
+            try FileManager.default.createDirectory(
+                at: gemURL.deletingLastPathComponent(), withIntermediateDirectories: true
             )
-        }
-    }
-
-    private static func tarEntry(
-        name: String, content: Data, typeflag: Character, linkname: String
-    ) -> Data {
-        func field(_ string: String, length: Int) -> Data {
-            var bytes = Array(string.utf8.prefix(length))
-            bytes += Array(repeating: 0, count: length - bytes.count)
-            return Data(bytes)
-        }
-        func octalSizeField(_ value: Int, length: Int) -> Data {
-            let octal = String(value, radix: 8)
-            let padded = String(repeating: "0", count: max(0, length - 1 - octal.count)) + octal
-            return field(padded, length: length)
+            try outerTar.write(to: gemURL)
+            return gemURL
         }
 
-        var header = Data()
-        header += field(name, length: 100)  // name
-        header += field("0000644", length: 8)  // mode
-        header += field("0000000", length: 8)  // uid
-        header += field("0000000", length: 8)  // gid
-        header += octalSizeField(content.count, length: 12)  // size
-        header += field("00000000000", length: 12)  // mtime
-        header += field("        ", length: 8)  // chksum (unvalidated by our reader)
-        header += field(String(typeflag), length: 1)  // typeflag
-        header += field(linkname, length: 100)  // linkname
-        header += field("ustar", length: 6)  // magic
-        header += field("00", length: 2)  // version
-        header += field("", length: 32)  // uname
-        header += field("", length: 32)  // gname
-        header += field("", length: 8)  // devmajor
-        header += field("", length: 8)  // devminor
-        header += field("", length: 155)  // prefix
-        header += Data(count: 12)  // pad to 512
-
-        var body = content
-        let remainder = body.count % 512
-        if remainder != 0 {
-            body += Data(count: 512 - remainder)
+        /// A minimal ustar tar builder: real enough for
+        /// ``GemArchive/tarReaderSource``'s reader (which doesn't validate the
+        /// checksum field), but not a general-purpose tar writer.
+        private static func tar(
+            _ entries: [(name: String, content: Data, typeflag: Character, linkname: String)]
+        ) -> Data {
+            entries.reduce(into: Data()) { data, entry in
+                data += tarEntry(
+                    name: entry.name, content: entry.content, typeflag: entry.typeflag,
+                    linkname: entry.linkname
+                )
+            }
         }
-        return header + body
-    }
 
-    /// Gzips `data` through the embedded Ruby VM's `Zlib::GzipWriter` --
-    /// `Init_zlib` is statically linked (see ``GemArchive``'s doc comment),
-    /// so this is the same primitive real gem downloads decompress with, not
-    /// a Swift-side approximation.
-    private static func gzip(_ data: Data) throws -> Data {
-        let code = """
-            require 'zlib'; require 'stringio'; require 'base64'
-            io = StringIO.new
-            io.set_encoding(Encoding::BINARY)
-            writer = Zlib::GzipWriter.new(io)
-            writer.write(Base64.decode64("\(data.base64EncodedString())"))
-            writer.close
-            Base64.strict_encode64(io.string)
-            """
-        let resultB64 = try RubyRuntime.shared.evaluate(code)
-        guard let gzipped = Data(base64Encoded: resultB64) else {
-            throw TestFixtureError.gzipFailed
+        private static func tarEntry(
+            name: String, content: Data, typeflag: Character, linkname: String
+        ) -> Data {
+            func field(_ string: String, length: Int) -> Data {
+                var bytes = Array(string.utf8.prefix(length))
+                bytes += Array(repeating: 0, count: length - bytes.count)
+                return Data(bytes)
+            }
+            func octalSizeField(_ value: Int, length: Int) -> Data {
+                let octal = String(value, radix: 8)
+                let padded = String(repeating: "0", count: max(0, length - 1 - octal.count)) + octal
+                return field(padded, length: length)
+            }
+
+            var header = Data()
+            header += field(name, length: 100)  // name
+            header += field("0000644", length: 8)  // mode
+            header += field("0000000", length: 8)  // uid
+            header += field("0000000", length: 8)  // gid
+            header += octalSizeField(content.count, length: 12)  // size
+            header += field("00000000000", length: 12)  // mtime
+            header += field("        ", length: 8)  // chksum (unvalidated by our reader)
+            header += field(String(typeflag), length: 1)  // typeflag
+            header += field(linkname, length: 100)  // linkname
+            header += field("ustar", length: 6)  // magic
+            header += field("00", length: 2)  // version
+            header += field("", length: 32)  // uname
+            header += field("", length: 32)  // gname
+            header += field("", length: 8)  // devmajor
+            header += field("", length: 8)  // devminor
+            header += field("", length: 155)  // prefix
+            header += Data(count: 12)  // pad to 512
+
+            var body = content
+            let remainder = body.count % 512
+            if remainder != 0 {
+                body += Data(count: 512 - remainder)
+            }
+            return header + body
         }
-        return gzipped
-    }
 
-    private enum TestFixtureError: Error {
-        case fixtureNotFound(String)
-        case gzipFailed
+        /// Gzips `data` through the embedded Ruby VM's `Zlib::GzipWriter` --
+        /// `Init_zlib` is statically linked (see ``GemArchive``'s doc comment),
+        /// so this is the same primitive real gem downloads decompress with, not
+        /// a Swift-side approximation.
+        private static func gzip(_ data: Data) async throws -> Data {
+            let code = """
+                require 'zlib'; require 'stringio'; require 'base64'
+                io = StringIO.new
+                io.set_encoding(Encoding::BINARY)
+                writer = Zlib::GzipWriter.new(io)
+                writer.write(Base64.decode64("\(data.base64EncodedString())"))
+                writer.close
+                Base64.strict_encode64(io.string)
+                """
+            let resultB64 = try await RubyRuntime.shared.evaluate(code)
+            guard let gzipped = Data(base64Encoded: resultB64) else {
+                throw TestFixtureError.gzipFailed
+            }
+            return gzipped
+        }
+
+        private enum TestFixtureError: Error {
+            case fixtureNotFound(String)
+            case gzipFailed
+        }
     }
 }

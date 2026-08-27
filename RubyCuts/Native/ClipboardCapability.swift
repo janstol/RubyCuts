@@ -27,7 +27,9 @@ enum ClipboardCapability {
     }
 
     /// The Ruby surface this capability adds: `Device::Clipboard.text` / `.text=`.
-    static let preludeSource = """
+    /// `nonisolated` so `NativeBridge.preludeSource` can read it from the VM
+    /// thread with no main-actor hop -- it's a plain `String` constant.
+    nonisolated static let preludeSource = """
         module Device
           module Clipboard
             def self.text

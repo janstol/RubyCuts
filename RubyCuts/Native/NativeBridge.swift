@@ -31,6 +31,11 @@ final class NativeBridge {
 
     private var handlers: [String: NativeHandler] = [:]
 
+    /// Guards ``registerDefaultsIfNeeded()`` so the built-in capabilities are
+    /// registered exactly once, no matter how many calls dispatch through
+    /// here.
+    private var defaultsRegistered = false
+
     private init() {}
 
     /// Registers `handler` under `name`, replacing any existing handler for
@@ -40,19 +45,30 @@ final class NativeBridge {
         handlers[name] = handler
     }
 
-    /// Registers every built-in capability and returns the concatenated Ruby
-    /// prelude that defines their `Device::*` surface on top of
-    /// `RubyCuts::Native.invoke`. Called once per boot from
-    /// `RubyRuntime.installNativeBridge()`.
-    static func installDefaults() -> String {
-        ClipboardCapability.register(in: shared)
-        NotificationCapability.register(in: shared)
-        return [
-            invokePrelude,
-            ClipboardCapability.preludeSource,
-            NotificationCapability.preludeSource,
-        ].joined(separator: "\n")
+    /// Registers every built-in capability's Swift-side handler, once. Called
+    /// lazily from ``dispatch(name:argsJSON:)`` (already on the main actor)
+    /// rather than eagerly at boot: boot runs on the VM thread now and evals
+    /// only ``preludeSource``, the Ruby-side half of the `Device::*` surface --
+    /// registering the handlers those calls dispatch to has to happen over
+    /// here, and doing it lazily avoids adding a launch-order requirement or
+    /// a separate setup call every test would also need.
+    private func registerDefaultsIfNeeded() {
+        guard !defaultsRegistered else { return }
+        defaultsRegistered = true
+        ClipboardCapability.register(in: self)
+        NotificationCapability.register(in: self)
     }
+
+    /// The concatenated Ruby prelude that defines the built-in capabilities'
+    /// `Device::*` surface on top of `RubyCuts::Native.invoke`. `nonisolated`
+    /// so `RubyRuntime.installNativeBridge()` can eval it directly from the VM
+    /// thread with no main-actor hop -- every piece is a plain `String`
+    /// constant, trivially safe to read from any thread.
+    nonisolated static let preludeSource: String = [
+        invokePrelude,
+        ClipboardCapability.preludeSource,
+        NotificationCapability.preludeSource,
+    ].joined(separator: "\n")
 
     /// The `RubyCuts::Native.invoke` wrapper every capability's Ruby surface
     /// calls through. Requires `json` (already a statically-linked, proven
@@ -72,7 +88,10 @@ final class NativeBridge {
     /// verify. `dup` avoids mutating the caller's string; genuinely invalid
     /// byte sequences still fail in `JSON.generate` afterward, just with a
     /// clear encoding error instead of a silent mislabel.
-    private static let invokePrelude = """
+    ///
+    /// `nonisolated`: folded into ``preludeSource``, which needs to read it
+    /// with no main-actor hop.
+    private nonisolated static let invokePrelude = """
         require 'json'
 
         module RubyCuts
@@ -92,6 +111,8 @@ final class NativeBridge {
     /// handler throwing) come back as `.failure` with a human-readable
     /// message -- the trampoline turns that into the shim's `*error_out`.
     fileprivate func dispatch(name: String, argsJSON: String) -> Result<String, NativeBridgeError> {
+        registerDefaultsIfNeeded()
+
         guard let handler = handlers[name] else {
             return .failure(NativeBridgeError(message: "unknown native capability '\(name)'"))
         }
@@ -144,11 +165,23 @@ final class NativeBridge {
 /// `NativeBridge.shared`; a plain top-level function with no captures is what
 /// lets Swift convert it implicitly to a `rubycuts_native_handler`.
 ///
-/// Calling `MainActor.assumeIsolated` here is sound, not a shortcut:
-/// `RubyRuntime` is pinned to `@MainActor`, and the VM's stack bounds were
-/// recorded on the main thread by `RUBY_INIT_STACK` at boot -- every Ruby
-/// frame that can reach `RubyCuts::Native.call` (and therefore this
-/// trampoline) is provably running on the main thread already.
+/// This runs on ``RubyVMExecutor``'s dedicated thread now, not the main
+/// thread -- `NativeBridge` itself is `@MainActor`, so reaching `dispatch`
+/// needs a real hop, not `MainActor.assumeIsolated`. `Thread.isMainThread`
+/// covers the (currently theoretical, but cheap to keep correct) case of a
+/// future caller that already is on the main thread; the VM thread case
+/// blocks on `DispatchQueue.main.sync`, which only actually blocks the VM
+/// thread, not main.
+///
+/// **This is deadlock-free only under one invariant: nothing may ever block
+/// the main thread waiting on the VM thread.** Every current caller of
+/// `RubyRuntime` (`ScriptEditorView.run()`, ``RubyIntents``,
+/// ``GemArchive``) reaches it through `await`, which suspends the main actor
+/// rather than blocking the main thread -- so the main queue stays free to
+/// service this trampoline's `DispatchQueue.main.sync` while a run is in
+/// flight. A future caller that does `DispatchQueue.main.sync` (or a
+/// semaphore wait) onto the VM thread from the main thread would deadlock
+/// against this call instantly.
 nonisolated func rubycutsNativeTrampoline(
     _ namePointer: UnsafePointer<CChar>?,
     _ argsJSONPointer: UnsafePointer<CChar>?,
@@ -164,9 +197,13 @@ nonisolated func rubycutsNativeTrampoline(
     // Only Sendable values (String) cross into the @MainActor closure --
     // `errorOut` stays out here, since UnsafeMutablePointer isn't Sendable and
     // there's no need to touch it from inside anyway.
-    let outcome = MainActor.assumeIsolated {
-        NativeBridge.shared.dispatch(name: name, argsJSON: argsJSON)
+    func dispatchOnMain() -> Result<String, NativeBridgeError> {
+        MainActor.assumeIsolated { NativeBridge.shared.dispatch(name: name, argsJSON: argsJSON) }
     }
+    let outcome =
+        Thread.isMainThread
+        ? dispatchOnMain()
+        : DispatchQueue.main.sync { dispatchOnMain() }
 
     switch outcome {
     case .success(let resultJSON):

@@ -33,10 +33,11 @@ enum GemArchiveError: Error, Sendable {
 enum GemArchive {
     /// Extracts `gemFileURL` (a downloaded `.gem`) into `destination`,
     /// creating it if needed. On success, `destination` holds the gem's
-    /// payload -- typically a `lib/` directory among others. Runs on the
-    /// `RubyRuntime` main actor, like every other VM call.
-    @MainActor
-    static func extract(gemFileURL: URL, destination: URL) throws {
+    /// payload -- typically a `lib/` directory among others. Runs on
+    /// ``RubyRuntime``'s dedicated VM thread, like every other VM call --
+    /// `async` because reaching that thread from the caller's actor is a
+    /// real hop, not a same-actor call.
+    static func extract(gemFileURL: URL, destination: URL) async throws {
         let gemPathB64 = RubyRuntime.base64(gemFileURL.path)
         let destPathB64 = RubyRuntime.base64(destination.path)
 
@@ -49,7 +50,7 @@ enum GemArchive {
             """
 
         do {
-            _ = try RubyRuntime.shared.evaluate(code)
+            _ = try await RubyRuntime.shared.evaluate(code)
         } catch RubyError.evaluationFailed(let message) {
             if message.contains("C extension") {
                 throw GemArchiveError.containsCExtension(message)
