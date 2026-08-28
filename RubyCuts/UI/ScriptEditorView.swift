@@ -88,6 +88,57 @@ struct ScriptEditorView: View {
     }
 
     var body: some View {
+        editorContent
+            .toolbar {
+                ToolbarItemGroup(placement: .primaryAction) {
+                    toolbarButtons
+                }
+            }
+            .focusedSceneValue(\.runScriptAction, runAction)
+            .focusedSceneValue(\.stopScriptAction, stopAction)
+            .focusedSceneValue(\.saveScriptAction, saveAction)
+            .task {
+                // Read on demand: source isn't held on the model, only
+                // loaded here when the editor appears. A read failure shows
+                // an alert rather than crashing the view; the editor opens
+                // empty.
+                editableName = script.name
+                do {
+                    source = try store.source(of: script)
+                    savedSource = source
+                } catch {
+                    errorMessage = error.localizedDescription
+                    showError = true
+                }
+                didLoad = true
+            }
+            .onDisappear {
+                if isDirty {
+                    save(silent: true)
+                }
+            }
+            .onChange(of: scenePhase) { _, newPhase in
+                // `onDisappear` doesn't fire when the app is backgrounded
+                // while this view stays on screen (e.g. the user leaves
+                // without navigating away), so autosave on the scene
+                // leaving `.active` too.
+                if newPhase != .active && isDirty {
+                    save(silent: true)
+                }
+            }
+            .alert("Error", isPresented: $showError) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(errorMessage ?? "")
+            }
+    }
+
+    /// The editor's on-screen content: the text view, the console panel
+    /// when a run has produced output, and the navigation title. Split out
+    /// of ``body`` so the type-checker isn't asked to solve this together
+    /// with the toolbar and the rest of ``body``'s modifiers in one pass --
+    /// combined, that expression was slow enough to time out.
+    private var editorContent: some View {
         VStack(spacing: 0) {
             TextEditor(text: $source)
                 .font(.system(.body, design: .monospaced))
@@ -123,85 +174,108 @@ struct ScriptEditorView: View {
             .navigationTitle($editableName)
             .onChange(of: editableName) { _, newValue in commitRename(to: newValue) }
         #endif
-        .toolbar {
-            ToolbarItemGroup(placement: .primaryAction) {
-                #if !os(macOS)
-                    // No `navigationSubtitle` on iOS/iPadOS, so the modified
-                    // marker rides along in the toolbar instead, now that the
-                    // title itself is an editable binding.
-                    if isDirty {
-                        Text("Edited")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                #endif
-                if isRunning {
-                    ProgressView()
-                    Button {
-                        runTask?.cancel()
-                    } label: {
-                        Label("Stop", systemImage: "stop.fill")
-                    }
-                    .labelStyle(.titleAndIcon)
-                    .tint(.red)
-                    .keyboardShortcut(".", modifiers: .command)
-                    .help("Stop the running script (⌘.)")
-                } else {
-                    Button {
-                        run()
-                    } label: {
-                        Label("Run", systemImage: "play.fill")
-                    }
-                    .labelStyle(.titleAndIcon)
-                    .keyboardShortcut("r", modifiers: .command)
-                    .help("Run the script (⌘R)")
-                    .disabled(!didLoad)
-                }
+    }
 
-                Button {
-                    save()
-                } label: {
-                    Label("Save", systemImage: "square.and.arrow.down")
-                }
-                .labelStyle(.titleAndIcon)
-                .keyboardShortcut("s", modifiers: .command)
-                .help("Save the script (⌘S)")
-                .disabled(!didLoad || isRunning)
-            }
-        }
-        .task {
-            // Read on demand: source isn't held on the model, only loaded here
-            // when the editor appears. A read failure shows an alert rather than
-            // crashing the view; the editor opens empty.
-            editableName = script.name
-            do {
-                source = try store.source(of: script)
-                savedSource = source
-            } catch {
-                errorMessage = error.localizedDescription
-                showError = true
-            }
-            didLoad = true
-        }
-        .onDisappear {
+    /// The `runScriptAction` published via `.focusedSceneValue` in ``body``.
+    /// A computed property with an explicit type, rather than an inline
+    /// ternary in the modifier chain, so the type-checker doesn't have to
+    /// solve it together with the rest of that chain -- see
+    /// ``toolbarButtons``'s doc comment for the same issue elsewhere in this
+    /// view. Mirrors the Run button's `.disabled(!didLoad)`.
+    private var runAction: (() -> Void)? {
+        guard didLoad && !isRunning else { return nil }
+        return run
+    }
+
+    /// The `stopScriptAction` published via `.focusedSceneValue` in
+    /// ``body``. See ``runAction``'s doc comment for why this is a typed
+    /// property rather than an inline ternary.
+    private var stopAction: (() -> Void)? {
+        guard isRunning else { return nil }
+        return { runTask?.cancel() }
+    }
+
+    /// The `saveScriptAction` published via `.focusedSceneValue` in
+    /// ``body``. See ``runAction``'s doc comment for why this is a typed
+    /// property rather than an inline ternary. Mirrors the Save button's
+    /// `.disabled(!didLoad || isRunning)`.
+    private var saveAction: (() -> Void)? {
+        guard didLoad && !isRunning else { return nil }
+        return { save() }
+    }
+
+    /// The primary-action toolbar's contents. Extracted out of ``body`` --
+    /// inlined directly into `ToolbarItemGroup`'s `ViewBuilder`, the mix of
+    /// `#if` and `if`/`else` branches alongside the individual buttons below
+    /// was slow enough for the compiler to give up type-checking it.
+    @ViewBuilder
+    private var toolbarButtons: some View {
+        #if !os(macOS)
+            // No `navigationSubtitle` on iOS/iPadOS, so the modified marker
+            // rides along in the toolbar instead, now that the title itself
+            // is an editable binding.
             if isDirty {
-                save(silent: true)
+                Text("Edited")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
+        #endif
+        if isRunning {
+            ProgressView()
+            stopButton
+        } else {
+            runButton
         }
-        .onChange(of: scenePhase) { _, newPhase in
-            // `onDisappear` doesn't fire when the app is backgrounded while
-            // this view stays on screen (e.g. the user leaves without
-            // navigating away), so autosave on the scene leaving `.active`
-            // too.
-            if newPhase != .active && isDirty {
-                save(silent: true)
-            }
+        saveButton
+    }
+
+    /// See ``toolbarButtons``'s doc comment for why this is its own
+    /// property.
+    private var stopButton: some View {
+        Button {
+            runTask?.cancel()
+        } label: {
+            Label("Stop", systemImage: "stop.fill")
         }
-        .alert("Error", isPresented: $showError) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(errorMessage ?? "")
+        .labelStyle(.titleAndIcon)
+        .tint(.red)
+        #if !os(macOS)
+            // On macOS this shortcut is owned by the ⌘. menu item in
+            // `ScriptCommands` -- registering it here too would leave
+            // AppKit two bindings for one key.
+            .keyboardShortcut(".", modifiers: .command)
+        #endif
+        .help("Stop the running script (⌘.)")
+    }
+
+    /// See ``stopButton``'s doc comment for why this is its own property.
+    private var runButton: some View {
+        Button {
+            run()
+        } label: {
+            Label("Run", systemImage: "play.fill")
         }
+        .labelStyle(.titleAndIcon)
+        #if !os(macOS)
+            .keyboardShortcut("r", modifiers: .command)
+        #endif
+        .help("Run the script (⌘R)")
+        .disabled(!didLoad)
+    }
+
+    /// See ``stopButton``'s doc comment for why this is its own property.
+    private var saveButton: some View {
+        Button {
+            save()
+        } label: {
+            Label("Save", systemImage: "square.and.arrow.down")
+        }
+        .labelStyle(.titleAndIcon)
+        #if !os(macOS)
+            .keyboardShortcut("s", modifiers: .command)
+        #endif
+        .help("Save the script (⌘S)")
+        .disabled(!didLoad || isRunning)
     }
 
     /// Writes `source` to disk. `silent` distinguishes an autosave (the view

@@ -19,5 +19,23 @@ struct RubyCutsApp: App {
                 Task { await NotificationCapability.refreshAuthorizationStatus() }
             }
         }
+        #if os(macOS)
+            .commands { ScriptCommands() }
+            // Leaves ~680pt for the editor next to the 180-320pt sidebar
+            // (see `ScriptListView`'s `navigationSplitViewColumnWidth`).
+            // Unavailable on iOS, hence the guard.
+            .defaultSize(width: 900, height: 600)
+        #endif
+
+        #if os(macOS)
+            // Gives the app ⌘, and the App-menu "Settings…" item for free.
+            // No `CommandGroup(replacing: .appSettings)` needed for that,
+            // and no custom About either -- macOS synthesises one from
+            // `MARKETING_VERSION`/`CURRENT_PROJECT_VERSION`, already set in
+            // the project.
+            Settings {
+                GemSettingsPane()
+            }
+        #endif
     }
 }

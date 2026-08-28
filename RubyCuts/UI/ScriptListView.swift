@@ -16,7 +16,7 @@ struct ScriptListView: View {
     /// list state.
     @State private var newName = "Untitled"
     @State private var isPresentingNewAlert = false
-    @State private var isPresentingGems = false
+    @State private var isPresentingSettings = false
 
     /// The script being renamed, driving a ``RenameSheet``. Non-`nil` drives
     /// the sheet's presentation, so there's no separate `isPresenting` flag
@@ -49,23 +49,29 @@ struct ScriptListView: View {
                 .toolbar {
                     ToolbarItem(placement: .primaryAction) {
                         Button {
-                            newName = "Untitled"
-                            isPresentingNewAlert = true
+                            presentNewScriptAlert()
                         } label: {
                             Label("New Script", systemImage: "plus")
                         }
                     }
-                    ToolbarItem(placement: .automatic) {
-                        Button {
-                            isPresentingGems = true
-                        } label: {
-                            Label("Gems", systemImage: "shippingbox")
+                    #if !os(macOS)
+                        // macOS reaches Settings through the app menu (⌘,);
+                        // this gear is its iOS/iPadOS equivalent.
+                        ToolbarItem(placement: .automatic) {
+                            Button {
+                                isPresentingSettings = true
+                            } label: {
+                                Label("Settings", systemImage: "gearshape")
+                            }
                         }
+                    #endif
+                }
+                #if !os(macOS)
+                    .sheet(isPresented: $isPresentingSettings) {
+                        SettingsView()
                     }
-                }
-                .sheet(isPresented: $isPresentingGems) {
-                    GemListView()
-                }
+                #endif
+                .focusedSceneValue(\.newScriptAction, presentNewScriptAlert)
                 .alert("New Script", isPresented: $isPresentingNewAlert) {
                     TextField("Name", text: $newName)
                     Button("Create") {
@@ -156,8 +162,7 @@ struct ScriptListView: View {
                 Text("Create a Ruby script to run it from the app or from a Shortcut.")
             } actions: {
                 Button("New Script") {
-                    newName = "Untitled"
-                    isPresentingNewAlert = true
+                    presentNewScriptAlert()
                 }
             }
         } else {
@@ -185,6 +190,15 @@ struct ScriptListView: View {
                 }
             }
         }
+    }
+
+    /// Resets the new-script name field and shows the naming alert. Shared
+    /// by the toolbar button, the empty-state action, and the macOS ⌘N menu
+    /// command (via `.focusedSceneValue(\.newScriptAction, ...)` above), so
+    /// all three stay in sync with a single implementation.
+    private func presentNewScriptAlert() {
+        newName = "Untitled"
+        isPresentingNewAlert = true
     }
 
     private func createNew() {

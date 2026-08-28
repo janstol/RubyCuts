@@ -1,11 +1,14 @@
 import SwiftUI
 
-/// The gems sheet: an install form (name + optional version requirement) and
-/// the list of installed gems, with delete. Reached from ``ScriptListView``
-/// as a sheet, not a `navigationDestination` -- keeps gems out of the script
-/// navigation path, matching the Phase 7 plan.
+/// An install form (name + optional version requirement) and the list of
+/// installed gems, with delete. Content-only: no navigation chrome, dismiss
+/// button, or sizing frame of its own -- it's hosted by ``SettingsView`` on
+/// iOS/iPadOS and by ``GemSettingsPane`` on macOS, both of which supply
+/// those. Used to own a `NavigationStack` and a Done button when it was
+/// reached from ``ScriptListView`` as a sheet; gem management is ongoing app
+/// configuration, not a one-off action on a script, so it moved into
+/// Settings instead.
 struct GemListView: View {
-    @Environment(\.dismiss) private var dismiss
     @State private var library: GemLibrary
     @State private var gemName = ""
     @State private var gemRequirement = ""
@@ -21,52 +24,43 @@ struct GemListView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            content
-                .navigationTitle("Gems")
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Done") { dismiss() }
-                    }
+        content
+            // Inert where the host has no navigation container (macOS's
+            // `GemSettingsPane`), correct where it does (iOS/iPadOS's
+            // `SettingsView`).
+            .navigationTitle("Gems")
+            .task {
+                library.refresh()
+            }
+            .alert(
+                "Error",
+                isPresented: .init(
+                    get: { library.errorMessage != nil },
+                    set: { if !$0 { library.errorMessage = nil } }
+                )
+            ) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(library.errorMessage ?? "")
+            }
+            .confirmationDialog(
+                "Delete Gem",
+                isPresented: .init(
+                    get: { pendingDelete != nil },
+                    set: { if !$0 { pendingDelete = nil } }
+                ),
+                presenting: pendingDelete
+            ) { gem in
+                Button("Delete \(gem.name)", role: .destructive) {
+                    library.delete(gem)
+                    pendingDelete = nil
                 }
-        }
-        // Without an explicit frame, a `.sheet` on macOS can size itself down
-        // to fit almost nothing (unlike iOS, which gives a sheet a sane
-        // default size), leaving the List invisible. `ScriptListPreview`'s
-        // frame only covered the `#Preview`; the real sheet needs its own.
-        .frame(minWidth: 400, minHeight: 300)
-        .task {
-            library.refresh()
-        }
-        .alert(
-            "Error",
-            isPresented: .init(
-                get: { library.errorMessage != nil },
-                set: { if !$0 { library.errorMessage = nil } }
-            )
-        ) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(library.errorMessage ?? "")
-        }
-        .confirmationDialog(
-            "Delete Gem",
-            isPresented: .init(
-                get: { pendingDelete != nil },
-                set: { if !$0 { pendingDelete = nil } }
-            ),
-            presenting: pendingDelete
-        ) { gem in
-            Button("Delete \(gem.name)", role: .destructive) {
-                library.delete(gem)
-                pendingDelete = nil
+                Button("Cancel", role: .cancel) {
+                    pendingDelete = nil
+                }
+            } message: { gem in
+                Text("\"\(gem.name)\" will need to be reinstalled to use it again.")
             }
-            Button("Cancel", role: .cancel) {
-                pendingDelete = nil
-            }
-        } message: { gem in
-            Text("\"\(gem.name)\" will need to be reinstalled to use it again.")
-        }
     }
 
     private var content: some View {
@@ -191,7 +185,12 @@ private struct GemListPreview: View {
     }
 
     var body: some View {
-        GemListView(library: library)
-            .frame(minWidth: 400, minHeight: 400)
+        // `GemListView` no longer supplies its own navigation chrome or
+        // sizing frame (see its doc comment) -- the preview stands in for
+        // the real host so it still renders standalone.
+        NavigationStack {
+            GemListView(library: library)
+        }
+        .frame(minWidth: 400, minHeight: 400)
     }
 }
