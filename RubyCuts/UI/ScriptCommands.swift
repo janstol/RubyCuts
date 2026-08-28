@@ -34,6 +34,8 @@ struct ScriptCommands: Commands {
     @FocusedValue(\.stopScriptAction) private var stopScript
     @FocusedValue(\.saveScriptAction) private var saveScript
 
+    @Environment(\.openWindow) private var openWindow
+
     var body: some Commands {
         // Replaces the default New Window item rather than adding alongside
         // it: ⌘N should create a script, and RubyCuts has no per-window
@@ -58,6 +60,13 @@ struct ScriptCommands: Commands {
             Button("Stop") { stopScript?() }
                 .keyboardShortcut(".", modifiers: .command)
                 .disabled(stopScript == nil)
+        }
+        // Replaces the default Help menu ("RubyCuts Help") rather than
+        // adding alongside it -- the default item opens a help book this
+        // app doesn't ship, which is worse than no item at all.
+        CommandGroup(replacing: .help) {
+            Button("RubyCuts Reference") { openWindow(id: "reference") }
+                .keyboardShortcut("?", modifiers: .command)
         }
     }
 }

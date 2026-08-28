@@ -24,6 +24,14 @@ struct ScriptLibraryTests {
         return store
     }
 
+    /// Builds a throwaway `UserDefaults` suite so seeding tests never touch
+    /// `.standard`. Each test defers `removePersistentDomain(forName:)` on
+    /// the returned name itself, mirroring `makeStore()`'s directory cleanup.
+    private func makeDefaults() -> (UserDefaults, String) {
+        let suiteName = "RubyCutsTests-\(UUID().uuidString)"
+        return (UserDefaults(suiteName: suiteName)!, suiteName)
+    }
+
     @Test func refreshReflectsCreatedScripts() throws {
         let store = try makeStore()
         defer { try? FileManager.default.removeItem(at: store.directoryURL) }
@@ -154,5 +162,83 @@ struct ScriptLibraryTests {
 
         #expect(library.errorMessage != nil)
         #expect(library.scripts.isEmpty)
+    }
+
+    // MARK: - Sample seeding and restore
+
+    @Test func seedingAnEmptyStoreCreatesAllFourSamples() throws {
+        let store = try makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directoryURL) }
+        let (defaults, suiteName) = makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let library = ScriptLibrary(store: store, defaults: defaults)
+        library.seedSamplesIfNeeded()
+
+        let names = Set(library.scripts.map(\.name))
+        #expect(names == Set(SampleScripts.all.map(\.name)))
+        #expect(library.errorMessage == nil)
+    }
+
+    @Test func aSecondSeedCallIsANoOp() throws {
+        let store = try makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directoryURL) }
+        let (defaults, suiteName) = makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let library = ScriptLibrary(store: store, defaults: defaults)
+        library.seedSamplesIfNeeded()
+        // Delete everything, then seed again -- the flag set by the first
+        // call must keep the second from bringing them back. That's what
+        // makes a deleted sample stay deleted.
+        for script in library.scripts {
+            library.delete(script)
+        }
+        #expect(library.scripts.isEmpty)
+
+        library.seedSamplesIfNeeded()
+
+        #expect(library.scripts.isEmpty)
+    }
+
+    @Test func seedingLeavesANonEmptyStoreUntouchedButStillSetsTheFlag() throws {
+        let store = try makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directoryURL) }
+        let (defaults, suiteName) = makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        _ = try store.create(name: "mine", source: "puts 1")
+
+        let library = ScriptLibrary(store: store, defaults: defaults)
+        library.seedSamplesIfNeeded()
+
+        #expect(library.scripts.count == 1)
+        #expect(library.scripts.first?.name == "mine")
+
+        // The flag is set even though nothing was seeded -- a second call
+        // (e.g. the next launch) must not retroactively seed on top of it.
+        library.seedSamplesIfNeeded()
+        #expect(library.scripts.count == 1)
+    }
+
+    @Test func restoreSamplesRecreatesOnlyWhatsMissingWithNoSuffix() throws {
+        let store = try makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directoryURL) }
+        let (defaults, suiteName) = makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let library = ScriptLibrary(store: store, defaults: defaults)
+        library.seedSamplesIfNeeded()
+        let toDelete = try #require(library.scripts.first)
+        library.delete(toDelete)
+        #expect(library.scripts.count == SampleScripts.all.count - 1)
+
+        library.restoreSamples()
+
+        let names = library.scripts.map(\.name)
+        #expect(Set(names) == Set(SampleScripts.all.map(\.name)))
+        // No `-2` suffix anywhere: restoring a missing sample must never
+        // collide with the samples that were never deleted.
+        #expect(!names.contains { $0.hasSuffix("-2") })
+        #expect(library.errorMessage == nil)
     }
 }

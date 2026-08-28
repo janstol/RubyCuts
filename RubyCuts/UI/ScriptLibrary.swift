@@ -34,14 +34,25 @@ final class ScriptLibrary {
     /// directory instead of the real sandbox Documents dir.
     private let store: ScriptStore
 
+    /// Where ``seedSamplesIfNeeded()`` records that seeding already happened.
+    /// Injectable so tests can point at a throwaway suite instead of
+    /// `.standard`, matching ``store``.
+    private let defaults: UserDefaults
+
     /// Accessor the list view passes to the editor so both share one store. The
     /// VM doesn't expose the store publicly otherwise -- source I/O belongs to
     /// the editor, not list state -- but navigation needs a way to hand the same
     /// store to the destination.
     var storeForEditing: ScriptStore { store }
 
-    init(store: ScriptStore = .userScripts) {
+    /// The key ``seedSamplesIfNeeded()`` sets in ``defaults`` once it has run,
+    /// so a later launch (or a user who deleted every sample) never seeds a
+    /// second time.
+    private static let hasSeededSampleScriptsKey = "hasSeededSampleScripts"
+
+    init(store: ScriptStore = .userScripts, defaults: UserDefaults = .standard) {
         self.store = store
+        self.defaults = defaults
     }
 
     /// Re-reads the store and updates ``scripts``. Sets ``errorMessage`` on
@@ -104,6 +115,66 @@ final class ScriptLibrary {
         } catch {
             errorMessage = Self.describe(error)
             return
+        }
+        refresh()
+    }
+
+    /// Seeds ``SampleScripts/all`` into the store on a genuinely fresh
+    /// install, and never again. A no-op once ``hasSeededSampleScriptsKey``
+    /// is set in ``defaults``.
+    ///
+    /// If the store already has scripts in it the first time this runs, it
+    /// leaves them alone -- seeding into a non-empty library would drop
+    /// samples on top of scripts the user (or, once Phase 10 ships, iCloud)
+    /// already put there -- but it still sets the flag, since "already has
+    /// scripts" and "already seeded" both mean don't seed again.
+    ///
+    /// The flag is also what makes a deleted sample stay deleted: without
+    /// it, every launch would recreate whatever the user just removed.
+    /// ``restoreSamples()`` is the explicit, user-initiated way back.
+    func seedSamplesIfNeeded() {
+        guard !defaults.bool(forKey: Self.hasSeededSampleScriptsKey) else { return }
+        errorMessage = nil
+        let existing: [Script]
+        do {
+            existing = try store.list()
+        } catch {
+            errorMessage = Self.describe(error)
+            return
+        }
+        if existing.isEmpty {
+            for sample in SampleScripts.all {
+                do {
+                    _ = try store.create(name: sample.name, source: sample.source)
+                } catch {
+                    errorMessage = Self.describe(error)
+                    return
+                }
+            }
+        }
+        defaults.set(true, forKey: Self.hasSeededSampleScriptsKey)
+        // Refresh either way: a non-empty store never populated `scripts`
+        // before this call ran (the app doesn't `refresh()` until after
+        // seeding, see `ScriptListView`'s `.task`), so skipping this here
+        // would leave the pre-existing scripts invisible to the list.
+        refresh()
+    }
+
+    /// Re-creates every sample from ``SampleScripts/all`` that isn't already
+    /// present, by name. Unlike ``seedSamplesIfNeeded()`` this always runs --
+    /// it's the explicit "bring them back" action in Settings -- but it
+    /// skips any name already in ``scripts``, so restoring never produces a
+    /// `-2` suffix via ``ScriptStore``'s collision handling.
+    func restoreSamples() {
+        errorMessage = nil
+        let existingNames = Set(scripts.map(\.name))
+        for sample in SampleScripts.all where !existingNames.contains(sample.name) {
+            do {
+                _ = try store.create(name: sample.name, source: sample.source)
+            } catch {
+                errorMessage = Self.describe(error)
+                return
+            }
         }
         refresh()
     }

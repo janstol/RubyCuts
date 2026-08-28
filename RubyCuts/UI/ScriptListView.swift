@@ -18,6 +18,16 @@ struct ScriptListView: View {
     @State private var isPresentingNewAlert = false
     @State private var isPresentingSettings = false
 
+    /// Drives the iOS/iPadOS reference sheet, reached from the toolbar's info
+    /// button and the empty state's "What is RubyCuts?" action. macOS opens
+    /// the dedicated ``RubyCutsApp`` reference window instead (see
+    /// `openReference()`), so this only matters off macOS.
+    @State private var isPresentingReference = false
+
+    #if os(macOS)
+        @Environment(\.openWindow) private var openWindow
+    #endif
+
     /// The script being renamed, driving a ``RenameSheet``. Non-`nil` drives
     /// the sheet's presentation, so there's no separate `isPresenting` flag
     /// to keep in sync with it. Rename used to be an `.alert` with a
@@ -44,6 +54,7 @@ struct ScriptListView: View {
                 .navigationTitle("Scripts")
                 .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 320)
                 .task {
+                    library.seedSamplesIfNeeded()
                     library.refresh()
                 }
                 .toolbar {
@@ -55,8 +66,16 @@ struct ScriptListView: View {
                         }
                     }
                     #if !os(macOS)
-                        // macOS reaches Settings through the app menu (⌘,);
-                        // this gear is its iOS/iPadOS equivalent.
+                        // macOS reaches these through the app menu (⌘, and
+                        // ⌘?); this gear and info button are their
+                        // iOS/iPadOS equivalents.
+                        ToolbarItem(placement: .automatic) {
+                            Button {
+                                isPresentingReference = true
+                            } label: {
+                                Label("Reference", systemImage: "info.circle")
+                            }
+                        }
                         ToolbarItem(placement: .automatic) {
                             Button {
                                 isPresentingSettings = true
@@ -68,7 +87,17 @@ struct ScriptListView: View {
                 }
                 #if !os(macOS)
                     .sheet(isPresented: $isPresentingSettings) {
-                        SettingsView()
+                        SettingsView(scriptLibrary: library)
+                    }
+                    .sheet(isPresented: $isPresentingReference) {
+                        NavigationStack {
+                            ReferenceView()
+                            .toolbar {
+                                ToolbarItem(placement: .cancellationAction) {
+                                    Button("Done") { isPresentingReference = false }
+                                }
+                            }
+                        }
                     }
                 #endif
                 .focusedSceneValue(\.newScriptAction, presentNewScriptAlert)
@@ -164,6 +193,9 @@ struct ScriptListView: View {
                 Button("New Script") {
                     presentNewScriptAlert()
                 }
+                Button("What is RubyCuts?") {
+                    openReference()
+                }
             }
         } else {
             List(selection: $selection) {
@@ -199,6 +231,17 @@ struct ScriptListView: View {
     private func presentNewScriptAlert() {
         newName = "Untitled"
         isPresentingNewAlert = true
+    }
+
+    /// Opens the reference: the dedicated `Window` scene on macOS (see
+    /// `RubyCutsApp`), a sheet everywhere else. Shared by the toolbar's info
+    /// button and the empty state's "What is RubyCuts?" action.
+    private func openReference() {
+        #if os(macOS)
+            openWindow(id: "reference")
+        #else
+            isPresentingReference = true
+        #endif
     }
 
     private func createNew() {
