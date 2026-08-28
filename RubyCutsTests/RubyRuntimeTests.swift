@@ -588,5 +588,81 @@ extension EmbeddedRubyTests {
             _ = try? await RubyRuntime.shared.evaluate("ENV.delete('RC_Y')")
         }
 
+        // MARK: - Script run cancellation (Phase 8, Wave B)
+        //
+        // These work *because* `RubyRuntime` runs on its own dedicated
+        // thread: the test's own task isn't blocked while a `run` occupies
+        // the VM thread, so a second task can reach in and cancel it. Guards
+        // `rubycuts_shim.c`'s cancellation hook (RUBY_EVENT_LINE | CALL |
+        // B_CALL) and `RubyRuntime.requestCancel()`/`runCancellable(_:input:)`.
+
+        @Test func cancelsALongRunningLoop() async throws {
+            // The load-bearing test: if rb_raise from inside an event hook
+            // were unsafe against rb_eval_string_protect's longjmp, this is
+            // where it would fail or crash rather than returning cleanly.
+            let runTask = Task { await RubyRuntime.shared.run("i = 0; loop { i += 1 }") }
+            try await Task.sleep(for: .milliseconds(200))
+            RubyRuntime.shared.requestCancel()
+            let result = await runTask.value
+            #expect(result.wasCancelled)
+        }
+
+        @Test func cancelKeepsOutputPrintedBeforeTheStop() async throws {
+            let runTask = Task {
+                await RubyRuntime.shared.run("puts 'before'; loop { }")
+            }
+            try await Task.sleep(for: .milliseconds(200))
+            RubyRuntime.shared.requestCancel()
+            let result = await runTask.value
+            #expect(result.wasCancelled)
+            #expect(result.stdout.contains("before"))
+        }
+
+        @Test func cancelInterruptsAnEmptyBodiedIteration() async throws {
+            // RUBY_EVENT_LINE alone never fires inside `{ }`'s empty body --
+            // there's no statement to sit between. B_CALL (the block's own
+            // entry) is what the hook catches instead, so this is the case
+            // that justifies including it alongside LINE/CALL.
+            let runTask = Task {
+                await RubyRuntime.shared.run("10_000_000_000.times { }")
+            }
+            try await Task.sleep(for: .milliseconds(200))
+            RubyRuntime.shared.requestCancel()
+            let result = await runTask.value
+            #expect(result.wasCancelled)
+        }
+
+        @Test func aCleanRunIsNotReportedAsCancelled() async {
+            let result = await RubyRuntime.shared.run("1 + 1")
+            #expect(!result.wasCancelled)
+        }
+
+        @Test func cancellationDoesNotLeakIntoTheNextRun() async throws {
+            // Guards the clear-on-disable ordering: the flag must not outlive
+            // the run it was requested for, or a later, unrelated run would
+            // be reported as cancelled too.
+            let runTask = Task { await RubyRuntime.shared.run("loop { }") }
+            try await Task.sleep(for: .milliseconds(200))
+            RubyRuntime.shared.requestCancel()
+            _ = await runTask.value
+
+            let result = await RubyRuntime.shared.run("2 + 2")
+            #expect(result.result == "4")
+            #expect(!result.wasCancelled)
+        }
+
+        @Test func taskCancellationCancelsTheRun() async throws {
+            // Exercises `runCancellable(_:input:)`'s `onCancel` handler
+            // directly -- the Shortcuts/Stop-button path -- rather than
+            // calling `requestCancel()` by hand.
+            let runTask = Task {
+                await RubyRuntime.shared.runCancellable("loop { }")
+            }
+            try await Task.sleep(for: .milliseconds(200))
+            runTask.cancel()
+            let result = await runTask.value
+            #expect(result.wasCancelled)
+        }
+
     }
 }

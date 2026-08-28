@@ -20,6 +20,18 @@ typedef char *(*rubycuts_native_handler)(const char *name, const char *args_json
 /// Installs `handler` as the native bridge and defines `RubyCuts::Native.call(name, args_json)` (which dispatches to it) and `RubyCuts::NativeError < StandardError`. Safe to call more than once; a later call replaces the handler and reuses the already-defined module/class.
 void rubycuts_install_native_bridge(rubycuts_native_handler handler);
 
+/// Requests cancellation of the in-flight eval. Thread-safe and non-blocking:
+/// callable from any thread, including while the VM thread is inside an eval.
+void rubycuts_request_cancel(void);
+
+/// Installs the cancellation event hook. VM thread only.
+void rubycuts_cancel_hook_enable(void);
+
+/// Removes the hook, clears the request flag, and returns 1 if the hook
+/// actually raised during the window it was installed, 0 otherwise. VM
+/// thread only.
+int rubycuts_cancel_hook_disable(void);
+
 #ifdef __cplusplus
 }
 #endif

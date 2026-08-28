@@ -24,7 +24,11 @@ struct ConsoleOutputView: View {
                     Text("Console")
                         .font(.headline)
                     Spacer()
-                    if result.hasError {
+                    if result.wasCancelled {
+                        Label("Cancelled", systemImage: "stop.circle")
+                            .foregroundStyle(.orange)
+                            .font(.caption)
+                    } else if result.hasError {
                         Label("Failed", systemImage: "exclamationmark.triangle")
                             .foregroundStyle(.red)
                             .font(.caption)
@@ -37,7 +41,10 @@ struct ConsoleOutputView: View {
                 if !result.stderr.isEmpty {
                     section("Errors", text: result.stderr, tint: .red)
                 }
-                if let errorMessage = result.errorMessage {
+                // Suppressed on cancellation: "run cancelled" as a red error
+                // reads like a bug rather than the user's own action, and the
+                // badge above already says what happened.
+                if let errorMessage = result.errorMessage, !result.wasCancelled {
                     section("Error", text: errorMessage, tint: .red)
                 }
                 if !result.backtrace.isEmpty {
@@ -95,6 +102,19 @@ struct ConsoleOutputView: View {
                 "rubycuts:3:in 'foo'",
                 "rubycuts:1:in '<main>'",
             ]
+        )
+    )
+    .frame(maxWidth: 400, maxHeight: 200)
+}
+
+#Preview {
+    ConsoleOutputView(
+        result: RunResult(
+            stdout: "before\n",
+            stderr: "",
+            result: "",
+            errorMessage: "run cancelled",
+            wasCancelled: true
         )
     )
     .frame(maxWidth: 400, maxHeight: 200)

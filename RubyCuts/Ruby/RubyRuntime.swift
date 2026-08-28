@@ -65,11 +65,17 @@ actor RubyRuntime {
     /// **Known follow-up:** the main actor is free while this runs (callers
     /// `await` it), but `run` itself is still one synchronous unit on the VM
     /// thread -- the "live console" streams only after the run completes, not
-    /// as it goes, and there's still no way to cancel a run in progress.
-    /// Streaming needs a hook inside the eval loop itself (a `RUBY_EVENT_LINE`
-    /// callback is the planned mechanism, tracked as its own backlog item
-    /// alongside cancellation), not just getting off the main actor. For
-    /// typical short scripts the run is instant either way.
+    /// as it goes. Streaming needs a hook inside the eval loop itself, not
+    /// just getting off the main actor. For typical short scripts the run is
+    /// instant either way.
+    ///
+    /// **Cancellation** is handled by installing a `RUBY_EVENT_LINE |
+    /// RUBY_EVENT_CALL | RUBY_EVENT_B_CALL` hook (``requestCancel()``,
+    /// ``runCancellable(_:input:)``) around the user-code eval below -- see
+    /// their doc comments. It only fires at Ruby-level checkpoints, so it
+    /// can't interrupt a script blocked inside a single C call (`sleep`, a
+    /// `Net::HTTP` read, a catastrophic regex): cancellation is partial
+    /// (between Ruby statements, not mid-syscall), not a kill switch.
     ///
     /// **Input is opt-in.** With an empty ``RunInput`` (the default) this is
     /// byte-for-byte today's path: the five-eval StringIO capture, no
@@ -139,6 +145,13 @@ actor RubyRuntime {
         }
 
         var result = RunResult(stdout: "", stderr: "", result: "", errorMessage: nil)
+
+        // The hook is installed only around the user-code eval -- never
+        // around boot, the StringIO setup above, the input setup/teardown,
+        // the backtrace read below, or the $cap_out/$cap_err reads, all of
+        // which would otherwise raise if a request lands on them instead.
+        rubycuts_cancel_hook_enable()
+        var evalFailed = false
         do {
             result.result = try evalRaw(code)
         } catch {
@@ -148,12 +161,54 @@ actor RubyRuntime {
             // eval, and the next eval below (reading $cap_out) would otherwise
             // overwrite it before we get a chance to read this failure's trace.
             result.backtrace = readBacktrace()
+            evalFailed = true
         }
+        // Must run before the $cap_out/$cap_err reads below, which would
+        // otherwise trip the hook themselves. Gating on evalFailed (the eval
+        // actually failed) means a script that deliberately `rescue
+        // Exception`s the cancellation and runs to completion isn't reported
+        // as cancelled.
+        result.wasCancelled = rubycuts_cancel_hook_disable() == 1 && evalFailed
 
         // Read back whatever was printed before the run ended (or raised).
         result.stdout = (try? evalRaw("$cap_out.string")) ?? ""
         result.stderr = (try? evalRaw("$cap_err.string")) ?? ""
         return result
+    }
+
+    /// Requests cancellation of whatever `run(_:input:)` call is currently
+    /// in flight, if any. A one-line wrapper over the C shim's atomic flag --
+    /// `nonisolated` is the whole point: `run` occupies the VM thread (this
+    /// actor's serial executor) for its entire duration, so an isolated
+    /// `cancel()` method would just enqueue a job that can't run until the
+    /// thing it's cancelling finishes. This reaches the VM thread out of
+    /// band, with no actor hop and no lock the VM thread holds.
+    ///
+    /// A no-op if no run is in flight, or if the in-flight run hasn't reached
+    /// the hook-enabled window yet (boot, StringIO setup) -- the request just
+    /// sits in the flag until the hook is installed and sees it.
+    nonisolated func requestCancel() {
+        rubycuts_request_cancel()
+    }
+
+    /// Runs `code` the same as ``run(_:input:)``, but cancels the underlying
+    /// eval if the calling `Task` is cancelled -- the entry point both the
+    /// console (``ScriptEditorView``'s Stop button) and Shortcuts (a
+    /// cancelled intent) should use instead of calling `run` directly.
+    ///
+    /// `withTaskCancellationHandler`'s `onCancel` runs synchronously on
+    /// whatever thread cancels, which can be before the enqueued `run` job
+    /// ever starts on the VM thread. ``requestCancel()`` is safe to call at
+    /// that point too -- it just sets a flag `run`'s hook picks up as soon as
+    /// it installs, so a pre-run cancellation is still honored by the first
+    /// event the hook sees, and no request outlives the run that owns it (the
+    /// flag is cleared on hook disable, not on entry -- see `run`).
+    nonisolated func runCancellable(_ code: String, input: RunInput = .empty) async -> RunResult {
+        await withTaskCancellationHandler {
+            await run(code, input: input)
+        } onCancel: {
+            requestCancel()
+        }
     }
 
     /// Evaluates `code` against the already-booted VM. The caller must have booted

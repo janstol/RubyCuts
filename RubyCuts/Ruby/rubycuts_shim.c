@@ -1,6 +1,7 @@
 #include "rubycuts_shim.h"
 
 #include <ruby.h>
+#include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -147,6 +148,12 @@ void rubycuts_free(char *string) {
 static rubycuts_native_handler g_native_handler = NULL;
 static VALUE g_native_error_class = Qnil;
 
+// The exception class the cancellation hook raises through. Same rooting
+// story as g_native_error_class: once rb_define_class_under assigns it to a
+// constant under RubyCuts, the module's own constant table keeps it alive,
+// so no rb_gc_register_address is needed.
+static VALUE g_cancelled_class = Qnil;
+
 static VALUE rc_native_call(VALUE self, VALUE name, VALUE args_json) {
     if (g_native_handler == NULL) {
         rb_raise(rb_eRuntimeError, "RubyCuts::Native bridge is not installed");
@@ -192,4 +199,58 @@ void rubycuts_install_native_bridge(rubycuts_native_handler handler) {
         g_native_error_class =
             rb_define_class_under(rubycuts_module, "NativeError", rb_eStandardError);
     }
+
+    // Subclasses Exception, not StandardError: a bare `rescue => e` in user
+    // code must not swallow a cancellation, the same reason MRI's own
+    // Interrupt and SystemExit sit outside StandardError.
+    if (g_cancelled_class == Qnil) {
+        g_cancelled_class =
+            rb_define_class_under(rubycuts_module, "Cancelled", rb_eException);
+    }
+}
+
+// Set from any thread via rubycuts_request_cancel(), polled on the VM thread
+// by rc_cancel_hook(). Atomic because it crosses threads without a lock --
+// the VM thread must never block on anything the requesting thread might be
+// holding.
+static _Atomic int g_cancel_requested = 0;
+
+// VM-thread-only, so a plain int: records whether the hook actually fired
+// (raised) during the window it was installed. Read by
+// rubycuts_cancel_hook_disable() to report back to Swift.
+static int g_cancel_delivered = 0;
+
+// Checked on every RUBY_EVENT_LINE/CALL/B_CALL event while installed. The
+// fast path (flag not set) is a single atomic load and return, so a
+// non-cancelled run pays only a predicted-not-taken branch per event.
+//
+// Clearing the flag *inside* the hook, before raising, is what makes this
+// one-shot: rb_raise unwinds back through this same event loop as it pops
+// frames (running any `ensure` blocks along the way), and each of those is
+// itself a LINE/CALL event. Without clearing first, the hook would re-fire
+// on every one of them.
+static void rc_cancel_hook(
+    rb_event_flag_t evflag, VALUE data, VALUE self, ID mid, VALUE klass) {
+    if (!atomic_load(&g_cancel_requested)) return;
+    atomic_store(&g_cancel_requested, 0);
+    g_cancel_delivered = 1;
+    rb_raise(g_cancelled_class, "run cancelled");
+}
+
+void rubycuts_request_cancel(void) {
+    atomic_store(&g_cancel_requested, 1);
+}
+
+void rubycuts_cancel_hook_enable(void) {
+    g_cancel_delivered = 0;
+    rb_add_event_hook(
+        rc_cancel_hook,
+        RUBY_EVENT_LINE | RUBY_EVENT_CALL | RUBY_EVENT_B_CALL,
+        Qnil);
+}
+
+int rubycuts_cancel_hook_disable(void) {
+    rb_remove_event_hook(rc_cancel_hook);
+    atomic_store(&g_cancel_requested, 0);
+    return g_cancel_delivered;
 }

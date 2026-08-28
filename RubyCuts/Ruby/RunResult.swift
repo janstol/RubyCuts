@@ -24,12 +24,20 @@ struct RunResult: Sendable {
     var result: String
 
     /// The Ruby exception's `to_s` when the script raised; `nil` on a clean run.
+    /// Still populated when ``wasCancelled`` is `true` -- a cancelled run is a
+    /// failed run that happens to have a known cause, and whatever the script
+    /// printed to `$stdout` before the cancellation is still in ``stdout``.
     var errorMessage: String?
 
     /// The raised exception's `backtrace`, one frame per element. Empty on a
     /// clean run and on non-exception control-flow failures -- see the type's
     /// doc comment.
     var backtrace: [String] = []
+
+    /// `true` when the run was stopped by ``RubyRuntime/requestCancel()`` (or
+    /// the ``RubyRuntime/runCancellable(_:input:)`` task being cancelled)
+    /// rather than raising or completing on its own.
+    var wasCancelled: Bool = false
 
     /// `true` when the script raised. Convenience for the view layer.
     var hasError: Bool { errorMessage != nil }

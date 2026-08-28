@@ -6,11 +6,12 @@ import SwiftUI
 /// 2's "source stays on disk, read when needed" design.
 ///
 /// Running is wired straight into ``RubyRuntime/shared`` via a Run toolbar
-/// button: the result populates ``runResult`` and renders in a
-/// ``ConsoleOutputView`` panel below the editor. There's no separate console
-/// view model -- a passthrough to a singleton would be ceremony, and the
-/// console has no state worth observing beyond the last result (yet; live
-/// streaming + history would justify extracting one).
+/// button, which becomes a Stop button for the run's duration: the result
+/// populates ``runResult`` and renders in a ``ConsoleOutputView`` panel below
+/// the editor. There's no separate console view model -- a passthrough to a
+/// singleton would be ceremony, and the console has no state worth observing
+/// beyond the last result (yet; live streaming + history would justify
+/// extracting one).
 ///
 /// **Save model:** edits autosave, they aren't confirmed-on-leave.
 /// `NavigationStack`'s back button and the iOS interactive back-swipe can't
@@ -68,6 +69,10 @@ struct ScriptEditorView: View {
     @State private var errorMessage: String?
     @State private var showError = false
     @State private var isRunning = false
+
+    /// The in-flight run's `Task`, held only so the Stop button can cancel
+    /// it. `nil` whenever no run is in progress.
+    @State private var runTask: Task<Void, Never>?
 
     @Environment(\.scenePhase) private var scenePhase
 
@@ -130,19 +135,28 @@ struct ScriptEditorView: View {
                             .foregroundStyle(.secondary)
                     }
                 #endif
-                Button {
-                    run()
-                } label: {
-                    if isRunning {
-                        ProgressView()
-                    } else {
+                if isRunning {
+                    ProgressView()
+                    Button {
+                        runTask?.cancel()
+                    } label: {
+                        Label("Stop", systemImage: "stop.fill")
+                    }
+                    .labelStyle(.titleAndIcon)
+                    .tint(.red)
+                    .keyboardShortcut(".", modifiers: .command)
+                    .help("Stop the running script (⌘.)")
+                } else {
+                    Button {
+                        run()
+                    } label: {
                         Label("Run", systemImage: "play.fill")
                     }
+                    .labelStyle(.titleAndIcon)
+                    .keyboardShortcut("r", modifiers: .command)
+                    .help("Run the script (⌘R)")
+                    .disabled(!didLoad)
                 }
-                .labelStyle(.titleAndIcon)
-                .keyboardShortcut("r", modifiers: .command)
-                .help("Run the script (⌘R)")
-                .disabled(!didLoad || isRunning)
 
                 Button {
                     save()
@@ -256,14 +270,21 @@ struct ScriptEditorView: View {
     /// runs on its own dedicated thread now (see its doc comment), so
     /// `await`ing it here suspends this task rather than blocking the main
     /// actor -- the window stays draggable, the list stays scrollable, and
-    /// the spinner keeps animating for the whole run. Still not cancellable:
-    /// that needs a hook inside the eval loop itself, tracked as its own
-    /// backlog item.
+    /// the spinner keeps animating for the whole run.
+    ///
+    /// Cancellable via the Stop button that replaces Run while `isRunning`:
+    /// cancelling ``runTask`` trips ``RubyRuntime/runCancellable(_:input:)``'s
+    /// `onCancel` handler, which is what actually stops the VM -- this method
+    /// itself only starts and tracks the task. Per ``RubyRuntime``'s doc
+    /// comment, that stop only lands at the next Ruby-level checkpoint, so a
+    /// script blocked inside a single C call (`sleep`, a network read) keeps
+    /// running until that call returns.
     private func run() {
         isRunning = true
-        Task {
-            runResult = await RubyRuntime.shared.run(source)
+        runTask = Task {
+            runResult = await RubyRuntime.shared.runCancellable(source)
             isRunning = false
+            runTask = nil
         }
     }
 }

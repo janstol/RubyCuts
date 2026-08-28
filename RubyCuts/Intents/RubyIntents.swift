@@ -96,8 +96,17 @@ private func combinedMessage(_ result: RunResult) -> String {
 /// (see its doc comment), not whichever actor calls in -- both `perform()`
 /// call sites already `await` here, so nothing about the Shortcuts contract
 /// changes.
+///
+/// Runs through ``RubyRuntime/runCancellable(_:input:)`` rather than `run`
+/// directly, so a Shortcut cancelled mid-run (from the Shortcuts UI, or the
+/// system reclaiming a background extension) cancels this `Task` and trips
+/// the VM's cancellation hook. A cancelled run comes back from
+/// `runCancellable` as an ordinary ``RunResult`` with `wasCancelled` set and
+/// `errorMessage` populated, so it surfaces as a normal ``RubyRunError``
+/// through the existing ``output(from:)`` contract -- no change to that
+/// function, and `IntentOutputTests` is unaffected.
 func runToOutput(_ source: String, input: RunInput = .empty) async throws -> String {
-    let result = await RubyRuntime.shared.run(source, input: input)
+    let result = await RubyRuntime.shared.runCancellable(source, input: input)
     return try output(from: result).get()
 }
 
