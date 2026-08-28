@@ -347,6 +347,18 @@ extension EmbeddedRubyTests {
             #expect(result.backtrace.isEmpty)
         }
 
+        @Test func runMeasuresTheUserCodeEvalDuration() async {
+            // A loose assertion on purpose: a tight bound on either side
+            // would be flaky on shared CI. `1_000.times { }` just needs to
+            // take a measurable, non-zero amount of time; the point is that
+            // `duration`/`finishedAt` get populated by a real run at all.
+            let result = await RubyRuntime.shared.run("1_000.times { }")
+            #expect(!result.hasError)
+            #expect(result.duration > 0)
+            #expect(result.duration < 60)
+            #expect(abs(result.finishedAt.timeIntervalSinceNow) < 10)
+        }
+
         @Test func runRestoresStdoutAfterRunning() async {
             // Capture must restore $stdout/$stderr afterward, or a later evaluate
             // would silently write to a StringIO and return empty. Drives a `run`,

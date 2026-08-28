@@ -152,6 +152,8 @@ actor RubyRuntime {
         // which would otherwise raise if a request lands on them instead.
         rubycuts_cancel_hook_enable()
         var evalFailed = false
+        let clock = ContinuousClock()
+        let start = clock.now
         do {
             result.result = try evalRaw(code)
         } catch {
@@ -163,6 +165,8 @@ actor RubyRuntime {
             result.backtrace = readBacktrace()
             evalFailed = true
         }
+        result.duration = Self.seconds(clock.now - start)
+        result.finishedAt = .now
         // Must run before the $cap_out/$cap_err reads below, which would
         // otherwise trip the hook themselves. Gating on evalFailed (the eval
         // actually failed) means a script that deliberately `rescue
@@ -528,6 +532,17 @@ actor RubyRuntime {
     /// its own.
     nonisolated static func base64(_ string: String) -> String {
         Data(string.utf8).base64EncodedString()
+    }
+
+    /// Converts a ``ContinuousClock`` measurement to seconds for
+    /// ``RunResult/duration``. `ContinuousClock` is monotonic and unaffected
+    /// by wall-clock adjustments -- the right clock for timing a single eval.
+    ///
+    /// `nonisolated`: called synchronously from `run`, which runs on the VM
+    /// thread, not the main actor.
+    private nonisolated static func seconds(_ duration: Duration) -> TimeInterval {
+        let components = duration.components
+        return Double(components.seconds) + Double(components.attoseconds) / 1e18
     }
 
     /// Maps a thrown ``RubyError`` to a short human-readable string for

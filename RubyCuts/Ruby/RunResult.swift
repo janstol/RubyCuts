@@ -41,4 +41,18 @@ struct RunResult: Sendable {
 
     /// `true` when the script raised. Convenience for the view layer.
     var hasError: Bool { errorMessage != nil }
+
+    /// How long the user-code eval took -- not VM boot, not the `StringIO`
+    /// capture setup, not input setup/teardown. That's the number the user
+    /// can actually affect by editing their script, and it stays consistent
+    /// run to run within a session, unlike a total-wall-clock figure.
+    ///
+    /// The tradeoff: the first run of an app session pays several seconds of
+    /// VM boot (`require 'openssl'`, gem paths, the native bridge) that this
+    /// number doesn't include, so it can look surprisingly small to someone
+    /// who doesn't know that's deliberate.
+    var duration: TimeInterval = 0
+
+    /// The moment ``RubyRuntime/run(_:input:)`` finished the user-code eval.
+    var finishedAt: Date = .now
 }

@@ -83,8 +83,16 @@ struct ScriptEditorView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     /// The last run's captured output, shown in the console panel. `nil` until
-    /// the first Run (so the panel stays hidden before then).
+    /// the first Run (so the panel stays hidden before then), and set back to
+    /// `nil` by the console's Clear button.
     @State private var runResult: RunResult?
+
+    /// The console panel's height, dragged via ``ConsoleResizeHandle``.
+    /// `@AppStorage`, not the injected-`UserDefaults` seam ``ScriptLibrary``
+    /// uses elsewhere -- this is per-view chrome with no test surface and no
+    /// view model to hang it on, so threading a `UserDefaults` down here
+    /// would be abstraction the case doesn't need.
+    @AppStorage("consoleHeight") private var consoleHeight: Double = 220
 
     /// Whether `source` has unsaved changes. `false` before the initial load
     /// completes, so the "Edited" marker can't flash on briefly while the
@@ -145,20 +153,25 @@ struct ScriptEditorView: View {
     /// with the toolbar and the rest of ``body``'s modifiers in one pass --
     /// combined, that expression was slow enough to time out.
     private var editorContent: some View {
-        VStack(spacing: 0) {
-            TextEditor(text: $source)
-                .font(.system(.body, design: .monospaced))
-                .autocorrectionDisabled()
-                #if os(iOS)
-                    .textInputAutocapitalization(.none)
-                #endif
-                .frame(maxHeight: .infinity)
+        GeometryReader { proxy in
+            VStack(spacing: 0) {
+                TextEditor(text: $source)
+                    .font(.system(.body, design: .monospaced))
+                    .autocorrectionDisabled()
+                    #if os(iOS)
+                        .textInputAutocapitalization(.none)
+                    #endif
+                    .frame(maxHeight: .infinity)
 
-            if let runResult {
-                Divider()
-                ConsoleOutputView(result: runResult)
-                    .frame(maxHeight: 220)
-                    .background(.regularMaterial)
+                if let runResult {
+                    ConsoleResizeHandle(
+                        height: $consoleHeight,
+                        bounds: consoleHeightBounds(in: proxy.size.height)
+                    )
+                    ConsoleOutputView(result: runResult, onClear: { self.runResult = nil })
+                        .frame(height: clampedConsoleHeight(in: proxy.size.height))
+                        .background(.regularMaterial)
+                }
             }
         }
         #if os(macOS)
@@ -180,6 +193,37 @@ struct ScriptEditorView: View {
             .navigationTitle($editableName)
             .onChange(of: editableName) { _, newValue in commitRename(to: newValue) }
         #endif
+    }
+
+    /// The minimum height the console panel can shrink to, and the minimum
+    /// height reserved for the editor above it, before the resize handle's
+    /// own space is subtracted from `available`.
+    private static let minConsoleHeight: Double = 100
+    private static let minEditorHeight: Double = 100
+    private static let resizeHandleHeight: Double = 8
+
+    /// The range ``ConsoleResizeHandle`` may drag ``consoleHeight`` within,
+    /// given `available` (the editor content's total height from
+    /// `GeometryReader`). Extracted into its own typed function rather than
+    /// inlined in the view body -- this view has documented type-checker
+    /// fragility (see ``toolbarButtons``'s doc comment), so new conditional
+    /// or arithmetic expressions get pulled out, not inlined.
+    private func consoleHeightBounds(in available: CGFloat) -> ClosedRange<Double> {
+        let maxHeight = max(
+            Self.minConsoleHeight,
+            Double(available) - Self.minEditorHeight - Self.resizeHandleHeight
+        )
+        return Self.minConsoleHeight...maxHeight
+    }
+
+    /// ``consoleHeight`` clamped into ``consoleHeightBounds(in:)`` for
+    /// `available`. Reading `consoleHeight` back through the clamp (rather
+    /// than trusting the stored value directly) is what keeps a height
+    /// dragged tall on a big window from squeezing the editor to nothing
+    /// after the window -- or the whole app, on a small iPhone -- shrinks.
+    private func clampedConsoleHeight(in available: CGFloat) -> CGFloat {
+        let bounds = consoleHeightBounds(in: available)
+        return CGFloat(min(max(consoleHeight, bounds.lowerBound), bounds.upperBound))
     }
 
     /// The `runScriptAction` published via `.focusedSceneValue` in ``body``.
