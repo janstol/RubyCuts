@@ -46,6 +46,12 @@ struct ScriptEditorView: View {
     /// don't care about this can ignore it.
     var onSaveError: (String) -> Void = { _ in }
 
+    /// Called after a *successful* save (autosave or the explicit button),
+    /// so the list view can refresh and pick up the new ``Script/modifiedAt``.
+    /// Defaults to a no-op so previews and tests that don't wire it are
+    /// unaffected.
+    var onSaved: () -> Void = {}
+
     /// Called when the user commits a new name in the editable title
     /// (iOS/iPadOS only -- see the type doc comment). Returns the renamed
     /// ``Script`` on success and `nil` on failure -- the list view owns the
@@ -305,6 +311,7 @@ struct ScriptEditorView: View {
             try store.write(script, source: source)
             savedSource = source
             errorMessage = nil
+            onSaved()
             return true
         } catch {
             let message = error.localizedDescription

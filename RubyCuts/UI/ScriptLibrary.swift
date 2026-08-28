@@ -50,9 +50,33 @@ final class ScriptLibrary {
     /// second time.
     private static let hasSeededSampleScriptsKey = "hasSeededSampleScripts"
 
+    /// The key ``sortOrder`` persists to in ``defaults``, mirroring
+    /// ``hasSeededSampleScriptsKey``.
+    private static let sortOrderKey = "scriptSortOrder"
+
+    /// How ``scripts`` is ordered. Persisted in ``defaults`` so the choice
+    /// survives relaunch, and re-applied immediately on change -- unlike
+    /// ``errorMessage`` or ``scripts``, this is list *configuration*, not a
+    /// snapshot of disk, so it belongs on the VM rather than the view (see
+    /// `ScriptListView`'s doc comment on `newName` for the same distinction
+    /// drawn the other way).
+    var sortOrder: ScriptSortOrder {
+        didSet {
+            defaults.set(sortOrder.rawValue, forKey: Self.sortOrderKey)
+            scripts = Self.sorted(scripts, by: sortOrder)
+        }
+    }
+
     init(store: ScriptStore = .userScripts, defaults: UserDefaults = .standard) {
         self.store = store
         self.defaults = defaults
+        if let raw = defaults.string(forKey: Self.sortOrderKey),
+            let restored = ScriptSortOrder(rawValue: raw)
+        {
+            sortOrder = restored
+        } else {
+            sortOrder = .name
+        }
     }
 
     /// Re-reads the store and updates ``scripts``. Sets ``errorMessage`` on
@@ -60,7 +84,7 @@ final class ScriptLibrary {
     func refresh() {
         errorMessage = nil
         do {
-            scripts = try store.list()
+            scripts = Self.sorted(try store.list(), by: sortOrder)
         } catch {
             errorMessage = Self.describe(error)
             scripts = []
@@ -177,6 +201,27 @@ final class ScriptLibrary {
             }
         }
         refresh()
+    }
+
+    /// Orders `scripts` per `order`. ``ScriptStore/list()`` always returns
+    /// name-sorted results, so `.name` is a no-op pass-through; `.dateModified`
+    /// re-sorts newest-first, with a `nil` date sorting last (there's nothing
+    /// to compare it against) and a name tiebreak so the order is total and
+    /// stable rather than depending on how the store happened to enumerate.
+    private static func sorted(_ scripts: [Script], by order: ScriptSortOrder) -> [Script] {
+        switch order {
+        case .name:
+            return scripts.sorted { $0.name < $1.name }
+        case .dateModified:
+            return scripts.sorted { lhs, rhs in
+                switch (lhs.modifiedAt, rhs.modifiedAt) {
+                case (let l?, let r?) where l != r: return l > r
+                case (nil, _?): return false
+                case (_?, nil): return true
+                default: return lhs.name < rhs.name
+                }
+            }
+        }
     }
 
     /// Maps an opaque `Error` to a short human-readable string for the alert.

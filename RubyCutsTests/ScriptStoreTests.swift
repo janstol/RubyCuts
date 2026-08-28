@@ -148,4 +148,20 @@ struct ScriptStoreTests {
             _ = try store.create(name: "   ", source: "x")
         }
     }
+
+    // MARK: - modifiedAt
+
+    @Test func listPopulatesModifiedAt() throws {
+        let store = try makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directoryURL) }
+
+        _ = try store.create(name: "hello", source: "puts 'hi'")
+
+        let listed = try store.list()
+        let modifiedAt = try #require(listed.first?.modifiedAt)
+        // Just-created, so the recorded modification time should be within
+        // a generous window of now -- not asserting an exact value, since
+        // that would couple the test to filesystem timestamp precision.
+        #expect(abs(modifiedAt.timeIntervalSinceNow) < 60)
+    }
 }

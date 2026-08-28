@@ -241,4 +241,83 @@ struct ScriptLibraryTests {
         #expect(!names.contains { $0.hasSuffix("-2") })
         #expect(library.errorMessage == nil)
     }
+
+    // MARK: - Sort order
+
+    /// Sets a script's modification date directly, so date-sort tests don't
+    /// have to sleep between creates to get distinct timestamps.
+    private func setModificationDate(_ date: Date, at url: URL) throws {
+        try FileManager.default.setAttributes(
+            [.modificationDate: date], ofItemAtPath: url.path)
+    }
+
+    @Test func nameIsTheDefaultSortOrder() throws {
+        let store = try makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directoryURL) }
+        let (defaults, suiteName) = makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let library = ScriptLibrary(store: store, defaults: defaults)
+
+        #expect(library.sortOrder == .name)
+    }
+
+    @Test func dateModifiedOrdersNewestFirst() throws {
+        let store = try makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directoryURL) }
+        let (defaults, suiteName) = makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let oldest = try store.create(name: "oldest", source: "")
+        let middle = try store.create(name: "middle", source: "")
+        let newest = try store.create(name: "newest", source: "")
+        let now = Date()
+        try setModificationDate(now.addingTimeInterval(-3600), at: oldest.url)
+        try setModificationDate(now.addingTimeInterval(-1800), at: middle.url)
+        try setModificationDate(now, at: newest.url)
+
+        let library = ScriptLibrary(store: store, defaults: defaults)
+        library.refresh()
+        library.sortOrder = .dateModified
+
+        #expect(library.scripts.map(\.name) == ["newest", "middle", "oldest"])
+    }
+
+    @Test func sortOrderChangeResortsWithoutAManualRefresh() throws {
+        let store = try makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directoryURL) }
+        let (defaults, suiteName) = makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let alpha = try store.create(name: "alpha", source: "")
+        let beta = try store.create(name: "beta", source: "")
+        let now = Date()
+        try setModificationDate(now.addingTimeInterval(-3600), at: alpha.url)
+        try setModificationDate(now, at: beta.url)
+
+        let library = ScriptLibrary(store: store, defaults: defaults)
+        library.refresh()
+        #expect(library.scripts.map(\.name) == ["alpha", "beta"])
+
+        library.sortOrder = .dateModified
+
+        // No `library.refresh()` call between the two assertions -- the
+        // `didSet` on `sortOrder` alone must re-order `scripts`.
+        #expect(library.scripts.map(\.name) == ["beta", "alpha"])
+    }
+
+    @Test func sortOrderPersistsAcrossAFreshLibraryOnTheSameDefaults() throws {
+        let store = try makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directoryURL) }
+        let (defaults, suiteName) = makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let first = ScriptLibrary(store: store, defaults: defaults)
+        #expect(first.sortOrder == .name)
+        first.sortOrder = .dateModified
+
+        let second = ScriptLibrary(store: store, defaults: defaults)
+
+        #expect(second.sortOrder == .dateModified)
+    }
 }

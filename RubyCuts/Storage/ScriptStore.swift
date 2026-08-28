@@ -61,15 +61,29 @@ struct ScriptStore: Sendable {
     /// because the store writes top-level files only; NSMetadataQuery scopes by
     /// searchScopes rather than recursion depth, so this flat behavior carries
     /// over to iCloud.
+    ///
+    /// Requests `.contentModificationDateKey` so each ``Script/modifiedAt`` is
+    /// populated from the same directory scan -- `contentsOfDirectory` already
+    /// prefetches it into the URL, so this adds no per-file `stat` calls. A URL
+    /// whose date can't be read gets `modifiedAt == nil` rather than failing
+    /// the whole listing.
+    ///
+    /// Sort stays by name here -- re-sorting by other criteria (e.g. date) is
+    /// ``ScriptLibrary``'s job, so this method's contract (name-sorted
+    /// `[Script]`) doesn't change for iCloud's replacement to match.
     nonisolated func list() throws -> [Script] {
         try ensureDirectory()
         let urls = try FileManager.default.contentsOfDirectory(
-            at: directoryURL, includingPropertiesForKeys: nil
+            at: directoryURL, includingPropertiesForKeys: [.contentModificationDateKey]
         )
         return
             urls
             .filter { $0.pathExtension == "rb" }
-            .map(Script.init)
+            .map { url in
+                let modifiedAt = try? url.resourceValues(forKeys: [.contentModificationDateKey])
+                    .contentModificationDate
+                return Script(url: url, modifiedAt: modifiedAt)
+            }
             .sorted { $0.name < $1.name }
     }
 

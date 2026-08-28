@@ -18,6 +18,12 @@ struct ScriptListView: View {
     @State private var isPresentingNewAlert = false
     @State private var isPresentingSettings = false
 
+    /// The sidebar's search field text. Transient per-appearance UI state,
+    /// same reasoning as `newName` above -- ``ScriptLibrary/sortOrder`` is
+    /// list *configuration* and persists, but a search filter is not
+    /// something a relaunch should remember.
+    @State private var searchText = ""
+
     /// Drives the iOS/iPadOS reference sheet, reached from the toolbar's info
     /// button and the empty state's "What is RubyCuts?" action. macOS opens
     /// the dedicated ``RubyCutsApp`` reference window instead (see
@@ -53,6 +59,7 @@ struct ScriptListView: View {
             content
                 .navigationTitle("Scripts")
                 .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 320)
+                .searchable(text: $searchText, prompt: "Search Scripts")
                 .task {
                     library.seedSamplesIfNeeded()
                     library.refresh()
@@ -65,6 +72,7 @@ struct ScriptListView: View {
                             Label("New Script", systemImage: "plus")
                         }
                     }
+                    sortMenuToolbarItem
                     #if !os(macOS)
                         // macOS reaches these through the app menu (⌘, and
                         // ⌘?); this gear and info button are their
@@ -166,6 +174,7 @@ struct ScriptListView: View {
                     script: script,
                     store: library.storeForEditing,
                     onSaveError: { library.errorMessage = $0 },
+                    onSaved: { library.refresh() },
                     onRename: { newName in
                         guard let renamed = library.rename(script, to: newName) else {
                             return nil
@@ -197,10 +206,15 @@ struct ScriptListView: View {
                     openReference()
                 }
             }
+        } else if filteredScripts.isEmpty {
+            // Distinct from the "No Scripts Yet" empty state above: the
+            // library has scripts, the search text just doesn't match any
+            // of their names.
+            ContentUnavailableView.search(text: searchText)
         } else {
             List(selection: $selection) {
-                ForEach(library.scripts) { script in
-                    Text(script.name)
+                ForEach(filteredScripts) { script in
+                    ScriptRow(script: script)
                         .tag(script)
                         .contextMenu {
                             Button("Rename") {
@@ -217,11 +231,49 @@ struct ScriptListView: View {
                     // first -- matching the context menu's single-script
                     // confirmation rather than a batch one.
                     if let index = indexSet.first {
-                        pendingDelete = library.scripts[index]
+                        pendingDelete = filteredScripts[index]
                     }
                 }
             }
         }
+    }
+
+    /// ``library/scripts`` narrowed to those whose name contains
+    /// ``searchText`` (case-insensitive), or every script when the field is
+    /// empty. A typed computed property rather than an inline filter in
+    /// ``content``'s `ForEach`, per this view's compiler-timeout history --
+    /// see the type doc comment.
+    private var filteredScripts: [Script] {
+        guard !searchText.isEmpty else { return library.scripts }
+        return library.scripts.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+    }
+
+    /// The sort-order `Menu`, published as its own `ToolbarContent` value
+    /// rather than inlined into the `.toolbar` closure -- see the type doc
+    /// comment on why new toolbar content here starts out as a typed
+    /// property.
+    private var sortMenuToolbarItem: some ToolbarContent {
+        ToolbarItem(placement: .automatic) {
+            Menu {
+                Picker("Sort By", selection: sortOrderBinding) {
+                    ForEach(ScriptSortOrder.allCases) { order in
+                        Text(order.displayName).tag(order)
+                    }
+                }
+            } label: {
+                Label("Sort", systemImage: "arrow.up.arrow.down")
+            }
+        }
+    }
+
+    /// A hand-rolled `Binding` into ``ScriptLibrary/sortOrder``, matching the
+    /// rest of this view's bindings into VM/optional state (e.g. the rename
+    /// sheet's `isPresented` below) rather than reaching for `@Bindable`.
+    private var sortOrderBinding: Binding<ScriptSortOrder> {
+        Binding(
+            get: { library.sortOrder },
+            set: { library.sortOrder = $0 }
+        )
     }
 
     /// Resets the new-script name field and shows the naming alert. Shared
