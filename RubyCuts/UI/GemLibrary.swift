@@ -1,11 +1,28 @@
 import Foundation
 import Observation
 
+/// Where the gems pane's install flow currently stands.
+enum GemInstallState: Equatable {
+    /// No install in progress.
+    case idle
+
+    /// Resolving `gem`'s dependency graph -- nothing downloaded yet.
+    case resolving(gem: String)
+
+    /// `plan` is resolved and parked, waiting for the user to confirm or
+    /// cancel. `requested` is the name the user actually typed, used to tell
+    /// the requested gem apart from its dependencies in the plan list.
+    case readyToInstall(plan: [ResolvedGem], requested: String)
+
+    /// An install is in flight; `phase` is the step currently running.
+    case installing(phase: GemInstallPhase)
+}
+
 /// The view model backing the gems sheet -- mirrors ``ScriptLibrary`` exactly
 /// (injected store, `refresh()` after every mutation, failures surfaced as
 /// ``errorMessage``), with one addition: installs are async and
 /// network-bound (unlike anything ``ScriptLibrary`` does), so this also
-/// tracks ``isInstalling``.
+/// tracks ``installState``.
 ///
 /// MainActor isolation is implicit via the app target's
 /// `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, matching ``ScriptLibrary``.
@@ -19,9 +36,22 @@ final class GemLibrary {
     /// the start of the next operation so a transient error doesn't linger.
     var errorMessage: String?
 
-    /// Whether an install is currently in flight -- drives a progress
-    /// indicator and disables the install control while true.
-    private(set) var isInstalling = false
+    /// Where the install flow currently stands -- resolving, parked awaiting
+    /// confirmation, or actively installing. Drives the plan/progress
+    /// sections and disables the install controls while ``isWorking``.
+    private(set) var installState: GemInstallState = .idle
+
+    /// Whether the install flow is doing anything right now -- true while
+    /// resolving or installing, false while idle or parked at
+    /// `.readyToInstall` (which is waiting on the user, not working).
+    var isWorking: Bool {
+        switch installState {
+        case .resolving, .installing:
+            return true
+        case .idle, .readyToInstall:
+            return false
+        }
+    }
 
     private let store: GemStore
     private let installer: GemInstaller
@@ -44,10 +74,37 @@ final class GemLibrary {
         }
     }
 
-    /// Resolves `name` (+ optional `requirement`, e.g. `"~> 1.0"`) and every
-    /// runtime dependency it needs, downloads, verifies, and extracts each
-    /// one, and re-lists. Sets ``errorMessage`` on failure; ``isInstalling``
-    /// is true for the whole async operation.
+    /// Resolves `name` (+ optional `requirement`, e.g. `"~> 1.0"`) into the
+    /// exact set of gems an install would download, and parks the result as
+    /// ``GemInstallState/readyToInstall(plan:requested:)`` -- nothing is
+    /// downloaded here. Sets ``errorMessage`` on failure, or on an empty
+    /// plan (`name` is already installed), and returns to ``.idle`` either
+    /// way.
+    func prepareInstall(name: String, requirement: String) async {
+        errorMessage = nil
+        let trimmedName = name.trimmingCharacters(in: .whitespaces)
+        let trimmedRequirement = requirement.trimmingCharacters(in: .whitespaces)
+        installState = .resolving(gem: trimmedName)
+
+        do {
+            let plan = try await installer.plan(
+                name: trimmedName,
+                requirement: trimmedRequirement.isEmpty ? nil : trimmedRequirement
+            )
+            if plan.isEmpty {
+                errorMessage = "'\(trimmedName)' is already installed."
+                installState = .idle
+            } else {
+                installState = .readyToInstall(plan: plan, requested: trimmedName)
+            }
+        } catch {
+            errorMessage = Self.describe(error)
+            installState = .idle
+        }
+    }
+
+    /// Downloads, verifies, extracts, and installs the plan parked by
+    /// ``prepareInstall(name:requirement:)``. A no-op if nothing is parked.
     ///
     /// Success calls ``refresh()``, but failure doesn't: `refresh()` resets
     /// `errorMessage` to `nil` as its first line (so a stale error doesn't
@@ -58,22 +115,26 @@ final class GemLibrary {
     /// install plan can have already landed on disk before a later one
     /// failed -- e.g. a checksum mismatch on the second of three resolved
     /// gems.
-    func install(name: String, requirement: String) async {
+    func confirmInstall() async {
+        guard case .readyToInstall(let plan, _) = installState else { return }
         errorMessage = nil
-        isInstalling = true
-        defer { isInstalling = false }
+        defer { installState = .idle }
 
-        let trimmedRequirement = requirement.trimmingCharacters(in: .whitespaces)
         do {
-            _ = try await installer.install(
-                name: name.trimmingCharacters(in: .whitespaces),
-                requirement: trimmedRequirement.isEmpty ? nil : trimmedRequirement
-            )
+            _ = try await installer.install(plan: plan) { phase in
+                installState = .installing(phase: phase)
+            }
             refresh()
         } catch {
             errorMessage = Self.describe(error)
             gems = (try? store.list()) ?? gems
         }
+    }
+
+    /// Drops a plan parked by ``prepareInstall(name:requirement:)`` back to
+    /// ``.idle`` without installing anything.
+    func cancelPendingInstall() {
+        installState = .idle
     }
 
     /// Deletes the gem's directory and re-lists. Sets ``errorMessage`` on

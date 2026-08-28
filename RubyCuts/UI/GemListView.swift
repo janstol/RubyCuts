@@ -65,28 +65,49 @@ struct GemListView: View {
 
     private var content: some View {
         List {
-            Section("Install a Gem") {
-                TextField("Name (e.g. httparty)", text: $gemName)
-                    .autocorrectionDisabled()
-                TextField("Version (optional, e.g. ~> 1.0)", text: $gemRequirement)
-                    .autocorrectionDisabled()
-                Button {
-                    installTapped()
-                } label: {
-                    if library.isInstalling {
-                        ProgressView()
-                    } else {
-                        Text("Install")
-                    }
-                }
-                .disabled(
-                    library.isInstalling
-                        || gemName.trimmingCharacters(in: .whitespaces).isEmpty
+            installSection
+
+            switch library.installState {
+            case .readyToInstall(let plan, let requested):
+                GemPlanSection(
+                    plan: plan, requested: requested,
+                    onInstall: { Task { await confirmInstallTapped() } },
+                    onCancel: { library.cancelPendingInstall() }
                 )
+            case .installing(let phase):
+                GemInstallProgressSection(phase: phase)
+            case .idle, .resolving:
+                EmptyView()
             }
 
             bundledSection
             installedSection
+        }
+    }
+
+    private var installSection: some View {
+        Section("Install a Gem") {
+            TextField("Name (e.g. httparty)", text: $gemName)
+                .autocorrectionDisabled()
+                .disabled(library.isWorking)
+            TextField("Version (optional, e.g. ~> 1.0)", text: $gemRequirement)
+                .autocorrectionDisabled()
+                .disabled(library.isWorking)
+
+            if case .resolving(let gem) = library.installState {
+                HStack {
+                    ProgressView()
+                    Text("Resolving \(gem)…")
+                }
+            } else {
+                Button("Install") {
+                    Task { await prepareInstallTapped() }
+                }
+                .disabled(
+                    library.isWorking
+                        || gemName.trimmingCharacters(in: .whitespaces).isEmpty
+                )
+            }
         }
     }
 
@@ -143,19 +164,120 @@ struct GemListView: View {
         }
     }
 
-    private func installTapped() {
+    private func prepareInstallTapped() async {
         let name = gemName.trimmingCharacters(in: .whitespaces)
         let requirement = gemRequirement
-        Task {
-            await library.install(name: name, requirement: requirement)
+        await library.prepareInstall(name: name, requirement: requirement)
+    }
+
+    private func confirmInstallTapped() async {
+        await library.confirmInstall()
+        if case .idle = library.installState, library.errorMessage == nil {
             gemName = ""
             gemRequirement = ""
         }
     }
 }
 
+/// The parked, not-yet-downloaded plan from ``GemLibrary/prepareInstall(name:requirement:)``
+/// -- one row per resolved gem, an "Install N Gems" primary action, and a
+/// Cancel. Its own `private struct`, not inline in ``GemListView/content``:
+/// this file's sibling `ScriptListView` has a documented history of defeating
+/// the type checker once conditionals and closures pile into one `body`.
+private struct GemPlanSection: View {
+    let plan: [ResolvedGem]
+    let requested: String
+    let onInstall: () -> Void
+    let onCancel: () -> Void
+
+    var body: some View {
+        Section("Ready to Install") {
+            ForEach(plan, id: \.name) { gem in
+                HStack {
+                    VStack(alignment: .leading) {
+                        Text(gem.name)
+                        Text(gem.version.raw)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Text(gem.name == requested ? "requested" : "dependency")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Button("Install \(plan.count) \(plan.count == 1 ? "Gem" : "Gems")", action: onInstall)
+            Button("Cancel", role: .cancel, action: onCancel)
+        }
+    }
+}
+
+/// The determinate progress shown while ``GemLibrary/confirmInstall()`` is
+/// downloading and extracting a parked plan. Its own `private struct` for
+/// the same type-checker reason as ``GemPlanSection``.
+private struct GemInstallProgressSection: View {
+    let phase: GemInstallPhase
+
+    var body: some View {
+        Section {
+            VStack(alignment: .leading) {
+                ProgressView(value: phase.fractionCompleted)
+                Text(phase.label)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
 #Preview {
     GemListPreview()
+}
+
+#Preview("Ready to Install") {
+    NavigationStack {
+        List {
+            GemPlanSection(
+                plan: [
+                    ResolvedGem(
+                        name: "httparty", version: GemVersion("0.22.0")!,
+                        downloadURL: URL(string: "https://rubygems.org/gems/httparty-0.22.0.gem")!,
+                        sha256: "sha-httparty"
+                    ),
+                    ResolvedGem(
+                        name: "csv", version: GemVersion("3.3.0")!,
+                        downloadURL: URL(string: "https://rubygems.org/gems/csv-3.3.0.gem")!,
+                        sha256: "sha-csv"
+                    ),
+                    ResolvedGem(
+                        name: "mini_mime", version: GemVersion("1.1.5")!,
+                        downloadURL: URL(string: "https://rubygems.org/gems/mini_mime-1.1.5.gem")!,
+                        sha256: "sha-mini_mime"
+                    ),
+                    ResolvedGem(
+                        name: "multi_xml", version: GemVersion("0.7.1")!,
+                        downloadURL: URL(string: "https://rubygems.org/gems/multi_xml-0.7.1.gem")!,
+                        sha256: "sha-multi_xml"
+                    ),
+                ],
+                requested: "httparty",
+                onInstall: {},
+                onCancel: {}
+            )
+        }
+    }
+    .frame(minWidth: 400, minHeight: 400)
+}
+
+#Preview("Installing") {
+    NavigationStack {
+        List {
+            GemInstallProgressSection(
+                phase: .extracting(gem: "csv", index: 1, total: 4)
+            )
+        }
+    }
+    .frame(minWidth: 400, minHeight: 200)
 }
 
 /// Backing view for ``GemListView``'s `#Preview`. Extracted into its own
