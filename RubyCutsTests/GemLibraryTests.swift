@@ -15,6 +15,10 @@ private struct AlwaysFailingRubyGemsAPI: RubyGemsAPI {
     func versionDetails(ofGem name: String, version: String) async throws -> GemVersionDetails {
         throw RubyGemsAPIError.gemNotFound(name)
     }
+
+    func search(query: String) async throws -> [GemSearchResult] {
+        throw RubyGemsAPIError.gemNotFound(query)
+    }
 }
 
 // Tests for the gems sheet's view model, mirroring `ScriptLibraryTests`.
@@ -154,6 +158,79 @@ struct GemLibraryTests {
         #expect(library.installState == .idle)
         #expect(library.errorMessage == nil)
         #expect(library.gems.isEmpty)
+    }
+
+    @Test func searchPopulatesResultsWithTheMatchingNames() async throws {
+        let store = try makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directoryURL) }
+        let installer = GemInstaller(
+            api: StubRubyGemsAPI(catalog: Self.httpartyCatalog), store: store
+        )
+        let library = GemLibrary(store: store, installer: installer)
+
+        await library.search(query: "m")
+
+        guard case .results(let results) = library.searchState else {
+            Issue.record("expected .results, got \(library.searchState)")
+            return
+        }
+        #expect(Set(results.map(\.name)) == ["mini_mime", "multi_xml"])
+    }
+
+    @Test func searchWithAnEmptyOrWhitespaceQueryResetsToIdleWithoutARequest() async throws {
+        let store = try makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directoryURL) }
+        let installer = GemInstaller(api: AlwaysFailingRubyGemsAPI(), store: store)
+        let library = GemLibrary(store: store, installer: installer)
+
+        await library.search(query: "   ")
+
+        #expect(library.searchState == .idle)
+    }
+
+    @Test func searchFailureSetsFailedStateButNotErrorMessage() async throws {
+        // Guards the no-modal-alert decision: a search failure must not pop
+        // an alert mid-typing, only the inline `.failed` state.
+        let store = try makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directoryURL) }
+        let installer = GemInstaller(api: AlwaysFailingRubyGemsAPI(), store: store)
+        let library = GemLibrary(store: store, installer: installer)
+
+        await library.search(query: "httparty")
+
+        guard case .failed = library.searchState else {
+            Issue.record("expected .failed, got \(library.searchState)")
+            return
+        }
+        #expect(library.errorMessage == nil)
+    }
+
+    @Test func clearSearchReturnsToIdle() async throws {
+        let store = try makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directoryURL) }
+        let installer = GemInstaller(
+            api: StubRubyGemsAPI(catalog: Self.httpartyCatalog), store: store
+        )
+        let library = GemLibrary(store: store, installer: installer)
+        await library.search(query: "httparty")
+
+        library.clearSearch()
+
+        #expect(library.searchState == .idle)
+    }
+
+    @Test func isAvailableCoversBundledDiskAndUnknownGems() throws {
+        let store = try makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directoryURL) }
+        let gemLibDir = store.destinationURL(name: "csv", version: "3.3.0")
+            .appending(component: "lib")
+        try FileManager.default.createDirectory(at: gemLibDir, withIntermediateDirectories: true)
+        let library = GemLibrary(store: store, installer: GemInstaller(store: store))
+        library.refresh()
+
+        #expect(library.isAvailable("sqlite3"))
+        #expect(library.isAvailable("csv"))
+        #expect(!library.isAvailable("httparty"))
     }
 
     @Test func downloadingPhaseLabelAndFractionCompleted() {

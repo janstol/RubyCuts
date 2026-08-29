@@ -47,6 +47,18 @@ nonisolated struct GemVersionDetails: Decodable, Sendable {
     }
 }
 
+/// One entry from `GET /api/v1/search.json` -- a gem matching a free-text
+/// query, most relevant first per rubygems.org's own ranking. Only the
+/// fields the Results section shows are decoded; the response carries more
+/// (e.g. `platform`) that this slice has no use for.
+nonisolated struct GemSearchResult: Decodable, Sendable, Equatable, Identifiable {
+    let name: String
+    let version: String
+    let info: String
+    let downloads: Int
+    var id: String { name }
+}
+
 /// An error surfaced while talking to rubygems.org.
 enum RubyGemsAPIError: Error, Sendable {
     /// The API returned 404 for this gem name -- it doesn't exist on
@@ -77,6 +89,10 @@ protocol RubyGemsAPI: Sendable {
     /// Runtime dependencies, download URL, and SHA-256 checksum for one
     /// exact `name`/`version`.
     func versionDetails(ofGem name: String, version: String) async throws -> GemVersionDetails
+
+    /// Gems on rubygems.org matching a free-text `query`, most relevant
+    /// first.
+    func search(query: String) async throws -> [GemSearchResult]
 }
 
 /// The live implementation, backed by `URLSession`.
@@ -108,6 +124,21 @@ struct LiveRubyGemsAPI: RubyGemsAPI {
         try Self.checkHTTPStatus(response, gemName: name)
         do {
             return try JSONDecoder().decode(GemVersionDetails.self, from: data)
+        } catch {
+            throw RubyGemsAPIError.decodingFailed("\(error)")
+        }
+    }
+
+    func search(query: String) async throws -> [GemSearchResult] {
+        var components = URLComponents(string: "https://rubygems.org/api/v1/search.json")!
+        components.queryItems = [
+            URLQueryItem(name: "query", value: query),
+            URLQueryItem(name: "page", value: "1"),
+        ]
+        let (data, response) = try await session.data(from: components.url!)
+        try Self.checkHTTPStatus(response, gemName: query)
+        do {
+            return try JSONDecoder().decode([GemSearchResult].self, from: data)
         } catch {
             throw RubyGemsAPIError.decodingFailed("\(error)")
         }

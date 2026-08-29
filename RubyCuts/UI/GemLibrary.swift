@@ -18,6 +18,22 @@ enum GemInstallState: Equatable {
     case installing(phase: GemInstallPhase)
 }
 
+/// Where the gems pane's live search box currently stands.
+enum GemSearchState: Equatable {
+    /// No query typed, or the field was just cleared.
+    case idle
+
+    /// A query is in flight.
+    case searching
+
+    /// The query resolved, possibly to no matches at all.
+    case results([GemSearchResult])
+
+    /// The request failed -- shown inline, never as a modal alert (see
+    /// ``GemLibrary/search(query:)``).
+    case failed(String)
+}
+
 /// The view model backing the gems sheet -- mirrors ``ScriptLibrary`` exactly
 /// (injected store, `refresh()` after every mutation, failures surfaced as
 /// ``errorMessage``), with one addition: installs are async and
@@ -41,6 +57,10 @@ final class GemLibrary {
     /// sections and disables the install controls while ``isWorking``.
     private(set) var installState: GemInstallState = .idle
 
+    /// Where the live search box currently stands. Drives the Results
+    /// section in ``GemListView``.
+    private(set) var searchState: GemSearchState = .idle
+
     /// Whether the install flow is doing anything right now -- true while
     /// resolving or installing, false while idle or parked at
     /// `.readyToInstall` (which is waiting on the user, not working).
@@ -54,6 +74,10 @@ final class GemLibrary {
     }
 
     private let store: GemStore
+
+    /// Also the route ``search(query:)`` takes to rubygems.org, through
+    /// `installer.api` -- one injected dependency rather than two, so a
+    /// test's stub API backs both resolution and search.
     private let installer: GemInstaller
 
     init(store: GemStore = .installedGems, installer: GemInstaller = GemInstaller()) {
@@ -135,6 +159,44 @@ final class GemLibrary {
     /// ``.idle`` without installing anything.
     func cancelPendingInstall() {
         installState = .idle
+    }
+
+    /// Searches rubygems.org for `query`, meant to be driven by the name
+    /// field's debounced `.task(id:)` rather than a button. An empty (after
+    /// trimming) query resets to ``GemSearchState/idle`` without issuing a
+    /// request -- there's nothing to search for, and it clears stale results
+    /// left over from before the field was emptied.
+    ///
+    /// Deliberately does not touch ``errorMessage``: that drives a modal
+    /// alert, and popping one mid-typing (a typo, a dropped connection)
+    /// would be hostile. A failure is shown inline instead, via
+    /// ``GemSearchState/failed(_:)``.
+    func search(query: String) async {
+        let trimmed = query.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else {
+            searchState = .idle
+            return
+        }
+        searchState = .searching
+        do {
+            searchState = .results(try await installer.api.search(query: trimmed))
+        } catch {
+            searchState = .failed(Self.describe(error))
+        }
+    }
+
+    /// Back to ``GemSearchState/idle``, called once a result is consumed
+    /// into ``prepareInstall(name:requirement:)`` or the field is cleared.
+    func clearSearch() {
+        searchState = .idle
+    }
+
+    /// Whether `name` is already available to scripts -- installed on disk
+    /// or baked into the binary (see ``BundledGem``). Used to tag search
+    /// results the user doesn't need to (and, for a bundled gem, can't)
+    /// install.
+    func isAvailable(_ name: String) -> Bool {
+        gems.contains { $0.name == name } || BundledGem.all.contains { $0.name == name }
     }
 
     /// Deletes the gem's directory and re-lists. Sets ``errorMessage`` on

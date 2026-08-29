@@ -32,6 +32,18 @@ struct GemListView: View {
             .task {
                 library.refresh()
             }
+            .task(id: gemName) {
+                // Debounce: a new keystroke re-runs this task, cancelling
+                // the previous one during its sleep -- so only the name the
+                // user has settled on ever reaches the network.
+                try? await Task.sleep(for: .milliseconds(300))
+                // Selecting a search result also sets `gemName`, which
+                // re-triggers this task -- but a plan is already resolving
+                // or parked by then, so searching again would just leave a
+                // stale Results section to reappear once the user cancels.
+                guard library.installState == .idle else { return }
+                await library.search(query: gemName)
+            }
             .alert(
                 "Error",
                 isPresented: .init(
@@ -68,6 +80,11 @@ struct GemListView: View {
             installSection
 
             switch library.installState {
+            case .idle:
+                // The Results section only makes sense while nothing else
+                // is parked or running -- once a plan lands, it stands down
+                // so the two sections never compete for the same list.
+                searchSection
             case .readyToInstall(let plan, let requested):
                 GemPlanSection(
                     plan: plan, requested: requested,
@@ -76,12 +93,38 @@ struct GemListView: View {
                 )
             case .installing(let phase):
                 GemInstallProgressSection(phase: phase)
-            case .idle, .resolving:
+            case .resolving:
                 EmptyView()
             }
 
             bundledSection
             installedSection
+        }
+    }
+
+    @ViewBuilder
+    private var searchSection: some View {
+        switch library.searchState {
+        case .idle:
+            EmptyView()
+        case .searching:
+            Section("Results") {
+                HStack {
+                    ProgressView()
+                    Text("Searching…")
+                }
+            }
+        case .results(let results):
+            GemSearchSection(
+                results: results,
+                isAvailable: { library.isAvailable($0) },
+                onSelect: selectSearchResult
+            )
+        case .failed(let message):
+            Section("Results") {
+                Text(message)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 
@@ -164,6 +207,15 @@ struct GemListView: View {
         }
     }
 
+    private func selectSearchResult(name: String) {
+        gemName = name
+        // Search reports the latest version -- a requirement left over from
+        // a previous attempt would silently constrain it.
+        gemRequirement = ""
+        library.clearSearch()
+        Task { await library.prepareInstall(name: name, requirement: "") }
+    }
+
     private func prepareInstallTapped() async {
         let name = gemName.trimmingCharacters(in: .whitespaces)
         let requirement = gemRequirement
@@ -208,6 +260,52 @@ private struct GemPlanSection: View {
             }
             Button("Install \(plan.count) \(plan.count == 1 ? "Gem" : "Gems")", action: onInstall)
             Button("Cancel", role: .cancel, action: onCancel)
+        }
+    }
+}
+
+/// Live search results for the name field -- one row per match, tapped to
+/// resolve straight into ``GemPlanSection``. Its own `private struct` for
+/// the same type-checker reason as ``GemPlanSection``. Shows "No gems
+/// match" as a plain caption row rather than a `ContentUnavailableView`:
+/// this is a section inside a `List`, not a whole screen.
+private struct GemSearchSection: View {
+    let results: [GemSearchResult]
+    let isAvailable: (String) -> Bool
+    let onSelect: (String) -> Void
+
+    var body: some View {
+        Section("Results") {
+            if results.isEmpty {
+                Text("No gems match")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(results) { result in
+                    Button {
+                        onSelect(result.name)
+                    } label: {
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text(result.name)
+                                Text("\(result.version) — \(result.info)")
+                                    .font(.caption)
+                                    .lineLimit(2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            if isAvailable(result.name) {
+                                Text(
+                                    BundledGem.all.contains { $0.name == result.name }
+                                        ? "bundled" : "installed"
+                                )
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
         }
     }
 }
@@ -263,6 +361,34 @@ private struct GemInstallProgressSection: View {
                 requested: "httparty",
                 onInstall: {},
                 onCancel: {}
+            )
+        }
+    }
+    .frame(minWidth: 400, minHeight: 400)
+}
+
+#Preview("Search Results") {
+    NavigationStack {
+        List {
+            GemSearchSection(
+                results: [
+                    GemSearchResult(
+                        name: "httparty", version: "0.22.0",
+                        info: "Makes http fun again!", downloads: 123_456_789
+                    ),
+                    GemSearchResult(
+                        name: "sqlite3", version: "2.9.6",
+                        info: "Ruby bindings for the SQLite3 embedded database",
+                        downloads: 987_654_321
+                    ),
+                    GemSearchResult(
+                        name: "csv", version: "3.3.0",
+                        info: "The CSV library provides methods for reading and writing CSV.",
+                        downloads: 456_789_123
+                    ),
+                ],
+                isAvailable: { $0 == "sqlite3" },
+                onSelect: { _ in }
             )
         }
     }

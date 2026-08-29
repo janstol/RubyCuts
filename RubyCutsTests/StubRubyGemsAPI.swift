@@ -55,4 +55,19 @@ struct StubRubyGemsAPI: RubyGemsAPI {
             sha: "sha-\(name)-\(version)"
         )
     }
+
+    /// A naive substring match over `catalog`'s keys, mapped to each gem's
+    /// highest published version -- enough to drive the Results section
+    /// offline without reimplementing rubygems.org's actual ranking.
+    func search(query: String) async throws -> [GemSearchResult] {
+        catalog.keys.filter { $0.contains(query) }.sorted().compactMap { name in
+            guard
+                let highest = catalog[name]?.map({ GemVersion($0.number)! }).max()
+            else { return nil }
+            return GemSearchResult(
+                name: name, version: highest.raw, info: "A stubbed gem named \(name).",
+                downloads: 0
+            )
+        }
+    }
 }
