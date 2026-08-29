@@ -28,4 +28,29 @@ struct ScriptRowTests {
         // The absolute form includes the year; the relative form never does.
         #expect(label.contains("2023"))
     }
+
+    // MARK: - accessibilityLabel(for:relativeTo:)
+
+    @Test func accessibilityLabelCombinesTheNameAndTheDate() {
+        let script = Script(
+            url: URL(fileURLWithPath: "/tmp/hello.rb"),
+            modifiedAt: now.addingTimeInterval(-86400)
+        )
+
+        let label = ScriptRow.accessibilityLabel(for: script, relativeTo: now)
+
+        #expect(label.contains("hello"))
+        #expect(label.contains("modified"))
+        // Not the bare date fragment: the date must read as tied to the
+        // script, not as a detached trailing word.
+        #expect(!label.hasPrefix("modified"))
+    }
+
+    @Test func accessibilityLabelFallsBackToJustTheNameWithNoModifiedDate() {
+        let script = Script(url: URL(fileURLWithPath: "/tmp/no-date.rb"))
+
+        let label = ScriptRow.accessibilityLabel(for: script, relativeTo: now)
+
+        #expect(label == "no-date")
+    }
 }

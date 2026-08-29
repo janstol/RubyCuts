@@ -25,6 +25,8 @@ struct ScriptRow: View {
         } icon: {
             Image(systemName: "doc.text")
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Self.accessibilityLabel(for: script, relativeTo: now))
     }
 
     /// Formats `date` relative to `now`: within the last 7 days this reads as
@@ -42,6 +44,20 @@ struct ScriptRow: View {
             return date.formatted(.relative(presentation: .named))
         }
         return date.formatted(.dateTime.month().day().year())
+    }
+
+    /// VoiceOver phrasing for the whole row, e.g. `"hello.rb, modified 3
+    /// days ago"` -- without this, the icon, name, and date announce as
+    /// three separate children, with the date reading as a bare "3 days
+    /// ago" with nothing tying it to the script it belongs to.
+    ///
+    /// Internal, not `private`, so `@testable import RubyCuts` can reach it
+    /// directly without going through a rendered view.
+    static func accessibilityLabel(for script: Script, relativeTo now: Date) -> String {
+        guard let modifiedAt = script.modifiedAt else {
+            return script.name
+        }
+        return "\(script.name), modified \(dateLabel(for: modifiedAt, relativeTo: now))"
     }
 }
 

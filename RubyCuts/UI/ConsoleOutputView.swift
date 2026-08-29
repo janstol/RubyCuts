@@ -60,43 +60,96 @@ struct ConsoleOutputView: View {
         .padding(.top, 8)
     }
 
+    /// The header, in two arms so `ViewThatFits` can fall back to stacking
+    /// the title above the badge and buttons at accessibility text sizes,
+    /// where ``headerRow``'s single line would otherwise collide and
+    /// truncate. Each arm -- and every piece inside it -- is its own typed
+    /// property rather than inlined here, matching this file's neighbor
+    /// `ScriptEditorView`'s documented type-checker fragility with branching
+    /// view expressions.
     private var header: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Console")
-                    .font(.headline)
-                Text(metadataLabel)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            if result.wasCancelled {
-                Label("Cancelled", systemImage: "stop.circle")
-                    .foregroundStyle(.orange)
-                    .font(.caption)
-            } else if result.hasError {
-                Label("Failed", systemImage: "exclamationmark.triangle")
-                    .foregroundStyle(.red)
-                    .font(.caption)
-            }
-            Button {
-                ClipboardCapability.setText(Self.transcript(for: result))
-            } label: {
-                Image(systemName: "doc.on.doc")
-            }
-            .buttonStyle(.borderless)
-            .help("Copy the console output")
-            .accessibilityLabel("Copy All")
-
-            Button {
-                onClear()
-            } label: {
-                Image(systemName: "xmark.circle")
-            }
-            .buttonStyle(.borderless)
-            .help("Clear the console")
-            .accessibilityLabel("Clear")
+        ViewThatFits(in: .horizontal) {
+            headerRow
+            headerStacked
         }
+    }
+
+    private var headerRow: some View {
+        HStack {
+            titleAndMetadata
+            Spacer()
+            statusBadge
+            copyButton
+            clearButton
+        }
+    }
+
+    private var headerStacked: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            titleAndMetadata
+            HStack {
+                statusBadge
+                Spacer()
+                copyButton
+                clearButton
+            }
+        }
+    }
+
+    private var titleAndMetadata: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("Console")
+                .font(.headline)
+            Text(metadataLabel)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .accessibilityLabel(Self.metadataAccessibilityLabel(for: result))
+        }
+    }
+
+    /// The Cancelled/Failed indicator. A tinted capsule rather than bare
+    /// coloured caption text, both so it's easier to see as a discrete
+    /// status (not just tinted body text) and because a filled shape gives
+    /// more room to satisfy contrast than text colour alone over
+    /// `.regularMaterial` does.
+    @ViewBuilder
+    private var statusBadge: some View {
+        if result.wasCancelled {
+            badge(label: "Cancelled", systemImage: "stop.circle", tint: .orange)
+        } else if result.hasError {
+            badge(label: "Failed", systemImage: "exclamationmark.triangle", tint: .red)
+        }
+    }
+
+    private func badge(label: String, systemImage: String, tint: Color) -> some View {
+        Label(label, systemImage: systemImage)
+            .font(.caption)
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(tint.opacity(0.25), in: Capsule())
+    }
+
+    private var copyButton: some View {
+        Button {
+            ClipboardCapability.setText(Self.transcript(for: result))
+        } label: {
+            Image(systemName: "doc.on.doc")
+        }
+        .buttonStyle(.borderless)
+        .help("Copy the console output")
+        .accessibilityLabel("Copy All")
+    }
+
+    private var clearButton: some View {
+        Button {
+            onClear()
+        } label: {
+            Image(systemName: "xmark.circle")
+        }
+        .buttonStyle(.borderless)
+        .help("Clear the console")
+        .accessibilityLabel("Clear")
     }
 
     /// The header's second line: how long the run took and when it
@@ -170,6 +223,33 @@ struct ConsoleOutputView: View {
         let seconds = duration - Double(minutes * 60)
         return String(format: "%dm %.0fs", minutes, seconds)
     }
+
+    /// The metadata line's VoiceOver phrasing, e.g.
+    /// `"Ran in 0.03 seconds, finished at 3:41:07 PM"`. The visual label
+    /// (``metadataLabel``) packs the same two facts into `"0.03s ·
+    /// 3:41:07 PM"`, which reads badly aloud -- the middle dot announces as
+    /// "middle dot" and "s" as its own letter rather than an abbreviation
+    /// for seconds.
+    ///
+    /// Internal, not `private`, so `@testable import RubyCuts` can reach it
+    /// directly without rendering a view.
+    static func metadataAccessibilityLabel(for result: RunResult) -> String {
+        let time = result.finishedAt.formatted(date: .omitted, time: .standard)
+        return "Ran in \(spokenDuration(for: result.duration)), finished at \(time)"
+    }
+
+    /// Spoken form of a duration for ``metadataAccessibilityLabel(for:)``:
+    /// `"0.42 seconds"` under a minute, `"1 minute 5 seconds"` above --
+    /// spelled out rather than abbreviated, unlike ``durationLabel(for:)``.
+    private static func spokenDuration(for duration: TimeInterval) -> String {
+        guard duration >= 60 else {
+            return String(format: "%.2f seconds", duration)
+        }
+        let minutes = Int(duration) / 60
+        let seconds = duration - Double(minutes * 60)
+        let minuteWord = minutes == 1 ? "minute" : "minutes"
+        return String(format: "%d %@ %.0f seconds", minutes, minuteWord, seconds)
+    }
 }
 
 #Preview {
@@ -217,4 +297,21 @@ struct ConsoleOutputView: View {
         )
     )
     .frame(maxWidth: 400, maxHeight: 200)
+}
+
+#Preview("Failed, Accessibility Text Size") {
+    // Checks the header's `ViewThatFits` fallback: at this size the badge
+    // and buttons no longer fit alongside the title on one line.
+    ConsoleOutputView(
+        result: RunResult(
+            stdout: "printed before crash",
+            stderr: "",
+            result: "",
+            errorMessage: "undefined method 'foo' for nil (NoMethodError)",
+            duration: 0.12,
+            finishedAt: .now
+        )
+    )
+    .frame(maxWidth: 400, maxHeight: 300)
+    .dynamicTypeSize(.accessibility3)
 }

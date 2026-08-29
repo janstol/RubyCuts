@@ -74,4 +74,32 @@ struct ConsoleOutputTests {
     @Test func durationLabelFormatsOverAMinuteAsMinutesAndSeconds() {
         #expect(ConsoleOutputView.durationLabel(for: 65) == "1m 5s")
     }
+
+    // MARK: - metadataAccessibilityLabel(for:)
+
+    @Test func metadataAccessibilityLabelSpellsOutTheDurationInsteadOfAbbreviating() {
+        let result = RunResult(
+            stdout: "", stderr: "", result: "", errorMessage: nil, duration: 0.03,
+            finishedAt: Date(timeIntervalSince1970: 0)
+        )
+
+        let label = ConsoleOutputView.metadataAccessibilityLabel(for: result)
+
+        #expect(label.contains("0.03 seconds"))
+        // Neither the abbreviated "0.03s" nor the raw middle dot from the
+        // visual label should leak into the spoken form.
+        #expect(!label.contains("0.03s"))
+        #expect(!label.contains("·"))
+    }
+
+    @Test func metadataAccessibilityLabelSpellsOutMinutesAndSecondsOverAMinute() {
+        let result = RunResult(
+            stdout: "", stderr: "", result: "", errorMessage: nil, duration: 65,
+            finishedAt: Date(timeIntervalSince1970: 0)
+        )
+
+        let label = ConsoleOutputView.metadataAccessibilityLabel(for: result)
+
+        #expect(label.contains("1 minute 5 seconds"))
+    }
 }

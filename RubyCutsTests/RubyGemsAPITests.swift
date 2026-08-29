@@ -43,4 +43,17 @@ struct RubyGemsAPITests {
         #expect(result.info == "Makes http fun again!")
         #expect(result.downloads == 123_456_789)
     }
+
+    @Test func accessibilityDescriptionCombinesNameVersionAndInfo() {
+        let result = GemSearchResult(
+            name: "httparty", version: "0.22.0", info: "Makes http fun again!",
+            downloads: 123_456_789
+        )
+
+        let description = result.accessibilityDescription
+
+        #expect(description.contains("httparty"))
+        #expect(description.contains("0.22.0"))
+        #expect(description.contains("Makes http fun again!"))
+    }
 }

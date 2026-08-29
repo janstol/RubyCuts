@@ -94,6 +94,15 @@ struct ScriptEditorView: View {
     /// would be abstraction the case doesn't need.
     @AppStorage("consoleHeight") private var consoleHeight: Double = 220
 
+    /// The minimum height the console panel can shrink to, and the minimum
+    /// height reserved for the editor above it, before the resize handle's
+    /// own space is subtracted from `available`. `@ScaledMetric` rather than
+    /// a plain constant, so both grow with Dynamic Type -- at AX5, the
+    /// console header alone exceeds a fixed 100pt, and a fixed minimum would
+    /// leave the body scroll view no room at all.
+    @ScaledMetric(relativeTo: .body) private var minConsoleHeight: Double = 100
+    @ScaledMetric(relativeTo: .body) private var minEditorHeight: Double = 100
+
     /// Whether `source` has unsaved changes. `false` before the initial load
     /// completes, so the "Edited" marker can't flash on briefly while the
     /// `.task` below is still populating `source`.
@@ -162,6 +171,7 @@ struct ScriptEditorView: View {
                         .textInputAutocapitalization(.none)
                     #endif
                     .frame(maxHeight: .infinity)
+                    .accessibilityLabel("Script Source")
 
                 if let runResult {
                     ConsoleResizeHandle(
@@ -195,11 +205,9 @@ struct ScriptEditorView: View {
         #endif
     }
 
-    /// The minimum height the console panel can shrink to, and the minimum
-    /// height reserved for the editor above it, before the resize handle's
-    /// own space is subtracted from `available`.
-    private static let minConsoleHeight: Double = 100
-    private static let minEditorHeight: Double = 100
+    /// The resize handle's own laid-out height -- see
+    /// ``ConsoleResizeHandle``'s doc comment for why that stays a fixed 8pt
+    /// on every platform even though its *hit target* grows on iOS/iPadOS.
     private static let resizeHandleHeight: Double = 8
 
     /// The range ``ConsoleResizeHandle`` may drag ``consoleHeight`` within,
@@ -210,10 +218,10 @@ struct ScriptEditorView: View {
     /// or arithmetic expressions get pulled out, not inlined.
     private func consoleHeightBounds(in available: CGFloat) -> ClosedRange<Double> {
         let maxHeight = max(
-            Self.minConsoleHeight,
-            Double(available) - Self.minEditorHeight - Self.resizeHandleHeight
+            minConsoleHeight,
+            Double(available) - minEditorHeight - Self.resizeHandleHeight
         )
-        return Self.minConsoleHeight...maxHeight
+        return minConsoleHeight...maxHeight
     }
 
     /// ``consoleHeight`` clamped into ``consoleHeightBounds(in:)`` for
@@ -272,6 +280,7 @@ struct ScriptEditorView: View {
         #endif
         if isRunning {
             ProgressView()
+                .accessibilityLabel("Running")
             stopButton
         } else {
             runButton

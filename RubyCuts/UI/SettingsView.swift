@@ -9,7 +9,9 @@ import SwiftUI
     /// Wrapped in an explicit frame because a `Settings` scene has no
     /// sensible intrinsic size to fall back to -- the same class of missing
     /// desktop sizing that used to make `GemListView`'s own sheet frame
-    /// necessary.
+    /// necessary. `min`/`ideal` rather than a hard `width`/`height`: at
+    /// macOS's larger-text accessibility setting a fixed frame clips its
+    /// content instead of growing to fit it.
     struct GemSettingsPane: View {
         let scriptLibrary: ScriptLibrary
 
@@ -22,7 +24,7 @@ import SwiftUI
                     GemListView()
                 }
             }
-            .frame(width: 480, height: 460)
+            .frame(minWidth: 480, idealWidth: 480, minHeight: 460, idealHeight: 460)
         }
     }
 

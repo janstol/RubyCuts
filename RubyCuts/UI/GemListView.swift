@@ -165,6 +165,8 @@ struct GemListView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("\(gem.name), version \(gem.version)")
             }
         }
     }
@@ -188,6 +190,8 @@ struct GemListView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("\(gem.name), version \(gem.version)")
                     .contextMenu {
                         Button("Delete", role: .destructive) {
                             pendingDelete = gem
@@ -245,22 +249,59 @@ private struct GemPlanSection: View {
     var body: some View {
         Section("Ready to Install") {
             ForEach(plan, id: \.name) { gem in
-                HStack {
-                    VStack(alignment: .leading) {
-                        Text(gem.name)
-                        Text(gem.version.raw)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Text(gem.name == requested ? "requested" : "dependency")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+                row(for: gem)
             }
             Button("Install \(plan.count) \(plan.count == 1 ? "Gem" : "Gems")", action: onInstall)
             Button("Cancel", role: .cancel, action: onCancel)
         }
+    }
+
+    /// One plan row. `ViewThatFits` falls back to stacking the
+    /// requested/dependency tag under the name and version -- at large
+    /// Dynamic Type sizes the horizontal layout would otherwise squeeze the
+    /// tag to a truncated sliver.
+    private func row(for gem: ResolvedGem) -> some View {
+        ViewThatFits(in: .horizontal) {
+            horizontalRow(for: gem)
+            stackedRow(for: gem)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilityLabel(for: gem))
+    }
+
+    private func horizontalRow(for gem: ResolvedGem) -> some View {
+        HStack {
+            nameAndVersion(for: gem)
+            Spacer()
+            tag(for: gem)
+        }
+    }
+
+    private func stackedRow(for gem: ResolvedGem) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            nameAndVersion(for: gem)
+            tag(for: gem)
+        }
+    }
+
+    private func nameAndVersion(for gem: ResolvedGem) -> some View {
+        VStack(alignment: .leading) {
+            Text(gem.name)
+            Text(gem.version.raw)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func tag(for gem: ResolvedGem) -> some View {
+        Text(gem.name == requested ? "requested" : "dependency")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+    }
+
+    private func accessibilityLabel(for gem: ResolvedGem) -> String {
+        let role = gem.name == requested ? "requested" : "dependency"
+        return "\(gem.accessibilityDescription), \(role)"
     }
 }
 
@@ -284,29 +325,68 @@ private struct GemSearchSection: View {
                     Button {
                         onSelect(result.name)
                     } label: {
-                        HStack {
-                            VStack(alignment: .leading) {
-                                Text(result.name)
-                                Text("\(result.version) — \(result.info)")
-                                    .font(.caption)
-                                    .lineLimit(2)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            if isAvailable(result.name) {
-                                Text(
-                                    BundledGem.all.contains { $0.name == result.name }
-                                        ? "bundled" : "installed"
-                                )
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            }
-                        }
+                        row(for: result)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(accessibilityLabel(for: result))
                 }
             }
         }
+    }
+
+    /// One search-result row. `ViewThatFits` falls back to stacking the
+    /// installed/bundled tag under the name and info line -- at large
+    /// Dynamic Type sizes the horizontal layout would otherwise squeeze the
+    /// tag to a truncated sliver.
+    private func row(for result: GemSearchResult) -> some View {
+        ViewThatFits(in: .horizontal) {
+            horizontalRow(for: result)
+            stackedRow(for: result)
+        }
+    }
+
+    private func horizontalRow(for result: GemSearchResult) -> some View {
+        HStack {
+            nameAndInfo(for: result)
+            Spacer()
+            availabilityTag(for: result)
+        }
+    }
+
+    private func stackedRow(for result: GemSearchResult) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            nameAndInfo(for: result)
+            availabilityTag(for: result)
+        }
+    }
+
+    private func nameAndInfo(for result: GemSearchResult) -> some View {
+        VStack(alignment: .leading) {
+            Text(result.name)
+            Text("\(result.version) — \(result.info)")
+                .font(.caption)
+                .lineLimit(2)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private func availabilityTag(for result: GemSearchResult) -> some View {
+        if isAvailable(result.name) {
+            Text(isBundled(result) ? "bundled" : "installed")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func isBundled(_ result: GemSearchResult) -> Bool {
+        BundledGem.all.contains { $0.name == result.name }
+    }
+
+    private func accessibilityLabel(for result: GemSearchResult) -> String {
+        guard isAvailable(result.name) else { return result.accessibilityDescription }
+        let tag = isBundled(result) ? "bundled" : "already installed"
+        return "\(result.accessibilityDescription), \(tag)"
     }
 }
 
@@ -319,7 +399,16 @@ private struct GemInstallProgressSection: View {
     var body: some View {
         Section {
             VStack(alignment: .leading) {
-                ProgressView(value: phase.fractionCompleted)
+                // The label passed to `ProgressView` becomes its
+                // accessibility label -- otherwise VoiceOver reads only a
+                // bare percentage, with the phase ("Downloading csv (1 of
+                // 4)") announced as a separate, detached element below.
+                // `.labelsHidden()` keeps the visual unchanged: the caption
+                // `Text` underneath is still what's shown on screen.
+                ProgressView(value: phase.fractionCompleted) {
+                    Text(phase.label)
+                }
+                .labelsHidden()
                 Text(phase.label)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -367,6 +456,35 @@ private struct GemInstallProgressSection: View {
     .frame(minWidth: 400, minHeight: 400)
 }
 
+#Preview("Ready to Install, Accessibility Text Size") {
+    // Checks `GemPlanSection`'s `ViewThatFits` fallback: at this size the
+    // requested/dependency tag no longer fits alongside the name and
+    // version on one line.
+    NavigationStack {
+        List {
+            GemPlanSection(
+                plan: [
+                    ResolvedGem(
+                        name: "httparty", version: GemVersion("0.22.0")!,
+                        downloadURL: URL(string: "https://rubygems.org/gems/httparty-0.22.0.gem")!,
+                        sha256: "sha-httparty"
+                    ),
+                    ResolvedGem(
+                        name: "csv", version: GemVersion("3.3.0")!,
+                        downloadURL: URL(string: "https://rubygems.org/gems/csv-3.3.0.gem")!,
+                        sha256: "sha-csv"
+                    ),
+                ],
+                requested: "httparty",
+                onInstall: {},
+                onCancel: {}
+            )
+        }
+    }
+    .frame(minWidth: 400, minHeight: 400)
+    .dynamicTypeSize(.accessibility3)
+}
+
 #Preview("Search Results") {
     NavigationStack {
         List {
@@ -393,6 +511,29 @@ private struct GemInstallProgressSection: View {
         }
     }
     .frame(minWidth: 400, minHeight: 400)
+}
+
+#Preview("Search Results, Accessibility Text Size") {
+    // Checks `GemSearchSection`'s `ViewThatFits` fallback: at this size the
+    // installed/bundled tag no longer fits alongside the name and info
+    // line on one line.
+    NavigationStack {
+        List {
+            GemSearchSection(
+                results: [
+                    GemSearchResult(
+                        name: "sqlite3", version: "2.9.6",
+                        info: "Ruby bindings for the SQLite3 embedded database",
+                        downloads: 987_654_321
+                    )
+                ],
+                isAvailable: { $0 == "sqlite3" },
+                onSelect: { _ in }
+            )
+        }
+    }
+    .frame(minWidth: 400, minHeight: 400)
+    .dynamicTypeSize(.accessibility3)
 }
 
 #Preview("Installing") {

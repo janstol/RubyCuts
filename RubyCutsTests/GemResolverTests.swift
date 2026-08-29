@@ -162,4 +162,17 @@ struct GemResolverTests {
             Issue.record("expected GemResolverError.conflictingRequirements, got \(error)")
         }
     }
+
+    @Test func resolvedGemAccessibilityDescriptionCombinesNameAndVersion() throws {
+        let gem = ResolvedGem(
+            name: "httparty", version: try #require(GemVersion("0.22.0")),
+            downloadURL: URL(string: "https://rubygems.org/gems/httparty-0.22.0.gem")!,
+            sha256: "sha-httparty"
+        )
+
+        let description = gem.accessibilityDescription
+
+        #expect(description.contains("httparty"))
+        #expect(description.contains("0.22.0"))
+    }
 }

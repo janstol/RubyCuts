@@ -15,6 +15,17 @@ struct ResolvedGem: Sendable, Equatable {
     nonisolated let version: GemVersion
     nonisolated let downloadURL: URL
     nonisolated let sha256: String
+
+    /// VoiceOver phrasing for one "Ready to Install" row, e.g. `"httparty,
+    /// version 0.22.0"`. Lives here rather than on `GemListView`'s
+    /// `GemPlanSection` -- that's a `private struct`, and this composition
+    /// needs to be testable without rendering a view. Deliberately doesn't
+    /// include the requested/dependency tag: that's context only
+    /// `GemPlanSection` has (its `requested` gem name), so the view appends
+    /// it to this description instead.
+    nonisolated var accessibilityDescription: String {
+        "\(name), version \(version.raw)"
+    }
 }
 
 /// An error raised while resolving a gem's runtime dependency graph.

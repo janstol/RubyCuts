@@ -57,6 +57,17 @@ nonisolated struct GemSearchResult: Decodable, Sendable, Equatable, Identifiable
     let info: String
     let downloads: Int
     var id: String { name }
+
+    /// VoiceOver phrasing for one search result row, e.g. `"httparty,
+    /// version 0.22.0. Makes http fun again!"`. Lives here rather than on
+    /// `GemListView`'s `GemSearchSection` -- that's a `private struct`, and
+    /// this composition needs to be testable without rendering a view.
+    /// Deliberately doesn't include the installed/bundled availability tag:
+    /// that's context `GemListView` has and this type doesn't, so the view
+    /// appends it to this description instead.
+    var accessibilityDescription: String {
+        "\(name), version \(version). \(info)"
+    }
 }
 
 /// An error surfaced while talking to rubygems.org.
