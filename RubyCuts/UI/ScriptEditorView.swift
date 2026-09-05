@@ -297,7 +297,9 @@ struct ScriptEditorView: View {
             Label("Stop", systemImage: "stop.fill")
         }
         .labelStyle(.titleAndIcon)
-        .tint(.red)
+        // Orange, not red: cancelling a run isn't destructive, and red is
+        // reserved for the console's "Failed" badge.
+        .tint(.orange)
         #if !os(macOS)
             // On macOS this shortcut is owned by the ⌘. menu item in
             // `ScriptCommands` -- registering it here too would leave
