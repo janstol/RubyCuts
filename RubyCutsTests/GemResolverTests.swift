@@ -119,7 +119,7 @@ struct GemResolverTests {
         // since Phase 7's sqlite3 slice: seed `installed` with every
         // BundledGem before resolving, so a gem that depends on sqlite3
         // resolves as already-satisfied. `catalog` deliberately has no
-        // "sqlite3" entry -- if the resolver ever tried to fetch it despite
+        // "sqlite3" entry: if the resolver ever tried to fetch it despite
         // the seed, StubRubyGemsAPI would raise `gemNotFound` and this test
         // would fail, not silently pass.
         let catalog: [String: [StubRubyGemsAPI.Version]] = [
@@ -141,7 +141,7 @@ struct GemResolverTests {
 
     @Test func conflictingRequirementsProduceANamedError() async throws {
         // root depends on both a and b, which each pin a different, mutually
-        // exclusive version of the same shared leaf gem -- a genuine conflict
+        // exclusive version of the same shared leaf gem, a genuine conflict
         // the naive, no-backtracking resolver can't paper over.
         let catalog: [String: [StubRubyGemsAPI.Version]] = [
             "root": [

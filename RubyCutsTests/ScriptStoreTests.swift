@@ -6,7 +6,7 @@ import Testing
 // Tests for the local-first script store. Each test builds its own store on a
 // unique temp directory and defers its removal, so the tests are isolated and
 // safe to run concurrently (no `.serialized` needed, unlike `RubyRuntimeTests`
-// which drives a single non-thread-safe VM). No `@MainActor` either -- there's
+// which drives a single non-thread-safe VM). No `@MainActor` either: there's
 // no view model or shared actor involved, just synchronous file I/O.
 struct ScriptStoreTests {
 
@@ -160,7 +160,7 @@ struct ScriptStoreTests {
         let listed = try store.list()
         let modifiedAt = try #require(listed.first?.modifiedAt)
         // Just-created, so the recorded modification time should be within
-        // a generous window of now -- not asserting an exact value, since
+        // a generous window of now, not asserting an exact value, since
         // that would couple the test to filesystem timestamp precision.
         #expect(abs(modifiedAt.timeIntervalSinceNow) < 60)
     }

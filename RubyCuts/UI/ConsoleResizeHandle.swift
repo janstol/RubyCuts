@@ -6,7 +6,7 @@ import SwiftUI
 /// `ScriptEditorView` directly rather than being part of the console's own
 /// presentation.
 ///
-/// The visible `Divider` sits inside a taller transparent hit target -- a
+/// The visible `Divider` sits inside a taller transparent hit target. A
 /// bare `Divider` is only a couple points thick, too thin to reliably grab
 /// with a mouse or a finger. On iOS/iPadOS the hit target grows further
 /// still, past the 8pt laid-out height, since a finger needs closer to the
@@ -47,8 +47,8 @@ struct ConsoleResizeHandle: View {
             .pointerStyle(.frameResize(position: .top))
         #else
             // Extends the hit-testing region 18pt above and below the 8pt
-            // visual line -- 44pt total, the platform's minimum touch
-            // target -- without changing the laid-out height itself.
+            // visual line, 44pt total, the platform's minimum touch
+            // target, without changing the laid-out height itself.
             .contentShape(Rectangle().inset(by: -18))
         #endif
         .gesture(
@@ -85,7 +85,7 @@ struct ConsoleResizeHandle: View {
     }
 
     /// Steps `current` by `delta` (positive to grow, negative to shrink),
-    /// clamped into `bounds` -- the same clamp the drag gesture applies, so
+    /// clamped into `bounds`, the same clamp the drag gesture applies, so
     /// an adjustable action can never push the height further out of range
     /// than a drag could. Backs the VoiceOver increment/decrement action in
     /// ``body``.

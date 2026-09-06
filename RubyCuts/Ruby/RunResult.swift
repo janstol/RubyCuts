@@ -4,7 +4,7 @@ import Foundation
 /// `STDOUT` and `STDERR`, the last expression's `to_s`, and the Ruby exception
 /// message if the script raised.
 ///
-/// A plain `Sendable` value type -- all members are `String`/`String?`, so it's
+/// A plain `Sendable` value type: all members are `String`/`String?`, so it's
 /// safe to pass across actors even though ``RubyRuntime`` itself is
 /// `@MainActor`-isolated. The console view holds one of these in `@State`.
 ///
@@ -24,13 +24,13 @@ struct RunResult: Sendable {
     var result: String
 
     /// The Ruby exception's `to_s` when the script raised; `nil` on a clean run.
-    /// Still populated when ``wasCancelled`` is `true` -- a cancelled run is a
+    /// Still populated when ``wasCancelled`` is `true`: a cancelled run is a
     /// failed run that happens to have a known cause, and whatever the script
     /// printed to `$stdout` before the cancellation is still in ``stdout``.
     var errorMessage: String?
 
     /// The raised exception's `backtrace`, one frame per element. Empty on a
-    /// clean run and on non-exception control-flow failures -- see the type's
+    /// clean run and on non-exception control-flow failures; see the type's
     /// doc comment.
     var backtrace: [String] = []
 
@@ -42,7 +42,7 @@ struct RunResult: Sendable {
     /// `true` when the script raised. Convenience for the view layer.
     var hasError: Bool { errorMessage != nil }
 
-    /// How long the user-code eval took -- not VM boot, not the `StringIO`
+    /// How long the user-code eval took: not VM boot, not the `StringIO`
     /// capture setup, not input setup/teardown. That's the number the user
     /// can actually affect by editing their script, and it stays consistent
     /// run to run within a session, unlike a total-wall-clock figure.

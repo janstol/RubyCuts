@@ -3,7 +3,7 @@ import Testing
 
 @testable import RubyCuts
 
-// Pure value types, no I/O -- no `.serialized` needed, unlike the VM-driving
+// Pure value types, no I/O, no `.serialized` needed, unlike the VM-driving
 // suites. Runs concurrently with everything else.
 struct GemVersionTests {
 

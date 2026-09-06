@@ -6,7 +6,7 @@ enum ScriptStoreError: Error {
     case invalidName
 }
 
-/// A value-type store over a directory of `.rb` files -- the backing layer for
+/// A value-type store over a directory of `.rb` files, the backing layer for
 /// Phase 3's script list and Phase 5's "Run Ruby Script" App Intent. No
 /// SwiftData: the PRD stores raw `.rb` files, so the filesystem *is* the
 /// database, and this type is a thin set of operations over one directory URL.
@@ -17,21 +17,21 @@ enum ScriptStoreError: Error {
 ///
 /// **iCloud swap point:** the store is built around ``directoryURL`` so that
 /// moving the scripts into an iCloud ubiquitous container is a one-line change
-/// to ``userScripts`` -- the CRUD methods below don't change. iCloud ubiquity
+/// to ``userScripts``: the CRUD methods below don't change. iCloud ubiquity
 /// wiring and `NSMetadataQuery` on-demand discovery are deferred (backlog
 /// Phase 2 items 1-3) until the Apple Developer portal capability is enabled;
 /// ``list()`` is the single method `NSMetadataQuery` will replace.
 ///
 /// **Known follow-up:** the I/O methods here are synchronous and run on
 /// whatever actor calls them, unlike ``RubyRuntime`` (which now has its own
-/// dedicated thread -- see its doc comment). File reads/writes for small
+/// dedicated thread; see its doc comment). File reads/writes for small
 /// scripts are fast, so this is fine for the walking skeleton. Backgrounding
 /// long writes (a large script pasted in, or enumerating a directory with
 /// many files) is a later-phase concern.
 ///
 /// Like ``Script``, every member is `nonisolated` to opt out of the app target's
 /// MainActor-by-default isolation: the store holds no actor-coupled state (only
-/// a `let directoryURL`), so it's usable from any context -- the nonisolated
+/// a `let directoryURL`), so it's usable from any context: the nonisolated
 /// test target today, and background I/O in a later phase.
 struct ScriptStore: Sendable {
     /// The directory this store reads and writes. Stable for the life of the
@@ -39,7 +39,7 @@ struct ScriptStore: Sendable {
     nonisolated let directoryURL: URL
 
     /// The app's script store. Today: the sandbox Documents directory. This is
-    /// the single iCloud swap point -- replace the body with
+    /// the single iCloud swap point. Replace the body with
     /// `FileManager.default.url(forUbiquityContainerIdentifier: "iCloud.dev.stol.RubyCuts").appending(component: "Documents")`
     /// once the portal capability is on; the CRUD methods below don't change.
     nonisolated static var userScripts: ScriptStore {
@@ -63,12 +63,12 @@ struct ScriptStore: Sendable {
     /// over to iCloud.
     ///
     /// Requests `.contentModificationDateKey` so each ``Script/modifiedAt`` is
-    /// populated from the same directory scan -- `contentsOfDirectory` already
+    /// populated from the same directory scan: `contentsOfDirectory` already
     /// prefetches it into the URL, so this adds no per-file `stat` calls. A URL
     /// whose date can't be read gets `modifiedAt == nil` rather than failing
     /// the whole listing.
     ///
-    /// Sort stays by name here -- re-sorting by other criteria (e.g. date) is
+    /// Sort stays by name here; re-sorting by other criteria (e.g. date) is
     /// ``ScriptLibrary``'s job, so this method's contract (name-sorted
     /// `[Script]`) doesn't change for iCloud's replacement to match.
     nonisolated func list() throws -> [Script] {
@@ -108,7 +108,7 @@ struct ScriptStore: Sendable {
     }
 
     /// Reads the script's source from disk on demand. A script file can be
-    /// large, so source is never held on the ``Script`` model -- read it when
+    /// large, so source is never held on the ``Script`` model. Read it when
     /// you need it, through this method.
     nonisolated func source(of script: Script) throws -> String {
         try String(contentsOf: script.url, encoding: .utf8)

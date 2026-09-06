@@ -29,12 +29,12 @@ SOURCE_DIR = File.join(SRC_DIR, "ruby-#{RUBY_VERSION_PIN}")
 
 # OpenSSL (TLS for net/http) and libyaml (the C backend psych loads for
 # `require 'yaml'`). Both are cross-compiled per target and merged into
-# libruby-static.a -- see build_openssl!/build_libyaml! and
+# libruby-static.a; see build_openssl!/build_libyaml! and
 # merge_static_extensions!. SHA256s verified against the official sources:
 # OpenSSL against the .sha256 published alongside the release (openssl.org
 # redirects to the GitHub release asset), libyaml cross-checked against the
 # sha512 in Arch Linux's libyaml PKGBUILD (libyaml publishes no sibling
-# checksum). Do not trust a third-party repo for these -- re-verify on bump.
+# checksum). Do not trust a third-party repo for these. Re-verify on bump.
 OPENSSL_VERSION_PIN = "3.6.3"
 OPENSSL_SHA256 = "243a86649cf6f23eeb6a2ff2456e09e5d77dd9018a54d3d96b0c6bdd6ba6c7f1"
 OPENSSL_TARBALL_URL = "https://github.com/openssl/openssl/releases/download/openssl-#{OPENSSL_VERSION_PIN}/openssl-#{OPENSSL_VERSION_PIN}.tar.gz"
@@ -47,20 +47,20 @@ LIBYAML_TARBALL_URL = "https://github.com/yaml/libyaml/releases/download/#{LIBYA
 LIBYAML_TARBALL_PATH = File.join(SRC_DIR, "yaml-#{LIBYAML_VERSION_PIN}.tar.gz")
 LIBYAML_SOURCE_DIR = File.join(SRC_DIR, "yaml-#{LIBYAML_VERSION_PIN}")
 
-# sqlite3 -- the one C-extension gem RubyCuts ships pre-compiled, since a
+# sqlite3: the one C-extension gem RubyCuts ships pre-compiled, since a
 # downloaded C extension can never be dlopen()ed under App Store W^X rules
 # (see docs/embedding-cruby.md). Two pins, not one: the SQLite C library
 # itself (compiled straight into libruby-static.a by build_sqlite!, from the
-# amalgamation -- not the SDK's own libsqlite3, which is a different, often
+# amalgamation, not the SDK's own libsqlite3, which is a different, often
 # older, build) and the sqlite3 Ruby gem (whose ext/sqlite3 C sources feed a
 # statically-linked extension via install_sqlite3_ext_sources!, and whose
 # lib/ ships in Vendor/CRuby/stdlib/ via install_sqlite3_ruby_lib!).
 #
-# The SQLite version and SHA256 aren't chosen independently -- they're
+# The SQLite version and SHA256 aren't chosen independently: they're
 # lifted verbatim from the sqlite3 gem's own dependencies.yml pin, whose
 # comment records that this SHA256 was cross-checked against sqlite.org's
 # own published SHA3-256 for the same tarball
-# (025328da165109f48abccc6e7478508060804412bed2bd81d47e98ba1b72983b) --
+# (025328da165109f48abccc6e7478508060804412bed2bd81d47e98ba1b72983b);
 # the same "don't trust a lone hash" discipline as the OpenSSL/libyaml pins
 # above.
 SQLITE_VERSION_PIN = "3.53.2"
@@ -71,14 +71,14 @@ SQLITE_SOURCE_DIR = File.join(SRC_DIR, "sqlite-autoconf-3530200")
 
 # The latest non-prerelease `platform: "ruby"` sqlite3 gem version as of this
 # writing. SHA256 is rubygems.org's own published `sha` for this version
-# (from https://rubygems.org/api/v1/versions/sqlite3.json) -- the same value
+# (from https://rubygems.org/api/v1/versions/sqlite3.json), the same value
 # RubyGemsAPI/GemInstaller verify a downloaded gem against at runtime, so
 # this pin is checked the identical way an app-installed gem would be.
 SQLITE3_GEM_VERSION_PIN = "2.9.6"
 SQLITE3_GEM_SHA256 = "956fe606956420d04ac7157d3ace620c8caba2135b2e05c76e483493da24d08e"
 SQLITE3_GEM_URL = "https://rubygems.org/downloads/sqlite3-#{SQLITE3_GEM_VERSION_PIN}.gem"
 SQLITE3_GEM_PATH = File.join(SRC_DIR, "sqlite3-#{SQLITE3_GEM_VERSION_PIN}.gem")
-# Where extract_sqlite3_gem! unpacks the gem's data.tar.gz payload -- a
+# Where extract_sqlite3_gem! unpacks the gem's data.tar.gz payload: a
 # .gem's own top-level tar has no version in its member names, so this dir
 # isn't named after SQLITE3_GEM_VERSION_PIN the way SQLITE_SOURCE_DIR is
 # named after SQLITE_VERSION_PIN.
@@ -110,7 +110,7 @@ IOS_AC_OVERRIDES = {
   "ac_cv_func_pipe2" => "no",
 }.freeze
 
-# One row per SDK/arch this project builds for. lib_subdir/include_subdir are exactly Xcode's PLATFORM_NAME values, so Config/Shared.xcconfig and the "Check CRuby is built" build phase can key off $(PLATFORM_NAME) instead of enumerating SDKs. The shape of this table -- not just the macOS row -- was deliberate from slice 1: the iphoneos/iphonesimulator rows below add their own flag set (a --host + triple, --without-fiddle, the syscall/backtrace autoconf overrides) without restructuring the build functions.
+# One row per SDK/arch this project builds for. lib_subdir/include_subdir are exactly Xcode's PLATFORM_NAME values, so Config/Shared.xcconfig and the "Check CRuby is built" build phase can key off $(PLATFORM_NAME) instead of enumerating SDKs. The shape of this table, not just the macOS row, was deliberate from slice 1: the iphoneos/iphonesimulator rows below add their own flag set (a --host + triple, --without-fiddle, the syscall/backtrace autoconf overrides) without restructuring the build functions.
 TARGETS = {
   "macosx-arm64" => {
     enabled: true,
@@ -148,12 +148,12 @@ TARGETS = {
 }.freeze
 
 # Top-level names under lib/ruby/3.4.0 that don't ship in Vendor/CRuby/stdlib/.
-# rdoc/bundler/rubygems/prism -- not needed for plain Kernel#require against
-# $LOAD_PATH (rubycuts_init boots with --disable-gems); irb/reline/readline --
-# no TTY in an app sandbox; did_you_mean/error_highlight/syntax_suggest --
-# REPL-error-message niceties, not needed for running scripts; mkmf.rb -- a
-# C-extension build tool, meaningless without a compiler on-device; un.rb --
-# a command-line coreutils shim, not a library; ruby_vm -- RubyVM::*
+# rdoc/bundler/rubygems/prism: not needed for plain Kernel#require against
+# $LOAD_PATH (rubycuts_init boots with --disable-gems); irb/reline/readline:
+# no TTY in an app sandbox; did_you_mean/error_highlight/syntax_suggest:
+# REPL-error-message niceties, not needed for running scripts; mkmf.rb: a
+# C-extension build tool, meaningless without a compiler on-device; un.rb:
+# a command-line coreutils shim, not a library; ruby_vm: RubyVM::*
 # introspection helpers this app has no use for. yaml/yaml.rb ARE shipped:
 # psych is now built (libyaml merged in), so `require 'yaml'` resolves.
 EXCLUDED_STDLIB_ENTRIES = %w[
@@ -184,7 +184,7 @@ EXCLUDED_STDLIB_ENTRIES = %w[
 # Bundled gems (installed under lib/ruby/gems/#{RUBY_ABI_VERSION}/gems/, not
 # lib/ruby/#{RUBY_ABI_VERSION}/) flattened into Vendor/CRuby/stdlib/ alongside
 # the default-gem stdlib above, so a plain `require "csv"` finds them on
-# $LOAD_PATH. Both are pure Ruby -- json/fileutils/net/http are already
+# $LOAD_PATH. Both are pure Ruby: json/fileutils/net/http are already
 # "default gems" and ship as part of lib/ruby/#{RUBY_ABI_VERSION}/ itself.
 INCLUDED_BUNDLED_GEMS = %w[csv base64].freeze
 
@@ -202,14 +202,14 @@ end
 def check_host_ruby!
   return if RUBY_VERSION.start_with?("#{RUBY_SERIES}.")
   abort "error: host `ruby` is #{RUBY_VERSION}, need a #{RUBY_SERIES}.x " \
-    "(run `mise install` first -- see mise.toml)"
+    "(run `mise install` first; see mise.toml)"
 end
 
 def check_sdk!(sdk)
   path = capture!("xcrun", "--sdk", sdk, "--show-sdk-path").strip
   path
 rescue StandardError
-  abort "error: `xcrun --sdk #{sdk} --show-sdk-path` failed -- is Xcode installed and selected?"
+  abort "error: `xcrun --sdk #{sdk} --show-sdk-path` failed. Is Xcode installed and selected?"
 end
 
 def download_and_verify!
@@ -260,13 +260,13 @@ def extract_tarball!(tarball, dest_dir, label, marker)
   sh!("tar", "xzf", tarball, "-C", SRC_DIR, chdir: ROOT)
 end
 
-# A `.gem` isn't a `.tar.gz` -- it's a plain, uncompressed tar (see
+# A `.gem` isn't a `.tar.gz`: it's a plain, uncompressed tar (see
 # GemArchive.swift's own hand-rolled reader) containing metadata.gz,
 # data.tar.gz, and checksums.yaml.gz as flat members with no enclosing
 # directory, so extract_tarball!'s "gzip into SRC_DIR, expect a
 # same-named top-level dir" shape doesn't fit. Two untars instead: the
-# outer .gem into a scratch dir, then its data.tar.gz payload -- the part
-# that actually holds ext/ and lib/ -- into SQLITE3_GEM_SOURCE_DIR.
+# outer .gem into a scratch dir, then its data.tar.gz payload, the part
+# that actually holds ext/ and lib/, into SQLITE3_GEM_SOURCE_DIR.
 # Idempotent, matching extract_tarball!'s marker-file check.
 def extract_sqlite3_gem!
   if File.exist?(File.join(SQLITE3_GEM_SOURCE_DIR, "ext", "sqlite3", "extconf.rb"))
@@ -309,12 +309,12 @@ def find_static_lib(install_dir)
 end
 
 # vm_dump.c's crash handler calls system() unconditionally for the
-# RUBY_ON_BUG debug hook -- unlike everything else CRuby gates behind a
+# RUBY_ON_BUG debug hook: unlike everything else CRuby gates behind a
 # HAVE_* check (HAVE_BACKTRACE guards the near-identical helper one
 # function above, in the same file), this one isn't. It fails to compile
 # wherever system() is unavailable, i.e. every iOS target, given the
-# ac_cv_func_system=no override above. Not part of the xord/cruby recipe --
-# found while cross-compiling -- so it's patched here instead of folded
+# ac_cv_func_system=no override above. Not part of the xord/cruby recipe,
+# found while cross-compiling, so it's patched here instead of folded
 # into IOS_AC_OVERRIDES, which only ever feeds configure, not the source.
 # Guarding it with #ifdef HAVE_SYSTEM changes nothing on macOS, where
 # HAVE_SYSTEM is defined.
@@ -337,14 +337,14 @@ def patch_vm_dump_system_guard!
   guarded = "#ifdef HAVE_SYSTEM\n#{unguarded}\n#endif"
 
   unless contents.include?(unguarded)
-    abort "error: vm_dump.c no longer matches the expected RUBY_ON_BUG snippet -- " \
-      "update patch_vm_dump_system_guard! in scripts/build-cruby.rb"
+    abort "error: vm_dump.c no longer matches the expected RUBY_ON_BUG snippet. " \
+      "Update patch_vm_dump_system_guard! in scripts/build-cruby.rb"
   end
   File.write(path, contents.sub(unguarded, guarded))
 end
 
 # Bundled runtime gems with a native C extension that RubyCuts has no use
-# for (Vendor/CRuby only ever takes the static lib and headers -- an
+# for (Vendor/CRuby only ever takes the static lib and headers: an
 # installed gems tree never leaves .build-cruby/). On iOS they fail to
 # link outright: their .bundle links the same way every Ruby C extension
 # does, trusting the process that dlopen()s it to resolve core VM symbols
@@ -356,7 +356,7 @@ end
 # before extraction, for every target (not just iOS), since none of them
 # are needed anywhere. `bigdecimal`, the other C-ext bundled gem, is
 # already excluded via --without-bigdecimal above, for a different
-# reason (it's also a core ext/ extension) -- it doesn't need to be here.
+# reason (it's also a core ext/ extension). It doesn't need to be here.
 EXCLUDED_BUNDLED_GEMS = %w[debug racc nkf rbs syslog].freeze
 
 def patch_bundled_gems!
@@ -366,7 +366,7 @@ def patch_bundled_gems!
   File.write(path, kept.join) if kept.size != lines.size
 
   # extract-gems only skips a gem it finds already unpacked under
-  # .bundle/gems -- shared across every target's out-of-tree build, since
+  # .bundle/gems, shared across every target's out-of-tree build, since
   # it lives in SOURCE_DIR, not build_dir_for(key). A build that failed on
   # one of these before this exclusion existed leaves it unpacked (and
   # possibly half-built under .bundle/extensions), so removing it from
@@ -393,18 +393,18 @@ def patch_psych_extconf!
   target = "  pkg_config('yaml-0.1')\n"
   replacement = "  # pkg_config('yaml-0.1') # neutralized by patch_psych_extconf! (scripts/build-cruby.rb); --with-libyaml-dir drives dir_config('libyaml') below, so a host Homebrew libyaml can't contaminate a cross-compile\n"
   unless contents.include?(target)
-    abort "error: ext/psych/extconf.rb no longer has the expected pkg_config('yaml-0.1') line -- " \
-      "update patch_psych_extconf! in scripts/build-cruby.rb"
+    abort "error: ext/psych/extconf.rb no longer has the expected pkg_config('yaml-0.1') line. " \
+      "Update patch_psych_extconf! in scripts/build-cruby.rb"
   end
   File.write(path, contents.sub(target, replacement))
 end
 
-# The sqlite3 gem's ext/sqlite3/*.c and *.h files (its C binding glue --
+# The sqlite3 gem's ext/sqlite3/*.c and *.h files (its C binding glue,
 # Init_sqlite3_native and friends, not the SQLite library itself), copied
 # verbatim into CRuby's own ext/ tree so --with-static-linked-ext compiles
 # and registers them as a statically-linked extension, the same mechanism
 # that already builds stringio/json/socket/etc. Called from main alongside
-# patch_psych_extconf!, i.e. before any target's configure_and_make! runs --
+# patch_psych_extconf!, i.e. before any target's configure_and_make! runs;
 # CRuby's configure enumerates ext/*/extconf.rb at configure time, so the
 # files have to exist before that, not per-target.
 EXPECTED_SQLITE3_EXT_SOURCES = %w[
@@ -424,8 +424,8 @@ def install_sqlite3_ext_sources!
   sources = Dir.children(gem_ext_dir).select { |name| name.end_with?(".c", ".h") }.sort
   unless sources == EXPECTED_SQLITE3_EXT_SOURCES.sort
     abort "error: sqlite3 gem's ext/sqlite3/ no longer matches the expected .c/.h file " \
-      "list (found #{sources.inspect}, expected #{EXPECTED_SQLITE3_EXT_SOURCES.sort.inspect}) " \
-      "-- update install_sqlite3_ext_sources! and EXPECTED_SQLITE3_EXT_SOURCES in " \
+      "list (found #{sources.inspect}, expected #{EXPECTED_SQLITE3_EXT_SOURCES.sort.inspect}). " \
+      "Update install_sqlite3_ext_sources! and EXPECTED_SQLITE3_EXT_SOURCES in " \
       "scripts/build-cruby.rb"
   end
 
@@ -435,10 +435,10 @@ def install_sqlite3_ext_sources!
   # A trimmed copy of the gem's own ext/sqlite3/extconf.rb: the
   # mini_portile2/pkg-config machinery that downloads and cross-compiles
   # SQLite itself is gone (build_sqlite! already did that, into
-  # sqlite_install_dir_for(key), reached below via --with-sqlite3-dir --
+  # sqlite_install_dir_for(key), reached below via --with-sqlite3-dir;
   # see configure_and_make!), and the sqlite3_enable_load_extension /
-  # sqlite3_load_extension have_func probes are dropped on purpose -- see
-  # the SQLITE_OMIT_LOAD_EXTENSION comment in build_sqlite! -- so
+  # sqlite3_load_extension have_func probes are dropped on purpose; see
+  # the SQLITE_OMIT_LOAD_EXTENSION comment in build_sqlite!. So
   # database.c's `#ifdef HAVE_SQLITE3_*_LOAD_EXTENSION` guards never see
   # those macros defined and compile the load_extension/enable_load_extension
   # Ruby methods out entirely. `create_makefile("sqlite3/sqlite3_native")`
@@ -469,18 +469,18 @@ def install_sqlite3_ext_sources!
 
     # CRuby's own --with-static-linked-ext build makes every HAVE_* macro
     # visible to a source file only indirectly, through a generated
-    # extconf.h transitively #include'd by ruby.h/ruby/config.h -- fine for
+    # extconf.h transitively #include'd by ruby.h/ruby/config.h. Fine for
     # every file here except backup.c, whose very first line is
     # `#ifdef HAVE_SQLITE3_BACKUP_INIT`, checked before that file includes
     # anything at all. Under a normal standalone gem build $defs' `-DHAVE_*`
     # flags land directly on the compiler command line (visible from a
-    # file's first token), so this asymmetry never shows up there -- it's
+    # file's first token), so this asymmetry never shows up there. It's
     # specific to being folded into CRuby's own extconf.h convention.
     # Re-appending $defs onto $CFLAGS puts the same `-DHAVE_*` flags
     # directly on the compile line too, so backup.c's guard sees them
     # regardless of include order. Confirmed necessary by a real cross build
     # (an iphonesimulator-arm64 link failed on `_init_sqlite3_backup`
-    # undefined -- macOS's `-Wl,-undefined,dynamic_lookup` masked the same
+    # undefined; macOS's `-Wl,-undefined,dynamic_lookup` masked the same
     # gap there, so trust this fix's necessity, not the lack of a macOS
     # error).
     append_cflags($defs.join(" "))
@@ -496,14 +496,14 @@ end
 # empty header: dir.c:2252-2254 compares getattrlist() results against
 # VREG/VDIR/VLNK, and dir.c:211-212/3784 compare against VT_HFS/VT_CIFS, so
 # this redeclares both enum vtype and enum vtagtype with the same member
-# ordering as the macOS SDK's header -- the ordering is load-bearing.
+# ordering as the macOS SDK's header. The ordering is load-bearing.
 # fsobj_tag_t itself doesn't need redeclaring; it's a plain u_int32_t typedef
 # in sys/attr.h, which the iOS SDKs do ship.
 def write_vnode_stub!(key)
   dir = File.join(stub_include_dir_for(key), "sys")
   FileUtils.mkdir_p(dir)
   File.write(File.join(dir, "vnode.h"), <<~C)
-    /* Stub for the iOS SDKs, which don't ship this header -- see dir.c:100
+    /* Stub for the iOS SDKs, which don't ship this header; see dir.c:100
      * (unconditional include), dir.c:2252-2254 (VREG/VDIR/VLNK usage), and
      * dir.c:211-212/3784 (VT_HFS/VT_CIFS usage).
      * scripts/build-cruby.rb's write_vnode_stub! generates this file. */
@@ -527,14 +527,14 @@ def write_vnode_stub!(key)
   C
 end
 
-# SQLite (the amalgamation, not the SDK's own libsqlite3 -- see the
+# SQLite (the amalgamation, not the SDK's own libsqlite3; see the
 # SQLITE_VERSION_PIN comment for why). No `configure` at all: unlike
 # libyaml/OpenSSL, SQLite 3.49+'s autosetup-based configure isn't worth
 # cross-compiling against for what's ultimately a single translation unit
 # (sqlite3.c). Compiling it directly with the same feature-flag set the
-# gem's own packaged (mini_portile2) build uses -- minus load-extension
+# gem's own packaged (mini_portile2) build uses, minus load-extension
 # support, which is dropped on purpose (see the SQLITE_OMIT_LOAD_EXTENSION
-# flag below and install_sqlite3_ext_sources!'s comment) -- is simpler and
+# flag below and install_sqlite3_ext_sources!'s comment), is simpler and
 # just as correct. Archived into an install prefix shaped exactly like
 # build_libyaml!'s (lib/libsqlite3.a + include/*.h), so ext/sqlite3's
 # dir_config("sqlite3") finds it via --with-sqlite3-dir the same way
@@ -584,7 +584,7 @@ def build_sqlite!(key, target)
   FileUtils.cp(File.join(SQLITE_SOURCE_DIR, "sqlite3ext.h"), File.join(install_dir, "include"))
 end
 
-# libyaml (psych's C backend). Autoconf, so simpler than OpenSSL -- built
+# libyaml (psych's C backend). Autoconf, so simpler than OpenSSL; built
 # first to de-risk. Idempotent: skips if libyaml.a is already installed.
 # Native on macOS; cross-compiled for iOS by pointing CC at the SDK via xcrun
 # and carrying -target <triple> -isysroot <sdk> on CFLAGS/LDFLAGS, the same
@@ -621,8 +621,8 @@ def build_libyaml!(key, target)
 end
 
 # OpenSSL (TLS for net/http). Uses OpenSSL's own Perl Configure with its
-# built-in Apple targets -- darwin64-arm64-cc (macOS), ios64-xcrun (device),
-# iossimulator-xcrun (simulator) -- which drive clang via `xcrun -sdk <sdk>
+# built-in Apple targets: darwin64-arm64-cc (macOS), ios64-xcrun (device),
+# iossimulator-xcrun (simulator), which drive clang via `xcrun -sdk <sdk>
 # cc` and auto-select the SDK. Those targets don't pin a deployment target,
 # so CFLAGS carries -target <triple> (Configure:770 appends the CFLAGS env to
 # the target's flags), pinning arch + min iOS version; the native macOS build
@@ -690,7 +690,7 @@ def configure_and_make!(key, target)
     # Point the openssl/psych extconfs at the per-target third-party installs
     # built above. Ruby's configure forwards every --with-* arg (stored in
     # ac_configure_args) to each ext's extconf, where mkmf's dir_config reads
-    # them -- so ext/openssl/extconf.rb's dir_config("openssl") and
+    # them, so ext/openssl/extconf.rb's dir_config("openssl") and
     # ext/psych/extconf.rb's dir_config("libyaml") find these builds instead of
     # probing the host.
     "--with-openssl-dir=#{openssl_install_dir_for(key)}",
@@ -704,7 +704,7 @@ def configure_and_make!(key, target)
   cflags = "-pipe -Os -fvisibility=hidden"
   # The openssl/psych/sqlite3 exts propagate -lssl/-lcrypto/-lyaml/-lsqlite3
   # to the ruby executable's link: under --with-static-linked-ext the exts
-  # link into the ruby binary (not into lib*-static.a -- that move is
+  # link into the ruby binary (not into lib*-static.a; that move is
   # merge_static_extensions!'s post-make job), so `make` has to find those
   # libs on its link line. The per-target third-party install dirs go on
   # the link search path for that. (The shipped libruby-static.a gets these
@@ -743,20 +743,20 @@ end
 # --with-static-linked-ext links every statically-linked C extension
 # (stringio, json/ext, socket, date_core, strscan, ...) into its own
 # per-extension archive (ext/<name>/<name>.a) and generates ext/extinit.c
-# to register them all -- but the generated Makefile's object list for
+# to register them all. But the generated Makefile's object list for
 # lib*-static.a ($(LIBRUBY_A_OBJS), i.e. $(OBJS)) never includes them; only
 # the final `ruby` executable's own link recipe does (traced in the actual
 # generated Makefile/exts.mk, not assumed from the configure flags). Left
 # alone, lib*-static.a ships dmyext.o's empty Init_ext() stub instead of
 # the real one, so `require` of any statically-linked extension fails with
-# "cannot load such file" -- confirmed by probing the built archive with
+# "cannot load such file", confirmed by probing the built archive with
 # `nm`. Same story for enc/encinit.o vs the dmyenc.o stub and the non-ASCII
 # encoding tables in enc/libenc.a + enc/libtrans.a (without it, e.g.
 # Encoding.find("Shift_JIS") raises).
 #
 # Fixed here by rebuilding lib*-static.a after `make install`: drop the two
-# stub objects and merge in the real ones with `libtool -static`, which --
-# unlike plain `ar` -- flattens nested .a members into the output archive
+# stub objects and merge in the real ones with `libtool -static`, which,
+# unlike plain `ar`, flattens nested .a members into the output archive
 # instead of embedding them as archive-in-archive members `ar` can't see
 # into.
 #
@@ -765,9 +765,9 @@ end
 # them to the same libtool filelist. Once flattened into lib*-static.a, the
 # existing `-Wl,-force_load,...libruby-static.a` in Config/Shared.xcconfig
 # pulls them into the app link with no new link flag. Contingency (only if
-# `libtool -static` errors on duplicate member names -- libyaml's api.o /
+# `libtool -static` errors on duplicate member names: libyaml's api.o /
 # reader.o are the generic-name collision candidates): switch to the
-# explode-rename-rearchive method -- extract every archive into a temp dir,
+# explode-rename-rearchive method: extract every archive into a temp dir,
 # rename colliding .o's with a numeric prefix, exclude dmyext.o/dmyenc.o,
 # then `ar -crs` everything plus extinit.o/encinit.o into the final archive.
 # Not used today because the filelist path builds clean.
@@ -775,7 +775,7 @@ def merge_static_extensions!(key)
   install_dir = install_dir_for(key)
   build_dir = build_dir_for(key)
   static_lib = find_static_lib(install_dir)
-  abort "error: no lib*-static.a found under #{install_dir}/lib -- run configure_and_make! first" unless static_lib
+  abort "error: no lib*-static.a found under #{install_dir}/lib. Run configure_and_make! first" unless static_lib
 
   members = capture!("ar", "t", static_lib).lines(chomp: true)
   unless members.include?("dmyext.o")
@@ -796,7 +796,7 @@ def merge_static_extensions!(key)
   ]
   third_party_archives.each do |archive|
     next if File.exist?(archive)
-    abort "error: #{archive} missing -- run build_openssl!/build_libyaml!/build_sqlite! before merge_static_extensions!"
+    abort "error: #{archive} missing. Run build_openssl!/build_libyaml!/build_sqlite! before merge_static_extensions!"
   end
 
   filelist_entries = [stripped, File.join(build_dir, "ext", "extinit.o")] + ext_archives + [
@@ -818,8 +818,8 @@ end
 def install_artifacts!(key, target)
   install_dir = install_dir_for(key)
   static_lib = find_static_lib(install_dir)
-  abort "error: no lib*-static.a found under #{install_dir}/lib -- " \
-    "delete #{build_dir_for(key)} and re-run" unless static_lib
+  abort "error: no lib*-static.a found under #{install_dir}/lib. " \
+    "Delete #{build_dir_for(key)} and re-run" unless static_lib
 
   lib_dest_dir = File.join(VENDOR_DIR, "lib", target[:lib_subdir])
   FileUtils.mkdir_p(lib_dest_dir)
@@ -830,7 +830,7 @@ def install_artifacts!(key, target)
   include_dest = File.join(VENDOR_DIR, "include", target[:include_subdir])
   FileUtils.mkdir_p(include_dest)
 
-  # Ruby installs generic headers directly under ruby-3.4.0/, plus one arch-specific subdirectory (e.g. ruby-3.4.0/arm64-darwin24/) holding just ruby/config.h. We flatten both into Vendor/CRuby/include/<platform>/ -- one complete tree per SDK, since HEADER_SEARCH_PATHS in Config/Shared.xcconfig is $(PLATFORM_NAME)-parameterized. Each tree only ever has one arch-specific config.h to overlay, so the flatten below stays a straight copy per target.
+  # Ruby installs generic headers directly under ruby-3.4.0/, plus one arch-specific subdirectory (e.g. ruby-3.4.0/arm64-darwin24/) holding just ruby/config.h. We flatten both into Vendor/CRuby/include/<platform>/, one complete tree per SDK, since HEADER_SEARCH_PATHS in Config/Shared.xcconfig is $(PLATFORM_NAME)-parameterized. Each tree only ever has one arch-specific config.h to overlay, so the flatten below stays a straight copy per target.
   arch_dirs = Dir.children(generic_include).map { |name| File.join(generic_include, name) }
     .select { |path| File.exist?(File.join(path, "ruby", "config.h")) }
   abort "error: no arch-specific ruby/config.h found under #{generic_include}" if arch_dirs.empty?
@@ -887,11 +887,11 @@ def assert_stdlib_identical!(targets)
   return if digests.values.uniq.size == 1
 
   abort "error: lib/ruby/#{RUBY_ABI_VERSION} differs across targets, expected byte-identical " \
-    "trees -- #{digests.inspect}"
+    "trees: #{digests.inspect}"
 end
 
 # Copies the deny-listed stdlib plus INCLUDED_BUNDLED_GEMS into
-# Vendor/CRuby/stdlib/ -- one shared tree, not one per platform, since
+# Vendor/CRuby/stdlib/: one shared tree, not one per platform, since
 # assert_stdlib_identical! already proved the three installs match.
 def install_stdlib!(install_dir)
   FileUtils.rm_rf(STDLIB_DEST)
@@ -936,7 +936,7 @@ end
 
 # Copies the sqlite3 gem's Ruby-side lib/ into Vendor/CRuby/stdlib/,
 # alongside the stdlib and INCLUDED_BUNDLED_GEMS entries install_stdlib!
-# already put there -- sqlite3 itself isn't in INCLUDED_BUNDLED_GEMS because
+# already put there; sqlite3 itself isn't in INCLUDED_BUNDLED_GEMS because
 # its source lives under .build-cruby/src (SQLITE3_GEM_SOURCE_DIR, fetched
 # directly from rubygems.org), not inside the CRuby install's own gems/
 # directory that INCLUDED_BUNDLED_GEMS reads from.
@@ -957,7 +957,7 @@ def install_sqlite3_ruby_lib!
     FileUtils.cp_r(File.join(gem_lib, entry), STDLIB_DEST)
   end
 
-  # Should be impossible -- the source gem ships no compiled extension --
+  # Should be impossible: the source gem ships no compiled extension,
   # but cheap to assert instead of trusting that, matching install_stdlib!'s
   # equivalent check.
   compiled = Dir.glob(File.join(STDLIB_DEST, "sqlite3", "**", "*.{bundle,so,dylib}"))
@@ -980,7 +980,7 @@ end
 # TOPDIR is nil and CONFIG["prefix"] falls back to `DESTDIR + "<dev path>"`.
 # Relocation alone therefore ships the dev-machine install path; rewriting that
 # path to a neutral token makes the fallback resolve to the token instead.
-# The host/target/build/arch family is left untouched -- it carries no absolute
+# The host/target/build/arch family is left untouched: it carries no absolute
 # paths, and host_os ("darwin25") is exactly what makes resolv's WINDOWS check
 # resolve to non-Windows on every platform. The full RbConfig.expand /
 # MAKEFILE_CONFIG / fire_update! machinery stays intact so the whole RbConfig
@@ -989,7 +989,7 @@ def sanitize_rbconfig!(install_dir)
   stdlib_dir = File.join(install_dir, "lib", "ruby", RUBY_ABI_VERSION)
   arch_subdir = stdlib_arch_subdir(stdlib_dir)
   src = File.join(stdlib_dir, arch_subdir, "rbconfig.rb")
-  abort "error: no rbconfig.rb found at #{src} -- run configure_and_make! first" unless File.exist?(src)
+  abort "error: no rbconfig.rb found at #{src}. Run configure_and_make! first" unless File.exist?(src)
 
   contents = File.read(src)
   dev_prefix = install_dir_for("macosx-arm64")
@@ -1007,8 +1007,8 @@ def sanitize_rbconfig!(install_dir)
   # Build-time guard against an incomplete rewrite: nothing of the dev prefix
   # or a Homebrew path may remain in the shipped file.
   if contents.include?(dev_prefix) || contents.include?("/opt/homebrew")
-    abort "error: sanitized rbconfig.rb still contains a dev-machine path -- " \
-      "update sanitize_rbconfig! in scripts/build-cruby.rb"
+    abort "error: sanitized rbconfig.rb still contains a dev-machine path. " \
+      "Update sanitize_rbconfig! in scripts/build-cruby.rb"
   end
 
   File.write(File.join(STDLIB_DEST, "rbconfig.rb"), contents)
@@ -1020,10 +1020,10 @@ end
 # locatable at runtime as $LOAD_PATH.first/cacert.pem, which RubyRuntime loads
 # into OpenSSL::SSL::SSLContext::DEFAULT_CERT_STORE at boot. Lives under stdlib/
 # rather than its own resource because that's the one folder reference already
-# wired into Copy Bundle Resources -- adding a sibling would mean hand-editing the
+# wired into Copy Bundle Resources; adding a sibling would mean hand-editing the
 # pbxproj, and sanitize_rbconfig! already ships a non-stdlib file the same way.
 def install_ca_bundle!
-  abort "error: cacert.pem not downloaded -- run download_and_verify! first" unless File.exist?(CACERT_PEM_PATH)
+  abort "error: cacert.pem not downloaded. Run download_and_verify! first" unless File.exist?(CACERT_PEM_PATH)
   dest = File.join(STDLIB_DEST, "cacert.pem")
   FileUtils.cp(CACERT_PEM_PATH, dest)
   puts "== CA bundle installed: #{File.size(dest)} bytes (Mozilla/curl cacert.pem) under #{STDLIB_DEST}"
@@ -1069,7 +1069,7 @@ def main
   sanitize_rbconfig!(install_dir_for("macosx-arm64"))
   install_ca_bundle!
 
-  puts "== done -- static libs, headers, and stdlib installed under #{VENDOR_DIR}"
+  puts "== done: static libs, headers, and stdlib installed under #{VENDOR_DIR}"
 end
 
 main if $PROGRAM_NAME == __FILE__

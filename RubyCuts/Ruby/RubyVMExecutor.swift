@@ -10,7 +10,7 @@ import Foundation
 /// boot.
 ///
 /// `RubyRuntime` hands this executor jobs (`UnownedJob`s) rather than calling
-/// into the VM directly from whatever thread happens to be running -- the
+/// into the VM directly from whatever thread happens to be running. The
 /// executor is what makes "always the VM thread" a compiler-enforced
 /// invariant instead of a convention.
 nonisolated final class RubyVMExecutor: SerialExecutor {
@@ -45,9 +45,9 @@ nonisolated final class RubyVMExecutor: SerialExecutor {
 /// The backing `Thread` for ``RubyVMExecutor``: boots the VM once on its
 /// entry frame, then services a FIFO job queue for the life of the process.
 ///
-/// Never joined and never stopped -- the VM is never torn down (see
+/// Never joined and never stopped: the VM is never torn down (see
 /// `RubyRuntime.shared`'s doc comment), so the thread outlives every other
-/// piece of app state. Holds its owning executor `weak` -- the executor owns
+/// piece of app state. Holds its owning executor `weak`: the executor owns
 /// the thread, not the other way around, and the thread runs forever
 /// regardless, so there's nothing a strong back-reference would buy.
 private nonisolated final class RubyVMThread: Thread, @unchecked Sendable {
@@ -60,7 +60,7 @@ private nonisolated final class RubyVMThread: Thread, @unchecked Sendable {
         super.init()
         name = "RubyCuts.VM"
         // The iOS main thread gets 1 MB, secondary threads default to
-        // 512 KB -- either would make Ruby's "stack level too deep" trip
+        // 512 KB; either would make Ruby's "stack level too deep" trip
         // *earlier* than the current main-thread run. 4 MB gives more
         // headroom than today, on every platform. Must be set before
         // `start()`; `Thread` reads it once at launch.
@@ -80,7 +80,7 @@ private nonisolated final class RubyVMThread: Thread, @unchecked Sendable {
         }
         let unownedExecutor = executor.asUnownedSerialExecutor()
 
-        // Every job below runs from this frame or deeper -- including the
+        // Every job below runs from this frame or deeper, including the
         // first one, which is always `bootIfNeeded()` via `RubyRuntime`'s
         // first call. That satisfies RUBY_INIT_STACK's requirement that no
         // later eval's stack sit outside the range recorded at boot.

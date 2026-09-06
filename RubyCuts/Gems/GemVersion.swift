@@ -6,9 +6,9 @@ import Foundation
 /// `0` (`1.0 == 1.0.0`).
 ///
 /// Deliberately narrower than `Gem::Version`: nothing here understands
-/// prerelease ordering. V1 never selects a prerelease -- ``RubyGemsAPI``'s
+/// prerelease ordering. V1 never selects a prerelease: ``RubyGemsAPI``'s
 /// callers filter `prerelease: true` entries out before a version string
-/// ever reaches this type (see the Phase 7 plan) -- so there's no need to
+/// ever reaches this type (see the Phase 7 plan), so there's no need to
 /// order one correctly relative to a release.
 ///
 /// Opted out of the app target's MainActor-by-default isolation, matching
@@ -25,7 +25,7 @@ struct GemVersion: Comparable, Sendable, CustomStringConvertible {
             switch (lhs, rhs) {
             case (.number(let l), .number(let r)): return l < r
             case (.text(let l), .text(let r)): return l < r
-            // A numeric segment sorts below a text one at the same position --
+            // A numeric segment sorts below a text one at the same position:
             // matches Gem::Version, and only ever matters for the prerelease
             // suffixes this type doesn't otherwise try to order.
             case (.number, .text): return true
@@ -34,7 +34,7 @@ struct GemVersion: Comparable, Sendable, CustomStringConvertible {
         }
     }
 
-    /// The original string, unmodified -- what gets sent back to the
+    /// The original string, unmodified: what gets sent back to the
     /// RubyGems API and written into ``InstalledGem`` directory names.
     nonisolated let raw: String
 
@@ -45,7 +45,7 @@ struct GemVersion: Comparable, Sendable, CustomStringConvertible {
         let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
-        // Each dot-separated part must be non-empty and alphanumeric --
+        // Each dot-separated part must be non-empty and alphanumeric,
         // rejects garbage like "not a version" or "1..2" outright, rather
         // than silently accepting it as a one-segment "version".
         var parsedSegments: [Segment] = []
@@ -166,7 +166,7 @@ struct GemRequirement: Sendable, CustomStringConvertible {
         }
     }
 
-    /// The original string, trimmed -- what ``description`` returns, so an
+    /// The original string, trimmed: what ``description`` returns, so an
     /// error message can name the exact constraint a caller passed.
     nonisolated let raw: String
 

@@ -2,14 +2,14 @@ import Foundation
 
 /// The parsed inputs a "Run ..." Ruby intent forwards into the script: ARGV,
 /// STDIN, and ENV. A pure value type carrying exactly what the Shortcuts user
-/// filled in, with no Ruby knowledge -- ``RubyRuntime/run(_:input:)`` is what
+/// filled in, with no Ruby knowledge. ``RubyRuntime/run(_:input:)`` is what
 /// turns a non-empty ``RunInput`` into the base64 transport that injects these
 /// into the VM before the user's code runs.
 ///
 /// Opted out of the app target's MainActor-by-default isolation (see
 /// `SWIFT_DEFAULT_ACTOR_ISOLATION` in `project.pbxproj`), matching ``Script``
 /// and ``ScriptStore``: this is a pure value type with no actor-coupled state,
-/// so every member is `nonisolated` and the type is usable from any context --
+/// so every member is `nonisolated` and the type is usable from any context,
 /// including the nonisolated test target, where ``parseEnv(_:)`` and the
 /// ``empty``/``isEmpty`` surface are exercised without a main-actor hop.
 struct RunInput: Sendable {
@@ -27,7 +27,7 @@ struct RunInput: Sendable {
 
     /// A run with no input on any channel. The default for
     /// ``RubyRuntime/run(_:input:)``, so the in-app console and every caller
-    /// that doesn't pass input stays on today's exact path -- zero setup/teardown
+    /// that doesn't pass input stays on today's exact path: zero setup/teardown
     /// overhead, the base64 transport never runs.
     nonisolated static let empty = RunInput(argv: [], stdin: "", env: [])
 

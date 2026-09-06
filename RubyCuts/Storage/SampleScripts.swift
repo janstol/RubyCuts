@@ -7,7 +7,7 @@ import Foundation
 /// for names and content.
 ///
 /// Each sample is heavily commented and runnable as-is from the in-app
-/// console, and names the exact Shortcuts field it reads -- the
+/// console, and names the exact Shortcuts field it reads: the
 /// `@Parameter(title:)` values in `RubyIntents.swift`.
 ///
 /// Opted out of the app target's MainActor-by-default isolation, matching
@@ -24,7 +24,7 @@ nonisolated enum SampleScripts {
         let source: String
     }
 
-    /// Every sample seeded on first launch, in the order they're created --
+    /// Every sample seeded on first launch, in the order they're created,
     /// which is also the order ``ScriptStore/list()`` will show them in,
     /// since it sorts by name and these names are already alphabetical.
     static let all: [Sample] = [
@@ -40,9 +40,9 @@ nonisolated enum SampleScripts {
         # Shows the full ARGV / STDIN / Environment round-trip a Shortcut can
         # send into a script. Run this from the Shortcuts app with "Run Ruby
         # Script", picking this script, and fill in:
-        #   ARGV        -- add one or two list entries, e.g. "world"
-        #   STDIN       -- any text, piped from a previous action
-        #   Environment -- one KEY=value per line, e.g. GREETING=Hi
+        #   ARGV        : add one or two list entries, e.g. "world"
+        #   STDIN       : any text, piped from a previous action
+        #   Environment : one KEY=value per line, e.g. GREETING=Hi
         #
         # Then run it from the in-app console with those fields empty to see
         # what "not filled in" looks like on each channel.
@@ -75,7 +75,7 @@ nonisolated enum SampleScripts {
         # Device Bridge
         #
         # Exercises RubyCuts' native bridge: Device::Clipboard and
-        # Device::Notification. No Shortcuts fields needed -- run this
+        # Device::Notification. No Shortcuts fields needed, run this
         # straight from the in-app console.
 
         Device::Clipboard.text = "Hello from RubyCuts"
@@ -83,7 +83,7 @@ nonisolated enum SampleScripts {
 
         # The FIRST call to Device::Notification.notify after installing the
         # app raises here while the system shows its permission prompt in the
-        # background -- that's expected, not a bug. Allow the prompt, then
+        # background, that's expected, not a bug. Allow the prompt, then
         # run this script again and the notification goes through.
         begin
           Device::Notification.notify("RubyCuts", "Hello from a script!")
@@ -98,7 +98,7 @@ nonisolated enum SampleScripts {
         #
         # A live HTTPS request through the stdlib Net::HTTP, plus
         # JSON.parse. This also proves the bundled CA certificate store
-        # verifies a real TLS handshake -- no gem install needed for this
+        # verifies a real TLS handshake, no gem install needed for this
         # one.
 
         require "net/http"

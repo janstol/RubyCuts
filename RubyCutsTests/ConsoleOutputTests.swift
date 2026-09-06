@@ -3,7 +3,7 @@ import Testing
 
 @testable import RubyCuts
 
-/// Pure-value tests for ``ConsoleOutputView``'s static helpers -- no VM, no
+/// Pure-value tests for ``ConsoleOutputView``'s static helpers: no VM, no
 /// rendered view. `transcript(for:)` mirrors the view's own section order and
 /// suppression rules; `durationLabel(for:)` is hand-rolled formatting with no
 /// locale dependence to worry about.

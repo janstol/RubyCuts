@@ -2,7 +2,7 @@ import Foundation
 
 @testable import RubyCuts
 
-/// A scripted `RubyGemsAPI` stub -- version lists and version details are
+/// A scripted `RubyGemsAPI` stub: version lists and version details are
 /// pre-seeded per gem name, so tests exercise resolution entirely offline,
 /// matching the project's "the live network path is proxied, not exercised"
 /// convention (see `RubyRuntimeTests.requiresNetHTTPOverTLS`).
@@ -57,7 +57,7 @@ struct StubRubyGemsAPI: RubyGemsAPI {
     }
 
     /// A naive substring match over `catalog`'s keys, mapped to each gem's
-    /// highest published version -- enough to drive the Results section
+    /// highest published version, enough to drive the Results section
     /// offline without reimplementing rubygems.org's actual ranking.
     func search(query: String) async throws -> [GemSearchResult] {
         catalog.keys.filter { $0.contains(query) }.sorted().compactMap { name in

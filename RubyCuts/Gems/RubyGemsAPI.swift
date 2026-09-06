@@ -4,11 +4,11 @@ import Foundation
 // than per-member, like ``Script``/``GemVersion``): each also carries a
 // compiler-synthesized `Decodable.init(from:)`, and a type-level modifier is
 // what makes *that* synthesized initializer nonisolated too, not just the
-// memberwise one -- these are constructed both by `JSONDecoder` inside
+// memberwise one. These are constructed both by `JSONDecoder` inside
 // `LiveRubyGemsAPI` and directly by a stub `RubyGemsAPI` in the nonisolated
 // test target's `GemResolverTests`.
 
-/// One entry from `GET /api/v1/versions/<name>.json` -- a version RubyGems
+/// One entry from `GET /api/v1/versions/<name>.json`: a version RubyGems
 /// has published for a gem, across every platform build and including
 /// prereleases. Callers filter to `platform == "ruby"` and
 /// `prerelease == false` themselves (``GemResolver`` does) rather than this
@@ -27,13 +27,13 @@ nonisolated struct GemDependencyInfo: Decodable, Sendable {
 }
 
 /// The `dependencies` envelope in the v2 response. `runtime` is the only
-/// list this slice resolves -- `development` dependencies are never needed
+/// list this slice resolves: `development` dependencies are never needed
 /// to `require` the gem, only to build/test it.
 nonisolated struct GemDependencies: Decodable, Sendable {
     let runtime: [GemDependencyInfo]
 }
 
-/// `GET /api/v2/rubygems/<name>/versions/<version>.json` -- everything
+/// `GET /api/v2/rubygems/<name>/versions/<version>.json`: everything
 /// needed to download, verify, and recurse into one specific gem version.
 nonisolated struct GemVersionDetails: Decodable, Sendable {
     let dependencies: GemDependencies
@@ -47,7 +47,7 @@ nonisolated struct GemVersionDetails: Decodable, Sendable {
     }
 }
 
-/// One entry from `GET /api/v1/search.json` -- a gem matching a free-text
+/// One entry from `GET /api/v1/search.json`: a gem matching a free-text
 /// query, most relevant first per rubygems.org's own ranking. Only the
 /// fields the Results section shows are decoded; the response carries more
 /// (e.g. `platform`) that this slice has no use for.
@@ -60,7 +60,7 @@ nonisolated struct GemSearchResult: Decodable, Sendable, Equatable, Identifiable
 
     /// VoiceOver phrasing for one search result row, e.g. `"httparty,
     /// version 0.22.0. Makes http fun again!"`. Lives here rather than on
-    /// `GemListView`'s `GemSearchSection` -- that's a `private struct`, and
+    /// `GemListView`'s `GemSearchSection`: that's a `private struct`, and
     /// this composition needs to be testable without rendering a view.
     /// Deliberately doesn't include the installed/bundled availability tag:
     /// that's context `GemListView` has and this type doesn't, so the view
@@ -72,7 +72,7 @@ nonisolated struct GemSearchResult: Decodable, Sendable, Equatable, Identifiable
 
 /// An error surfaced while talking to rubygems.org.
 enum RubyGemsAPIError: Error, Sendable {
-    /// The API returned 404 for this gem name -- it doesn't exist on
+    /// The API returned 404 for this gem name: it doesn't exist on
     /// rubygems.org (or was yanked entirely).
     case gemNotFound(String)
 
@@ -90,7 +90,7 @@ enum RubyGemsAPIError: Error, Sendable {
 /// and the runtime-dependency + download details for one specific version.
 ///
 /// A protocol so ``GemResolver`` and ``GemInstaller`` can be driven by a
-/// stub in tests and stay offline -- matching the existing convention where
+/// stub in tests and stay offline, matching the existing convention where
 /// the live network path is proxied, not exercised, in the test suite (see
 /// `RubyRuntimeTests.requiresNetHTTPOverTLS`).
 protocol RubyGemsAPI: Sendable {

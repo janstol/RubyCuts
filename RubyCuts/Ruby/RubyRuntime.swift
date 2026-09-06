@@ -11,10 +11,10 @@ enum RubyError: Error, Sendable {
 
 /// A single embedded CRuby VM, booted once and reused for the life of the process.
 ///
-/// Ruby's VM isn't thread-safe, and `RUBY_INIT_STACK` (expanded inside `rubycuts_init`) records the *initializing thread's* stack bounds for the garbage collector to scan -- every call into the VM has to happen from that same thread afterward. This type is an `actor` whose executor is ``RubyVMExecutor``, a dedicated thread that boots the VM on its own entry frame and then services every later call from that same frame -- the compiler enforces "always the VM thread" the same way it enforces any other actor's isolation, and callers `await` in rather than blocking whichever thread they're on.
+/// Ruby's VM isn't thread-safe, and `RUBY_INIT_STACK` (expanded inside `rubycuts_init`) records the *initializing thread's* stack bounds for the garbage collector to scan. Every call into the VM has to happen from that same thread afterward. This type is an `actor` whose executor is ``RubyVMExecutor``, a dedicated thread that boots the VM on its own entry frame and then services every later call from that same frame. The compiler enforces "always the VM thread" the same way it enforces any other actor's isolation, and callers `await` in rather than blocking whichever thread they're on.
 ///
 /// Every method below is a plain synchronous actor method with no internal
-/// suspension point -- deliberately: a suspension partway through a
+/// suspension point. That's deliberate: a suspension partway through a
 /// multi-eval sequence like ``run(_:input:)`` would let another queued job
 /// run in between and interleave with it, corrupting things like the
 /// ARGV/ENV backup globals that sequence relies on. All the `await` a caller
@@ -55,7 +55,7 @@ actor RubyRuntime {
     /// /`$cap_err`, then `code` runs via ``evalRaw`` (the same path
     /// ``evaluate`` uses, so user code never gets string-escaped into a wrapper),
     /// then the captured strings are read back and `$stdout`/`$stderr` restored.
-    /// Five short evals per run -- cheap, and it leaves the C shim untouched.
+    /// Five short evals per run: cheap, and it leaves the C shim untouched.
     ///
     /// **Non-throwing on purpose:** so stdout/stderr captured *before* a raise
     /// survive alongside the error message (the console shows all three), which
@@ -64,14 +64,14 @@ actor RubyRuntime {
     ///
     /// **Known follow-up:** the main actor is free while this runs (callers
     /// `await` it), but `run` itself is still one synchronous unit on the VM
-    /// thread -- the "live console" streams only after the run completes, not
+    /// thread. The "live console" streams only after the run completes, not
     /// as it goes. Streaming needs a hook inside the eval loop itself, not
     /// just getting off the main actor. For typical short scripts the run is
     /// instant either way.
     ///
     /// **Cancellation** is handled by installing a `RUBY_EVENT_LINE |
     /// RUBY_EVENT_CALL | RUBY_EVENT_B_CALL` hook (``requestCancel()``,
-    /// ``runCancellable(_:input:)``) around the user-code eval below -- see
+    /// ``runCancellable(_:input:)``) around the user-code eval below; see
     /// their doc comments. It only fires at Ruby-level checkpoints, so it
     /// can't interrupt a script blocked inside a single C call (`sleep`, a
     /// `Net::HTTP` read, a catastrophic regex): cancellation is partial
@@ -86,18 +86,18 @@ actor RubyRuntime {
     /// Swift base64-encodes the values into plain ASCII literals and Ruby
     /// `Base64.decode64`s them back. Base64 is safe in a double-quoted literal
     /// (its alphabet is `A-Za-z0-9+/=`, no quotes/backslashes/`#{}`), so there's
-    /// no string-escaping and it round-trips arbitrary bytes -- including NULs.
+    /// no string-escaping and it round-trips arbitrary bytes, including NULs.
     /// The base64 transport lives here, not in the script: a user's `.rb` just
     /// reads `ARGV[0]`, `$stdin.read`, `ENV["KEY"]` as normal Ruby.
     ///
     /// **Teardown always runs:** the `defer` restores `$stdout`/`$stderr` and,
-    /// when input was provided, ARGV/`$stdin`/ENV -- even if `code` raised. ENV
+    /// when input was provided, ARGV/`$stdin`/ENV, even if `code` raised. ENV
     /// teardown restores each key to its prior value (or deletes it if it was
     /// absent before setup set it), so a value a Shortcut run set never leaks
     /// into a later console `evaluate("ENV['X']")` or the next run.
     ///
     /// **Known follow-up:** if the script reassigns `$stdout`/`$stderr` itself,
-    /// that output isn't captured -- arguably correct (the script redirected
+    /// that output isn't captured. Arguably correct (the script redirected
     /// it), and an edge case for V1.
     ///
     /// On a raise, ``RunResult/backtrace`` carries the Ruby frames from the
@@ -115,7 +115,7 @@ actor RubyRuntime {
             )
         }
 
-        // Redirect $stdout/$stderr to StringIO. Fixed string -- no user code,
+        // Redirect $stdout/$stderr to StringIO. Fixed string, no user code,
         // so no escaping concerns. Best-effort: if `require 'stringio'` fails
         // (stringio should be a statically-linked extension), the run still
         // proceeds, just with empty captured streams.
@@ -127,7 +127,7 @@ actor RubyRuntime {
 
         // Inject ARGV/$stdin/ENV only when the caller actually provided input.
         // An empty RunInput skips this (and the matching teardown below), so the
-        // no-input path is exactly today's five-eval capture -- the base64
+        // no-input path is exactly today's five-eval capture; the base64
         // transport never runs.
         let hasInput = !input.isEmpty
         if hasInput {
@@ -146,7 +146,7 @@ actor RubyRuntime {
 
         var result = RunResult(stdout: "", stderr: "", result: "", errorMessage: nil)
 
-        // The hook is installed only around the user-code eval -- never
+        // The hook is installed only around the user-code eval, never
         // around boot, the StringIO setup above, the input setup/teardown,
         // the backtrace read below, or the $cap_out/$cap_err reads, all of
         // which would otherwise raise if a request lands on them instead.
@@ -158,7 +158,7 @@ actor RubyRuntime {
             result.result = try evalRaw(code)
         } catch {
             result.errorMessage = Self.describe(error)
-            // Read the backtrace here, before anything else evals -- the shim
+            // Read the backtrace here, before anything else evals. The shim
             // stashes the exception (or nil) in $rc_last_error on every failed
             // eval, and the next eval below (reading $cap_out) would otherwise
             // overwrite it before we get a chance to read this failure's trace.
@@ -181,7 +181,7 @@ actor RubyRuntime {
     }
 
     /// Requests cancellation of whatever `run(_:input:)` call is currently
-    /// in flight, if any. A one-line wrapper over the C shim's atomic flag --
+    /// in flight, if any. A one-line wrapper over the C shim's atomic flag.
     /// `nonisolated` is the whole point: `run` occupies the VM thread (this
     /// actor's serial executor) for its entire duration, so an isolated
     /// `cancel()` method would just enqueue a job that can't run until the
@@ -189,24 +189,24 @@ actor RubyRuntime {
     /// band, with no actor hop and no lock the VM thread holds.
     ///
     /// A no-op if no run is in flight, or if the in-flight run hasn't reached
-    /// the hook-enabled window yet (boot, StringIO setup) -- the request just
+    /// the hook-enabled window yet (boot, StringIO setup): the request just
     /// sits in the flag until the hook is installed and sees it.
     nonisolated func requestCancel() {
         rubycuts_request_cancel()
     }
 
     /// Runs `code` the same as ``run(_:input:)``, but cancels the underlying
-    /// eval if the calling `Task` is cancelled -- the entry point both the
+    /// eval if the calling `Task` is cancelled. The entry point both the
     /// console (``ScriptEditorView``'s Stop button) and Shortcuts (a
     /// cancelled intent) should use instead of calling `run` directly.
     ///
     /// `withTaskCancellationHandler`'s `onCancel` runs synchronously on
     /// whatever thread cancels, which can be before the enqueued `run` job
     /// ever starts on the VM thread. ``requestCancel()`` is safe to call at
-    /// that point too -- it just sets a flag `run`'s hook picks up as soon as
+    /// that point too: it just sets a flag `run`'s hook picks up as soon as
     /// it installs, so a pre-run cancellation is still honored by the first
     /// event the hook sees, and no request outlives the run that owns it (the
-    /// flag is cleared on hook disable, not on entry -- see `run`).
+    /// flag is cleared on hook disable, not on entry; see `run`).
     nonisolated func runCancellable(_ code: String, input: RunInput = .empty) async -> RunResult {
         await withTaskCancellationHandler {
             await run(code, input: input)
@@ -239,7 +239,7 @@ actor RubyRuntime {
     private func bootIfNeeded() throws {
         guard let stdlibURL = Self.bundledStdlibURL() else {
             throw RubyError.initializationFailed(
-                "bundled CRuby stdlib resource not found -- run scripts/build-cruby.rb and rebuild"
+                "bundled CRuby stdlib resource not found. Run scripts/build-cruby.rb and rebuild"
             )
         }
 
@@ -271,17 +271,17 @@ actor RubyRuntime {
     /// `SystemExit` instead of terminating the host process.
     ///
     /// `exit!` (and `abort`, which routes through it) calls the real C `exit()`
-    /// directly, bypassing `rb_eval_string_protect`'s catch -- so a script
+    /// directly, bypassing `rb_eval_string_protect`'s catch, so a script
     /// containing `exit!` would kill the whole app, not just fail the run. Plain
     /// `exit` already raises `SystemExit`, which `_protect` catches as a normal
     /// exception, so it needs no override. Redefining `exit!`/`abort` in Ruby
     /// shadows the C implementations: a `def` in `module Kernel` replaces the
     /// registered C method, and the raised `SystemExit` is caught downstream as
-    /// `TAG_RAISE` and surfaced as a run error -- exactly the "script exits ->
+    /// `TAG_RAISE` and surfaced as a run error, exactly the "script exits ->
     /// run fails" behavior the PRD wants for both the console and App Intents.
     ///
-    /// Best-effort and non-fatal: if the redefine fails, Ruby itself still works
-    /// -- only `exit!`/`abort` would still terminate the host.
+    /// Best-effort and non-fatal: if the redefine fails, Ruby itself still works;
+    /// only `exit!`/`abort` would still terminate the host.
     private func hardenProcessExit() {
         let code = """
             module Kernel
@@ -312,7 +312,7 @@ actor RubyRuntime {
     /// on top of it.
     ///
     /// Best-effort and non-fatal, matching ``loadRbConfig()``/``configureTLS()``:
-    /// if the prelude eval fails, Ruby itself still works -- only the
+    /// if the prelude eval fails, Ruby itself still works; only the
     /// `Device::*` capabilities degrade (an undefined-constant `NameError`, or
     /// a `RuntimeError` from `RubyCuts::Native.call` if the C-side handler was
     /// never installed).
@@ -321,7 +321,7 @@ actor RubyRuntime {
     /// is defined here, from ``NativeBridge/preludeSource``, a `nonisolated`
     /// `String` that needs no actor hop from the VM thread. The Swift-side
     /// handlers those calls eventually dispatch to are registered lazily, on
-    /// the main actor, the first time one actually fires -- see
+    /// the main actor, the first time one actually fires; see
     /// ``NativeBridge/registerDefaultsIfNeeded()``.
     private func installNativeBridge() {
         rubycuts_install_native_bridge(rubycutsNativeTrampoline)
@@ -336,7 +336,7 @@ actor RubyRuntime {
     /// gem installed in a previous run is requireable from a fresh boot.
     /// `GemInstaller` calls ``appendLoadPath(_:)`` directly right after a
     /// successful install, so a gem is requireable without restarting the
-    /// app -- this is only the boot-time half of that contract.
+    /// app. This is only the boot-time half of that contract.
     ///
     /// Best-effort and non-fatal, matching the rest of boot: a corrupt or
     /// unreadable gem store just means gems degrade, not that Ruby itself
@@ -371,7 +371,7 @@ actor RubyRuntime {
 
     /// Eagerly loads the sanitized `rbconfig.rb` so `RbConfig` is defined at boot,
     /// matching a normal MRI boot (see ``bootIfNeeded``). Best-effort and
-    /// non-fatal: if the file is missing or rejected, Ruby itself still works --
+    /// non-fatal: if the file is missing or rejected, Ruby itself still works;
     /// only `RbConfig`-dependent stdlib paths degrade (failing later with a
     /// `NameError` when something references `RbConfig`).
     private func loadRbConfig() {
@@ -386,7 +386,7 @@ actor RubyRuntime {
     /// `$rc_last_error` for the eval that just failed. `&.` covers
     /// `$rc_last_error` being `nil` (a non-raise tag, or nothing ever set it);
     /// `|| []` covers `Exception#backtrace` itself returning `nil`. Best-effort
-    /// via `try?`, matching how ``configureTLS()``/``loadRbConfig()`` degrade --
+    /// via `try?`, matching how ``configureTLS()``/``loadRbConfig()`` degrade:
     /// a failure here just means an empty backtrace, not a failed run.
     ///
     /// Must be called before any other eval runs, since the next failed eval
@@ -406,25 +406,25 @@ actor RubyRuntime {
     /// OpenSSL's compiled-in `--openssldir` is a build-machine path that doesn't
     /// exist on device, so `OpenSSL::SSL::SSLContext::DEFAULT_CERT_STORE.set_default_paths` (run when `openssl/ssl.rb` loads) finds no trusted roots and every
     /// HTTPS request fails with "unable to get local issuer certificate". Populating
-    /// that one shared store with our bundled PEM -- which `Net::HTTP`'s
+    /// that one shared store with our bundled PEM, which `Net::HTTP`'s
     /// `SSLContext#set_params` assigns to every connection that doesn't set its own
-    /// `cert_store` -- fixes verification with no per-call configuration and no
+    /// `cert_store`, fixes verification with no per-call configuration and no
     /// `SSL_CERT_FILE` env var (Ruby's openssl ext doesn't honor one). `$LOAD_PATH.first` is the bundled stdlib dir (the single load-path entry), so the PEM is
     /// locatable in Ruby without a Swift-to-Ruby path round-trip.
     ///
     /// **The `set_default_paths` override is what Phase 7 gems need.** A gem
     /// isn't obligated to rely on `Net::HTTP`'s `DEFAULT_CERT_STORE`
-    /// fallback -- `httparty`, for one, builds its own
+    /// fallback: `httparty`, for one, builds its own
     /// `OpenSSL::X509::Store.new.tap { |s| s.set_default_paths }` and assigns
     /// it directly as `http.cert_store`, bypassing `DEFAULT_CERT_STORE`
     /// entirely. Since the real system default paths are always empty on
     /// this platform anyway, redefining `set_default_paths` to load the
-    /// bundled PEM instead -- for every `X509::Store`, not just
-    /// `DEFAULT_CERT_STORE` -- fixes that gem and any future one built the
+    /// bundled PEM instead, for every `X509::Store` and not just
+    /// `DEFAULT_CERT_STORE`, fixes that gem and any future one built the
     /// same way, without a per-gem patch.
     ///
     /// Best-effort and non-fatal: if the bundle is missing or rejected, Ruby itself
-    /// still works -- only TLS peer verification degrades (failing later with a
+    /// still works; only TLS peer verification degrades (failing later with a
     /// cert error). Requiring openssl here is eager, but only when a bundle is
     /// present, and it's a one-time cost on the first `evaluate` (boot).
     private func configureTLS() {
@@ -452,7 +452,7 @@ actor RubyRuntime {
     /// set, so a run with ARGV-only doesn't touch `$stdin` or `ENV`.
     ///
     /// `nonisolated`: a pure string builder called synchronously from
-    /// ``run(_:input:)``, which runs on the VM thread, not the main actor --
+    /// ``run(_:input:)``, which runs on the VM thread, not the main actor:
     /// without this it would default to `@MainActor` (this app target's
     /// default isolation) and that call wouldn't compile.
     private nonisolated static func inputSetup(for input: RunInput) -> String {
@@ -492,10 +492,10 @@ actor RubyRuntime {
     /// `$stdin` from their saved backups, and restores each ENV key to its prior
     /// value (deleting it if it was absent before setup set it), then clears the
     /// backup globals. Runs in `run`'s `defer`, so it fires even when the user's
-    /// code raised -- the point being a Shortcut run's env never bleeds into a
+    /// code raised. The point is a Shortcut run's env never bleeds into a
     /// later console evaluation or the next run.
     ///
-    /// `nonisolated`, matching ``inputSetup(for:)`` -- called synchronously
+    /// `nonisolated`, matching ``inputSetup(for:)``: called synchronously
     /// from `run`'s VM-thread-isolated `defer`.
     private nonisolated static func inputTeardown(for input: RunInput) -> String {
         var parts: [String] = []
@@ -527,7 +527,7 @@ actor RubyRuntime {
     /// transport for filesystem paths, rather than re-deriving it.
     ///
     /// `nonisolated`: called synchronously from ``appendLoadPath(_:)`` (VM-
-    /// thread-isolated) as well as from other actors entirely -- a pure
+    /// thread-isolated) as well as from other actors entirely: a pure
     /// function with no VM or main-actor state, so it needs no isolation of
     /// its own.
     nonisolated static func base64(_ string: String) -> String {
@@ -536,7 +536,7 @@ actor RubyRuntime {
 
     /// Converts a ``ContinuousClock`` measurement to seconds for
     /// ``RunResult/duration``. `ContinuousClock` is monotonic and unaffected
-    /// by wall-clock adjustments -- the right clock for timing a single eval.
+    /// by wall-clock adjustments, the right clock for timing a single eval.
     ///
     /// `nonisolated`: called synchronously from `run`, which runs on the VM
     /// thread, not the main actor.
@@ -562,7 +562,7 @@ actor RubyRuntime {
     }
 
     /// Locates the bundled CA bundle: `stdlib/cacert.pem`. Returns `nil` if the
-    /// stdlib or the PEM is missing -- a build that skipped the
+    /// stdlib or the PEM is missing: a build that skipped the
     /// `install_ca_bundle!` step in `scripts/build-cruby.rb`.
     ///
     /// `nonisolated`: called synchronously from ``configureTLS()``, which
@@ -575,7 +575,7 @@ actor RubyRuntime {
 
     /// Locates the bundled CRuby stdlib directory: `RubyCuts.app/Contents/Resources/stdlib` on macOS, `RubyCuts.app/stdlib` on iOS. `RubyCutsTests` is app-hosted (`TEST_HOST`/`BUNDLE_LOADER` in the project), so `Bundle.main` during a test run resolves to `RubyCuts.app` too.
     ///
-    /// - Returns: The resource's URL, or `nil` if it's missing -- a build that skipped `scripts/build-cruby.rb`, or a stale bundle from before this resource was wired up.
+    /// - Returns: The resource's URL, or `nil` if it's missing: a build that skipped `scripts/build-cruby.rb`, or a stale bundle from before this resource was wired up.
     ///
     /// `nonisolated`: called synchronously from ``bootIfNeeded()`` and
     /// ``bundledCACertURL()``, both of which run on the VM thread, not the

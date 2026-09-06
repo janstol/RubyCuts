@@ -19,7 +19,7 @@ struct ScriptListView: View {
     @State private var isPresentingSettings = false
 
     /// The sidebar's search field text. Transient per-appearance UI state,
-    /// same reasoning as `newName` above -- ``ScriptLibrary/sortOrder`` is
+    /// same reasoning as `newName` above: ``ScriptLibrary/sortOrder`` is
     /// list *configuration* and persists, but a search filter is not
     /// something a relaunch should remember.
     @State private var searchText = ""
@@ -39,7 +39,7 @@ struct ScriptListView: View {
     /// to keep in sync with it. Rename used to be an `.alert` with a
     /// `TextField`, but on macOS that field reliably opened empty across
     /// repeated presentations regardless of how the backing state was
-    /// plumbed -- a known SwiftUI/AppKit issue with `.alert`'s text field,
+    /// plumbed, a known SwiftUI/AppKit issue with `.alert`'s text field,
     /// not an app bug. A sheet with its own local state sidesteps it.
     @State private var renameTarget: Script?
 
@@ -228,7 +228,7 @@ struct ScriptListView: View {
                 .onDelete { indexSet in
                     // A confirmation dialog can only present one script at a
                     // time, so a multi-row swipe/delete only ever offers the
-                    // first -- matching the context menu's single-script
+                    // first, matching the context menu's single-script
                     // confirmation rather than a batch one.
                     if let index = indexSet.first {
                         pendingDelete = filteredScripts[index]
@@ -241,7 +241,7 @@ struct ScriptListView: View {
     /// ``library/scripts`` narrowed to those whose name contains
     /// ``searchText`` (case-insensitive), or every script when the field is
     /// empty. A typed computed property rather than an inline filter in
-    /// ``content``'s `ForEach`, per this view's compiler-timeout history --
+    /// ``content``'s `ForEach`, per this view's compiler-timeout history;
     /// see the type doc comment.
     private var filteredScripts: [Script] {
         guard !searchText.isEmpty else { return library.scripts }
@@ -249,7 +249,7 @@ struct ScriptListView: View {
     }
 
     /// The sort-order `Menu`, published as its own `ToolbarContent` value
-    /// rather than inlined into the `.toolbar` closure -- see the type doc
+    /// rather than inlined into the `.toolbar` closure; see the type doc
     /// comment on why new toolbar content here starts out as a typed
     /// property.
     private var sortMenuToolbarItem: some ToolbarContent {
@@ -309,7 +309,7 @@ struct ScriptListView: View {
 
 /// A single-field rename dialog, reached from the list row's context menu.
 /// Deliberately a sheet with its own local `@State` rather than an `.alert`
-/// with a `TextField` -- the alert version reliably opened with an empty
+/// with a `TextField`: the alert version reliably opened with an empty
 /// field on macOS across repeated presentations, confirmed live testing,
 /// regardless of how the backing state was plumbed. That's a known
 /// SwiftUI/AppKit issue with `.alert`'s text field, not something app-level
@@ -336,7 +336,7 @@ private struct RenameSheet: View {
 
     var body: some View {
         NavigationStack {
-            // A plain padded field, not a `Form` -- a `Form` here rendered
+            // A plain padded field, not a `Form`. A `Form` here rendered
             // the field flush against the sheet's edges with a stray
             // full-width divider and no room to breathe, since a
             // single-row Form doesn't get the grouped-section insets that
@@ -366,7 +366,7 @@ private struct RenameSheet: View {
         .onAppear {
             isNameFocused = true
         }
-        // Same macOS sheet-sizing issue as `GemListView` -- without an
+        // Same macOS sheet-sizing issue as `GemListView`: without an
         // explicit frame the sheet can collapse to fit almost nothing. No
         // `minHeight` here (unlike `GemListView`'s list-based one): a fixed
         // one left dead space below this single field, since the toolbar's
@@ -380,7 +380,7 @@ private struct RenameSheet: View {
 }
 
 /// Backing view for ``ScriptListView``'s `#Preview`. Extracted into its own
-/// type so the preview body stays a plain `ViewBuilder` -- seeding a temp-dir
+/// type so the preview body stays a plain `ViewBuilder`. Seeding a temp-dir
 /// store with mock scripts and refreshing the VM is local file I/O (allowed in
 /// previews per the repo convention), but mixing those side-effecting calls
 /// into the preview closure overloads the typechecker.

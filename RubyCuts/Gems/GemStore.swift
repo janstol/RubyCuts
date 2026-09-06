@@ -3,12 +3,12 @@ import Foundation
 /// An error raised while managing gems through ``GemStore``.
 enum GemStoreError: Error, Sendable, Equatable {
     /// A gem with this name (any version) is already installed. V1 doesn't
-    /// support side-by-side versions or upgrading in place -- delete the
+    /// support side-by-side versions or upgrading in place. Delete the
     /// existing install first.
     case alreadyInstalled(String)
 }
 
-/// A value-type store over a directory of installed gems -- the
+/// A value-type store over a directory of installed gems, the
 /// ``ScriptStore`` pattern applied to gems instead of scripts: one
 /// subdirectory per gem, named `<name>-<version>`.
 ///
@@ -39,7 +39,7 @@ struct GemStore: Sendable {
 
     /// Lists every installed gem, sorted by name then version. Uses
     /// `contentsOfDirectory` (not a recursive enumerator), matching
-    /// ``ScriptStore/list()`` -- one directory per gem, no nesting to walk.
+    /// ``ScriptStore/list()``: one directory per gem, no nesting to walk.
     nonisolated func list() throws -> [InstalledGem] {
         try ensureDirectory()
         let urls = try FileManager.default.contentsOfDirectory(
@@ -68,7 +68,7 @@ struct GemStore: Sendable {
     }
 
     /// The directory a fresh install of `name`/`version` belongs at. Doesn't
-    /// create it -- ``GemInstaller`` extracts into a temp directory first and
+    /// create it: ``GemInstaller`` extracts into a temp directory first and
     /// moves it here only on success, so a failed or interrupted install
     /// never leaves a half-extracted gem that `$LOAD_PATH` would pick up.
     ///

@@ -3,11 +3,11 @@ import SwiftUI
 #if os(macOS)
     /// The macOS ⌘, Settings window's content: a "Scripts" tab (sample
     /// restore) and a "Gems" tab. Was a single ungrouped pane until this
-    /// gained a second concern -- the comment that used to sit here already
+    /// gained a second concern. The comment that used to sit here already
     /// flagged a `TabView` as the expected next step once that happened.
     ///
     /// Wrapped in an explicit frame because a `Settings` scene has no
-    /// sensible intrinsic size to fall back to -- the same class of missing
+    /// sensible intrinsic size to fall back to, the same class of missing
     /// desktop sizing that used to make `GemListView`'s own sheet frame
     /// necessary. `min`/`ideal` rather than a hard `width`/`height`: at
     /// macOS's larger-text accessibility setting a fixed frame clips its
@@ -29,7 +29,7 @@ import SwiftUI
     }
 
     /// The "Scripts" tab: today just the sample-restore action. Content-only,
-    /// matching ``GemListView`` -- ``GemSettingsPane`` supplies the tab
+    /// matching ``GemListView``: ``GemSettingsPane`` supplies the tab
     /// chrome and sizing frame.
     private struct ScriptSettingsPane: View {
         let library: ScriptLibrary
@@ -67,7 +67,7 @@ import SwiftUI
     /// Backing view for ``GemSettingsPane``'s `#Preview`, mirroring
     /// ``GemListPreview``: side-effecting temp-dir setup lives in this
     /// helper's `init` so the `#Preview` closure stays a plain
-    /// `ViewBuilder`. No network calls -- seeds ``GemStore`` directly with
+    /// `ViewBuilder`. No network calls: seeds ``GemStore`` directly with
     /// already-"installed" directories, never through ``GemInstaller``.
     private struct GemSettingsPreview: View {
         @State private var gemLibrary: GemLibrary
@@ -103,7 +103,7 @@ import SwiftUI
 #else
     /// The iOS/iPadOS settings sheet, presented from ``ScriptListView``'s
     /// gear button. macOS gets a `Settings` scene (``GemSettingsPane``)
-    /// instead, reached from the app menu -- see `RubyCutsApp`.
+    /// instead, reached from the app menu; see `RubyCutsApp`.
     struct SettingsView: View {
         @Environment(\.dismiss) private var dismiss
         private let scriptLibrary: ScriptLibrary
@@ -111,10 +111,10 @@ import SwiftUI
 
         init(scriptLibrary: ScriptLibrary, gemLibrary: GemLibrary = GemLibrary()) {
             // `GemLibrary` (not a `GemListView` instance) is what's injected
-            // here, matching `GemListView`'s own init -- the `NavigationLink`
+            // here, matching `GemListView`'s own init. The `NavigationLink`
             // below constructs the destination fresh each time it's pushed.
             // `scriptLibrary` is the one shared instance from `RubyCutsApp`,
-            // not a fresh default -- a restore here has to update the same
+            // not a fresh default: a restore here has to update the same
             // list `ScriptListView` shows.
             self.scriptLibrary = scriptLibrary
             self.gemLibrary = gemLibrary
@@ -165,7 +165,7 @@ import SwiftUI
     /// Backing view for ``SettingsView``'s `#Preview`, mirroring
     /// ``GemListPreview``: side-effecting temp-dir setup lives in this
     /// helper's `init` so the `#Preview` closure stays a plain
-    /// `ViewBuilder`. No network calls -- seeds ``GemStore`` directly with
+    /// `ViewBuilder`. No network calls: seeds ``GemStore`` directly with
     /// an already-"installed" directory, never through ``GemInstaller``.
     private struct SettingsPreview: View {
         @State private var gemLibrary: GemLibrary

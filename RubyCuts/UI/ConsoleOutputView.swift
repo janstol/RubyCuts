@@ -4,7 +4,7 @@ import SwiftUI
 /// `STDERR`, the last expression's value, and any error message. Shown in the
 /// editor as a bottom panel after a Run.
 ///
-/// Plain presentation over a value type -- no view model, because the result is
+/// Plain presentation over a value type, no view model, because the result is
 /// a snapshot held in `@State` by the editor, not observable list state. The
 /// header (title, metadata, status badge, Copy/Clear) is pinned above a
 /// scrolling body: the body scrolls vertically so output taller than the
@@ -22,7 +22,7 @@ struct ConsoleOutputView: View {
             header
 
             // The vertical scroll view is what makes output taller than the
-            // panel reachable at all -- without it the content below is
+            // panel reachable at all. Without it the content below is
             // simply clipped. The per-section horizontal scroll views inside
             // stay: nested horizontal-inside-vertical scrolling is
             // supported, and it's what keeps a long line from wrapping
@@ -47,7 +47,7 @@ struct ConsoleOutputView: View {
                             tint: .red)
                     }
                     // The last expression's value is only meaningful on a clean run
-                    // with a non-empty result -- `puts`-only scripts end in `nil`
+                    // with a non-empty result: `puts`-only scripts end in `nil`
                     // (""), and a raised script reports via `errorMessage` above.
                     if !result.hasError && !result.result.isEmpty {
                         section("Result", text: result.result, tint: .secondary)
@@ -63,7 +63,7 @@ struct ConsoleOutputView: View {
     /// The header, in two arms so `ViewThatFits` can fall back to stacking
     /// the title above the badge and buttons at accessibility text sizes,
     /// where ``headerRow``'s single line would otherwise collide and
-    /// truncate. Each arm -- and every piece inside it -- is its own typed
+    /// truncate. Each arm, and every piece inside it, is its own typed
     /// property rather than inlined here, matching this file's neighbor
     /// `ScriptEditorView`'s documented type-checker fragility with branching
     /// view expressions.
@@ -179,7 +179,7 @@ struct ConsoleOutputView: View {
     /// result isn't padded with blank lines. Honors the same "suppress the
     /// error section on a cancelled run" rule the view applies above.
     ///
-    /// Deliberately **not** ``RubyIntents/combinedMessage(_:)`` -- that one
+    /// Deliberately **not** ``RubyIntents/combinedMessage(_:)``: that one
     /// is `private` to its file, and it's the *failure* contract (error
     /// message + backtrace + stderr only, no stdout, no result), the wrong
     /// payload for a copy of the whole console.
@@ -227,7 +227,7 @@ struct ConsoleOutputView: View {
     /// The metadata line's VoiceOver phrasing, e.g.
     /// `"Ran in 0.03 seconds, finished at 3:41:07 PM"`. The visual label
     /// (``metadataLabel``) packs the same two facts into `"0.03s ·
-    /// 3:41:07 PM"`, which reads badly aloud -- the middle dot announces as
+    /// 3:41:07 PM"`, which reads badly aloud: the middle dot announces as
     /// "middle dot" and "s" as its own letter rather than an abbreviation
     /// for seconds.
     ///
@@ -239,7 +239,7 @@ struct ConsoleOutputView: View {
     }
 
     /// Spoken form of a duration for ``metadataAccessibilityLabel(for:)``:
-    /// `"0.42 seconds"` under a minute, `"1 minute 5 seconds"` above --
+    /// `"0.42 seconds"` under a minute, `"1 minute 5 seconds"` above,
     /// spelled out rather than abbreviated, unlike ``durationLabel(for:)``.
     private static func spokenDuration(for duration: TimeInterval) -> String {
         guard duration >= 60 else {

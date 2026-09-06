@@ -4,7 +4,7 @@ import Testing
 @testable import RubyCuts
 
 /// Decoding coverage for the DTOs in `RubyGemsAPI.swift`. Only
-/// ``GemSearchResult`` has a dedicated test here -- the others are exercised
+/// ``GemSearchResult`` has a dedicated test here; the others are exercised
 /// indirectly through `GemResolverTests` and `GemLibraryTests` via
 /// `StubRubyGemsAPI`, but search is decoded straight from a live-shaped
 /// response with no stub in between, so it gets its own check against the

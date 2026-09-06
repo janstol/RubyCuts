@@ -2,7 +2,7 @@ import AppIntents
 
 /// The App Intents discovery point: declares RubyCuts's two intents in the
 /// Shortcuts action gallery so a user can find and add them. No Info.plist key
-/// or entitlement is needed -- the framework auto-discovers an
+/// or entitlement is needed: the framework auto-discovers an
 /// `AppShortcutsProvider` in the app target (which uses
 /// `GENERATE_INFOPLIST_FILE = YES`), so this type is the entire registration.
 ///

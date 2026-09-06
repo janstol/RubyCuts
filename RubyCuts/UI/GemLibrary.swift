@@ -6,7 +6,7 @@ enum GemInstallState: Equatable {
     /// No install in progress.
     case idle
 
-    /// Resolving `gem`'s dependency graph -- nothing downloaded yet.
+    /// Resolving `gem`'s dependency graph: nothing downloaded yet.
     case resolving(gem: String)
 
     /// `plan` is resolved and parked, waiting for the user to confirm or
@@ -29,12 +29,12 @@ enum GemSearchState: Equatable {
     /// The query resolved, possibly to no matches at all.
     case results([GemSearchResult])
 
-    /// The request failed -- shown inline, never as a modal alert (see
+    /// The request failed. Shown inline, never as a modal alert (see
     /// ``GemLibrary/search(query:)``).
     case failed(String)
 }
 
-/// The view model backing the gems sheet -- mirrors ``ScriptLibrary`` exactly
+/// The view model backing the gems sheet, mirroring ``ScriptLibrary`` exactly
 /// (injected store, `refresh()` after every mutation, failures surfaced as
 /// ``errorMessage``), with one addition: installs are async and
 /// network-bound (unlike anything ``ScriptLibrary`` does), so this also
@@ -52,7 +52,7 @@ final class GemLibrary {
     /// the start of the next operation so a transient error doesn't linger.
     var errorMessage: String?
 
-    /// Where the install flow currently stands -- resolving, parked awaiting
+    /// Where the install flow currently stands: resolving, parked awaiting
     /// confirmation, or actively installing. Drives the plan/progress
     /// sections and disables the install controls while ``isWorking``.
     private(set) var installState: GemInstallState = .idle
@@ -61,7 +61,7 @@ final class GemLibrary {
     /// section in ``GemListView``.
     private(set) var searchState: GemSearchState = .idle
 
-    /// Whether the install flow is doing anything right now -- true while
+    /// Whether the install flow is doing anything right now: true while
     /// resolving or installing, false while idle or parked at
     /// `.readyToInstall` (which is waiting on the user, not working).
     var isWorking: Bool {
@@ -76,7 +76,7 @@ final class GemLibrary {
     private let store: GemStore
 
     /// Also the route ``search(query:)`` takes to rubygems.org, through
-    /// `installer.api` -- one injected dependency rather than two, so a
+    /// `installer.api`: one injected dependency rather than two, so a
     /// test's stub API backs both resolution and search.
     private let installer: GemInstaller
 
@@ -86,7 +86,7 @@ final class GemLibrary {
     }
 
     /// Re-reads the store and updates ``gems``. Sets ``errorMessage`` on
-    /// failure instead of throwing -- the list view isn't in a `throws`
+    /// failure instead of throwing: the list view isn't in a `throws`
     /// context.
     func refresh() {
         errorMessage = nil
@@ -100,7 +100,7 @@ final class GemLibrary {
 
     /// Resolves `name` (+ optional `requirement`, e.g. `"~> 1.0"`) into the
     /// exact set of gems an install would download, and parks the result as
-    /// ``GemInstallState/readyToInstall(plan:requested:)`` -- nothing is
+    /// ``GemInstallState/readyToInstall(plan:requested:)``. Nothing is
     /// downloaded here. Sets ``errorMessage`` on failure, or on an empty
     /// plan (`name` is already installed), and returns to ``.idle`` either
     /// way.
@@ -133,11 +133,11 @@ final class GemLibrary {
     /// Success calls ``refresh()``, but failure doesn't: `refresh()` resets
     /// `errorMessage` to `nil` as its first line (so a stale error doesn't
     /// linger into the next operation), which would silently wipe out the
-    /// error this method just set -- the same clobbering ``delete(_:)``
+    /// error this method just set, the same clobbering ``delete(_:)``
     /// avoids by returning early. Failure still re-reads ``gems`` directly
     /// (without going through `refresh()`), since a gem earlier in the
     /// install plan can have already landed on disk before a later one
-    /// failed -- e.g. a checksum mismatch on the second of three resolved
+    /// failed, e.g. a checksum mismatch on the second of three resolved
     /// gems.
     func confirmInstall() async {
         guard case .readyToInstall(let plan, _) = installState else { return }
@@ -164,7 +164,7 @@ final class GemLibrary {
     /// Searches rubygems.org for `query`, meant to be driven by the name
     /// field's debounced `.task(id:)` rather than a button. An empty (after
     /// trimming) query resets to ``GemSearchState/idle`` without issuing a
-    /// request -- there's nothing to search for, and it clears stale results
+    /// request: there's nothing to search for, and it clears stale results
     /// left over from before the field was emptied.
     ///
     /// Deliberately does not touch ``errorMessage``: that drives a modal
@@ -191,7 +191,7 @@ final class GemLibrary {
         searchState = .idle
     }
 
-    /// Whether `name` is already available to scripts -- installed on disk
+    /// Whether `name` is already available to scripts: installed on disk
     /// or baked into the binary (see ``BundledGem``). Used to tag search
     /// results the user doesn't need to (and, for a bundled gem, can't)
     /// install.

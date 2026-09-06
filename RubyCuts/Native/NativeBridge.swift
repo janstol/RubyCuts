@@ -5,7 +5,7 @@ import Foundation
 /// that comes back as Ruby `nil`.
 ///
 /// String-typed on both ends because every current capability is strings in,
-/// string-or-nil out -- the JSON envelope crossing the C boundary is the
+/// string-or-nil out. The JSON envelope crossing the C boundary is the
 /// flexible part. Widening this signature later (richer argument or return
 /// types) is additive: it changes neither the C ABI nor the
 /// `RubyCuts::Native.invoke` prelude, both of which only ever see JSON.
@@ -48,7 +48,7 @@ final class NativeBridge {
     /// Registers every built-in capability's Swift-side handler, once. Called
     /// lazily from ``dispatch(name:argsJSON:)`` (already on the main actor)
     /// rather than eagerly at boot: boot runs on the VM thread now and evals
-    /// only ``preludeSource``, the Ruby-side half of the `Device::*` surface --
+    /// only ``preludeSource``, the Ruby-side half of the `Device::*` surface;
     /// registering the handlers those calls dispatch to has to happen over
     /// here, and doing it lazily avoids adding a launch-order requirement or
     /// a separate setup call every test would also need.
@@ -62,7 +62,7 @@ final class NativeBridge {
     /// The concatenated Ruby prelude that defines the built-in capabilities'
     /// `Device::*` surface on top of `RubyCuts::Native.invoke`. `nonisolated`
     /// so `RubyRuntime.installNativeBridge()` can eval it directly from the VM
-    /// thread with no main-actor hop -- every piece is a plain `String`
+    /// thread with no main-actor hop: every piece is a plain `String`
     /// constant, trivially safe to read from any thread.
     nonisolated static let preludeSource: String = [
         invokePrelude,
@@ -72,10 +72,10 @@ final class NativeBridge {
 
     /// The `RubyCuts::Native.invoke` wrapper every capability's Ruby surface
     /// calls through. Requires `json` (already a statically-linked, proven
-    /// extension -- see `RubyRuntimeTests.requiresJSON`) and marshals `call`'s
+    /// extension; see `RubyRuntimeTests.requiresJSON`) and marshals `call`'s
     /// C-string JSON boundary: `JSON.generate(args)` out,
     /// `JSON.parse(result_json).first` back. The trailing `.first` unwraps
-    /// the one-element result array the trampoline below always returns --
+    /// the one-element result array the trampoline below always returns:
     /// wrapping the result that way (rather than a bare JSON scalar) sidesteps
     /// `JSON.parse`'s top-level-scalar ambiguity, the same reasoning `RunInput`
     /// uses base64 for in the other direction.
@@ -84,7 +84,7 @@ final class NativeBridge {
     /// reached the script via `Base64.decode64`, `File.binread`, or similar
     /// carries the BINARY encoding even when its bytes are perfectly valid
     /// UTF-8 (e.g. round-tripped from a UTF-8 source), and `JSON.generate`
-    /// warns -- soon raises, in json 3.0 -- on a BINARY string it can't
+    /// warns, and will soon raise in json 3.0, on a BINARY string it can't
     /// verify. `dup` avoids mutating the caller's string; genuinely invalid
     /// byte sequences still fail in `JSON.generate` afterward, just with a
     /// clear encoding error instead of a silent mislabel.
@@ -109,7 +109,7 @@ final class NativeBridge {
     /// result back into the one-element array `rc_native_call` expects.
     /// Failures (unknown name, bad JSON, a non-string argument, or the
     /// handler throwing) come back as `.failure` with a human-readable
-    /// message -- the trampoline turns that into the shim's `*error_out`.
+    /// message; the trampoline turns that into the shim's `*error_out`.
     fileprivate func dispatch(name: String, argsJSON: String) -> Result<String, NativeBridgeError> {
         registerDefaultsIfNeeded()
 
@@ -137,7 +137,7 @@ final class NativeBridge {
     }
 
     /// Decodes the JSON array of arguments Ruby sent. Every element must be a
-    /// JSON string -- a non-string argument (number, bool, nested
+    /// JSON string: a non-string argument (number, bool, nested
     /// array/object, null) is rejected rather than silently coerced, matching
     /// the handler contract's string-in guarantee.
     private static func decodeArgs(_ json: String) throws -> [String] {
@@ -148,7 +148,7 @@ final class NativeBridge {
     }
 
     /// Encodes `value` as the one-element JSON array Swift returns across the
-    /// boundary -- `[null]` for `nil`, `["text"]` otherwise. The prelude reads
+    /// boundary: `[null]` for `nil`, `["text"]` otherwise. The prelude reads
     /// `.first` off the parsed result.
     private static func encodeResult(_ value: String?) -> String {
         guard let data = try? JSONEncoder().encode([value]),
@@ -166,7 +166,7 @@ final class NativeBridge {
 /// lets Swift convert it implicitly to a `rubycuts_native_handler`.
 ///
 /// This runs on ``RubyVMExecutor``'s dedicated thread now, not the main
-/// thread -- `NativeBridge` itself is `@MainActor`, so reaching `dispatch`
+/// thread. `NativeBridge` itself is `@MainActor`, so reaching `dispatch`
 /// needs a real hop, not `MainActor.assumeIsolated`. `Thread.isMainThread`
 /// covers the (currently theoretical, but cheap to keep correct) case of a
 /// future caller that already is on the main thread; the VM thread case
@@ -177,7 +177,7 @@ final class NativeBridge {
 /// the main thread waiting on the VM thread.** Every current caller of
 /// `RubyRuntime` (`ScriptEditorView.run()`, ``RubyIntents``,
 /// ``GemArchive``) reaches it through `await`, which suspends the main actor
-/// rather than blocking the main thread -- so the main queue stays free to
+/// rather than blocking the main thread, so the main queue stays free to
 /// service this trampoline's `DispatchQueue.main.sync` while a run is in
 /// flight. A future caller that does `DispatchQueue.main.sync` (or a
 /// semaphore wait) onto the VM thread from the main thread would deadlock
@@ -194,7 +194,7 @@ nonisolated func rubycutsNativeTrampoline(
     let name = String(cString: namePointer)
     let argsJSON = String(cString: argsJSONPointer)
 
-    // Only Sendable values (String) cross into the @MainActor closure --
+    // Only Sendable values (String) cross into the @MainActor closure.
     // `errorOut` stays out here, since UnsafeMutablePointer isn't Sendable and
     // there's no need to touch it from inside anyway.
     func dispatchOnMain() -> Result<String, NativeBridgeError> {

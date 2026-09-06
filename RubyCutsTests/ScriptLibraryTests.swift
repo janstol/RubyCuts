@@ -7,7 +7,7 @@ import Testing
 // unique temp-dir `ScriptStore` and defers its removal, so the tests are
 // isolated with no shared VM state (no `.serialized` needed). The VM is
 // MainActor-isolated via the app target's default actor isolation, so the suite
-// is `@MainActor` -- the methods under test touch `scripts`/`errorMessage`, which
+// is `@MainActor`: the methods under test touch `scripts`/`errorMessage`, which
 // are MainActor-coupled state.
 @MainActor
 @Suite
@@ -140,7 +140,7 @@ struct ScriptLibraryTests {
 
         #expect(script == nil)
         #expect(library.errorMessage != nil)
-        // The list stays consistent -- nothing was created, so it's still empty.
+        // The list stays consistent: nothing was created, so it's still empty.
         #expect(library.scripts.isEmpty)
     }
 
@@ -151,7 +151,7 @@ struct ScriptLibraryTests {
         let library = ScriptLibrary(store: store)
         let script = library.create(name: "real")
         // Delete out from under the VM, then ask it to delete the same file
-        // again -- the store throws, which the VM surfaces as an error and
+        // again. The store throws, which the VM surfaces as an error and
         // re-lists to keep `scripts` consistent.
         try store.delete(script ?? Script(url: store.directoryURL))
         library.refresh()
@@ -188,7 +188,7 @@ struct ScriptLibraryTests {
 
         let library = ScriptLibrary(store: store, defaults: defaults)
         library.seedSamplesIfNeeded()
-        // Delete everything, then seed again -- the flag set by the first
+        // Delete everything, then seed again: the flag set by the first
         // call must keep the second from bringing them back. That's what
         // makes a deleted sample stay deleted.
         for script in library.scripts {
@@ -214,7 +214,7 @@ struct ScriptLibraryTests {
         #expect(library.scripts.count == 1)
         #expect(library.scripts.first?.name == "mine")
 
-        // The flag is set even though nothing was seeded -- a second call
+        // The flag is set even though nothing was seeded: a second call
         // (e.g. the next launch) must not retroactively seed on top of it.
         library.seedSamplesIfNeeded()
         #expect(library.scripts.count == 1)
@@ -301,7 +301,7 @@ struct ScriptLibraryTests {
 
         library.sortOrder = .dateModified
 
-        // No `library.refresh()` call between the two assertions -- the
+        // No `library.refresh()` call between the two assertions: the
         // `didSet` on `sortOrder` alone must re-order `scripts`.
         #expect(library.scripts.map(\.name) == ["beta", "alpha"])
     }

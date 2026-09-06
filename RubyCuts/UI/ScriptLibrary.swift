@@ -1,24 +1,24 @@
 import Foundation
 import Observation
 
-/// The view model backing the script list -- the project's first view model, and
+/// The view model backing the script list, the project's first view model, and
 /// the pattern Phase 3's editor/console VMs and Phase 5's intents should follow.
 ///
 /// `@Observable` (the current Swift idiom; the app targets iOS 18 / macOS 15, so
-/// it's available) -- not `ObservableObject`/`@Published`. MainActor isolation is
+/// it's available), not `ObservableObject`/`@Published`. MainActor isolation is
 /// implicit via the app target's `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, so
 /// no explicit `@MainActor` annotation: match the project default. Only the data
 /// layer (`Script`/`ScriptStore`) opts out with `nonisolated`.
 ///
-/// The VM owns list state only. It does **not** hold `Script` source -- source
+/// The VM owns list state only. It does **not** hold `Script` source: source
 /// stays on disk and is read on demand in the editor, exactly as Phase 2
-/// designed -- so the editor calls `ScriptStore` directly for `source(of:)` and
+/// designed, so the editor calls `ScriptStore` directly for `source(of:)` and
 /// `write`. This keeps the VM small and keeps source strings out of observable
 /// list state.
 ///
 /// Errors from the throwing `ScriptStore` methods are surfaced as
 /// ``errorMessage`` (shown in an alert by the list view). After each mutation the
-/// VM re-`list`s to stay consistent with disk -- simpler than threading `throws`
+/// VM re-`list`s to stay consistent with disk, simpler than threading `throws`
 /// through SwiftUI, and enough for the walking skeleton.
 @Observable
 final class ScriptLibrary {
@@ -40,8 +40,8 @@ final class ScriptLibrary {
     private let defaults: UserDefaults
 
     /// Accessor the list view passes to the editor so both share one store. The
-    /// VM doesn't expose the store publicly otherwise -- source I/O belongs to
-    /// the editor, not list state -- but navigation needs a way to hand the same
+    /// VM doesn't expose the store publicly otherwise: source I/O belongs to
+    /// the editor, not list state, but navigation needs a way to hand the same
     /// store to the destination.
     var storeForEditing: ScriptStore { store }
 
@@ -55,7 +55,7 @@ final class ScriptLibrary {
     private static let sortOrderKey = "scriptSortOrder"
 
     /// How ``scripts`` is ordered. Persisted in ``defaults`` so the choice
-    /// survives relaunch, and re-applied immediately on change -- unlike
+    /// survives relaunch, and re-applied immediately on change. Unlike
     /// ``errorMessage`` or ``scripts``, this is list *configuration*, not a
     /// snapshot of disk, so it belongs on the VM rather than the view (see
     /// `ScriptListView`'s doc comment on `newName` for the same distinction
@@ -80,7 +80,7 @@ final class ScriptLibrary {
     }
 
     /// Re-reads the store and updates ``scripts``. Sets ``errorMessage`` on
-    /// failure instead of throwing -- the list view isn't in a `throws` context.
+    /// failure instead of throwing: the list view isn't in a `throws` context.
     func refresh() {
         errorMessage = nil
         do {
@@ -129,7 +129,7 @@ final class ScriptLibrary {
     /// Deletes the script's file and re-lists. Sets ``errorMessage`` on failure.
     ///
     /// On failure the file wasn't removed, so `scripts` is already consistent
-    /// with disk -- no re-list needed, and skipping it preserves the error
+    /// with disk, no re-list needed, and skipping it preserves the error
     /// (a `refresh()` would clear `errorMessage`). On success the deleted
     /// script is gone from disk, so re-list to drop it from `scripts`.
     func delete(_ script: Script) {
@@ -148,9 +148,9 @@ final class ScriptLibrary {
     /// is set in ``defaults``.
     ///
     /// If the store already has scripts in it the first time this runs, it
-    /// leaves them alone -- seeding into a non-empty library would drop
+    /// leaves them alone: seeding into a non-empty library would drop
     /// samples on top of scripts the user (or, once Phase 10 ships, iCloud)
-    /// already put there -- but it still sets the flag, since "already has
+    /// already put there. But it still sets the flag, since "already has
     /// scripts" and "already seeded" both mean don't seed again.
     ///
     /// The flag is also what makes a deleted sample stay deleted: without
@@ -185,8 +185,8 @@ final class ScriptLibrary {
     }
 
     /// Re-creates every sample from ``SampleScripts/all`` that isn't already
-    /// present, by name. Unlike ``seedSamplesIfNeeded()`` this always runs --
-    /// it's the explicit "bring them back" action in Settings -- but it
+    /// present, by name. Unlike ``seedSamplesIfNeeded()`` this always runs:
+    /// it's the explicit "bring them back" action in Settings, but it
     /// skips any name already in ``scripts``, so restoring never produces a
     /// `-2` suffix via ``ScriptStore``'s collision handling.
     func restoreSamples() {

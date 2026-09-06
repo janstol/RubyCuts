@@ -2,7 +2,7 @@ import SwiftUI
 
 /// An install form (name + optional version requirement) and the list of
 /// installed gems, with delete. Content-only: no navigation chrome, dismiss
-/// button, or sizing frame of its own -- it's hosted by ``SettingsView`` on
+/// button, or sizing frame of its own: it's hosted by ``SettingsView`` on
 /// iOS/iPadOS and by ``GemSettingsPane`` on macOS, both of which supply
 /// those. Used to own a `NavigationStack` and a Done button when it was
 /// reached from ``ScriptListView`` as a sheet; gem management is ongoing app
@@ -34,11 +34,11 @@ struct GemListView: View {
             }
             .task(id: gemName) {
                 // Debounce: a new keystroke re-runs this task, cancelling
-                // the previous one during its sleep -- so only the name the
+                // the previous one during its sleep, so only the name the
                 // user has settled on ever reaches the network.
                 try? await Task.sleep(for: .milliseconds(300))
                 // Selecting a search result also sets `gemName`, which
-                // re-triggers this task -- but a plan is already resolving
+                // re-triggers this task, but a plan is already resolving
                 // or parked by then, so searching again would just leave a
                 // stale Results section to reappear once the user cancels.
                 guard library.installState == .idle else { return }
@@ -82,7 +82,7 @@ struct GemListView: View {
             switch library.installState {
             case .idle:
                 // The Results section only makes sense while nothing else
-                // is parked or running -- once a plan lands, it stands down
+                // is parked or running. Once a plan lands, it stands down
                 // so the two sections never compete for the same list.
                 searchSection
             case .readyToInstall(let plan, let requested):
@@ -154,7 +154,7 @@ struct GemListView: View {
         }
     }
 
-    /// Gems baked into the app binary at build time (see ``BundledGem``) --
+    /// Gems baked into the app binary at build time (see ``BundledGem``):
     /// no delete affordance, since there's nothing on disk to remove.
     private var bundledSection: some View {
         Section("Bundled") {
@@ -201,7 +201,7 @@ struct GemListView: View {
                 .onDelete { indexSet in
                     // A confirmation dialog can only present one gem at a
                     // time, so a multi-row swipe/delete only ever offers the
-                    // first -- matching the context menu's single-gem
+                    // first, matching the context menu's single-gem
                     // confirmation rather than a batch one.
                     if let index = indexSet.first {
                         pendingDelete = library.gems[index]
@@ -213,7 +213,7 @@ struct GemListView: View {
 
     private func selectSearchResult(name: String) {
         gemName = name
-        // Search reports the latest version -- a requirement left over from
+        // Search reports the latest version, a requirement left over from
         // a previous attempt would silently constrain it.
         gemRequirement = ""
         library.clearSearch()
@@ -235,8 +235,8 @@ struct GemListView: View {
     }
 }
 
-/// The parked, not-yet-downloaded plan from ``GemLibrary/prepareInstall(name:requirement:)``
-/// -- one row per resolved gem, an "Install N Gems" primary action, and a
+/// The parked, not-yet-downloaded plan from ``GemLibrary/prepareInstall(name:requirement:)``:
+/// one row per resolved gem, an "Install N Gems" primary action, and a
 /// Cancel. Its own `private struct`, not inline in ``GemListView/content``:
 /// this file's sibling `ScriptListView` has a documented history of defeating
 /// the type checker once conditionals and closures pile into one `body`.
@@ -257,7 +257,7 @@ private struct GemPlanSection: View {
     }
 
     /// One plan row. `ViewThatFits` falls back to stacking the
-    /// requested/dependency tag under the name and version -- at large
+    /// requested/dependency tag under the name and version. At large
     /// Dynamic Type sizes the horizontal layout would otherwise squeeze the
     /// tag to a truncated sliver.
     private func row(for gem: ResolvedGem) -> some View {
@@ -305,7 +305,7 @@ private struct GemPlanSection: View {
     }
 }
 
-/// Live search results for the name field -- one row per match, tapped to
+/// Live search results for the name field: one row per match, tapped to
 /// resolve straight into ``GemPlanSection``. Its own `private struct` for
 /// the same type-checker reason as ``GemPlanSection``. Shows "No gems
 /// match" as a plain caption row rather than a `ContentUnavailableView`:
@@ -335,7 +335,7 @@ private struct GemSearchSection: View {
     }
 
     /// One search-result row. `ViewThatFits` falls back to stacking the
-    /// installed/bundled tag under the name and info line -- at large
+    /// installed/bundled tag under the name and info line. At large
     /// Dynamic Type sizes the horizontal layout would otherwise squeeze the
     /// tag to a truncated sliver.
     private func row(for result: GemSearchResult) -> some View {
@@ -400,7 +400,7 @@ private struct GemInstallProgressSection: View {
         Section {
             VStack(alignment: .leading) {
                 // The label passed to `ProgressView` becomes its
-                // accessibility label -- otherwise VoiceOver reads only a
+                // accessibility label, otherwise VoiceOver reads only a
                 // bare percentage, with the phase ("Downloading csv (1 of
                 // 4)") announced as a separate, detached element below.
                 // `.labelsHidden()` keeps the visual unchanged: the caption
@@ -550,7 +550,7 @@ private struct GemInstallProgressSection: View {
 /// Backing view for ``GemListView``'s `#Preview`. Extracted into its own
 /// type, mirroring ``ScriptListPreview``: side-effecting temp-dir setup
 /// lives in this helper's `init` so the `#Preview` closure stays a plain
-/// `ViewBuilder`. No network calls -- the preview seeds ``GemStore``
+/// `ViewBuilder`. No network calls: the preview seeds ``GemStore``
 /// directly with already-"installed" directories, never through
 /// ``GemInstaller``.
 private struct GemListPreview: View {
@@ -575,7 +575,7 @@ private struct GemListPreview: View {
 
     var body: some View {
         // `GemListView` no longer supplies its own navigation chrome or
-        // sizing frame (see its doc comment) -- the preview stands in for
+        // sizing frame (see its doc comment); the preview stands in for
         // the real host so it still renders standalone.
         NavigationStack {
             GemListView(library: library)

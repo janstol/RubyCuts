@@ -47,7 +47,7 @@ struct ScriptRow: View {
     }
 
     /// VoiceOver phrasing for the whole row, e.g. `"hello.rb, modified 3
-    /// days ago"` -- without this, the icon, name, and date announce as
+    /// days ago"`. Without this, the icon, name, and date announce as
     /// three separate children, with the date reading as a bare "3 days
     /// ago" with nothing tying it to the script it belongs to.
     ///

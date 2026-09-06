@@ -16,17 +16,17 @@ int rubycuts_init(const char *stdlib_path) {
         return 1;
     }
 
-    // RUBY_INIT_STACK expands to a local variable declaration plus a call to ruby_init_stack(&that_variable), recording this frame's address as the bottom of the machine stack the GC scans. It is a macro built on __builtin_frame_address, not a function, so it has to be expanded here in C -- Swift cannot call it directly.
+    // RUBY_INIT_STACK expands to a local variable declaration plus a call to ruby_init_stack(&that_variable), recording this frame's address as the bottom of the machine stack the GC scans. It is a macro built on __builtin_frame_address, not a function, so it has to be expanded here in C; Swift cannot call it directly.
     RUBY_INIT_STACK;
     ruby_init();
 
-    // ruby_init() alone only runs Init_BareVM plus the core-class rb_call_inits() list --
+    // ruby_init() alone only runs Init_BareVM plus the core-class rb_call_inits() list;
     // that's not a complete boot. It never runs Init_ext() (which registers every
-    // statically-linked C extension -- stringio, zlib, json/ext -- as require-able at
+    // statically-linked C extension, stringio, zlib, json/ext, as require-able at
     // all), never loads the compiled builtin iseqs, never sets up the encoding database,
     // and never seeds $LOAD_PATH. All of that lives in ruby_opt_init(), reachable only
     // through ruby_options(). Passing "-e ''" makes ruby_options() do that setup work
-    // without actually running a script -- there's nothing to run, so its return value
+    // without actually running a script: there's nothing to run, so its return value
     // (an opaque node for ruby_run_node()) is discarded.
     //
     // argv[0] is NULL, and every argv element points at a writable (non-literal) buffer:
@@ -41,7 +41,7 @@ int rubycuts_init(const char *stdlib_path) {
 
     // ruby_init_loadpath() (run as part of ruby_options() above) seeds $LOAD_PATH from
     // ruby_exec_prefix, a compile-time constant baked into verconf.h at cross-compile
-    // time -- it points at this machine's .build-cruby/.../install, present on the dev
+    // time; it points at this machine's .build-cruby/.../install, present on the dev
     // Mac and absent on a device or simulator. Clear those stale entries and seed the
     // one path that actually ships in the app bundle, rather than layering stdlib_path
     // on top of them where it'd be masked by (or mask) the wrong tree.
@@ -65,7 +65,7 @@ int rubycuts_init(const char *stdlib_path) {
 // Why this matters: for every other nonzero state (return/break/next/redo/
 // retry/throw/fatal at the top level of the eval'd string), ec->errinfo points
 // at internal throw data, NOT a Ruby object. Calling rb_obj_as_string on that
-// throw data crashes the process -- rb_funcall hits `uncallable_object`, the
+// throw data crashes the process: rb_funcall hits `uncallable_object`, the
 // resulting rb_raise -> rb_longjmp then SIGSEGVs inside the longjmp mechanics
 // (seen via a repro running `return {}`). So the exception message is only
 // extracted for TAG_RAISE; all other states get a synthesized message matching
@@ -82,7 +82,7 @@ static char *rc_error_message_for_state(int state) {
         // Stash the exception in a Ruby global before clearing errinfo, so
         // Swift can still read its backtrace after this call returns. This
         // is a deliberate GC root holding exactly one exception, overwritten
-        // on the next failed eval -- see rc_error_message_for_state's other
+        // on the next failed eval; see rc_error_message_for_state's other
         // branch, which sets it to Qnil so a non-raise failure can't leak a
         // stale backtrace from an earlier raise.
         rb_gv_set("$rc_last_error", error);
@@ -94,8 +94,8 @@ static char *rc_error_message_for_state(int state) {
         return strdup("unknown Ruby error");
     }
 
-    // A non-exception non-local exit. ec->errinfo is throw data, not an object
-    // -- clear it (a plain pointer store, safe) and synthesize a message. The
+    // A non-exception non-local exit. ec->errinfo is throw data, not an object;
+    // clear it (a plain pointer store, safe) and synthesize a message. The
     // wording mirrors MRI's LocalJumpError messages for top-level jumps.
     // $rc_last_error is reset to Qnil here too: this failure has no exception
     // object, and without this the backtrace reader would otherwise surface
@@ -139,7 +139,7 @@ void rubycuts_free(char *string) {
 }
 
 // The installed native handler, and the RubyCuts::NativeError class it raises
-// through. Both are file-scope statics rather than something passed around --
+// through. Both are file-scope statics rather than something passed around:
 // rc_native_call (a Ruby-callable C function) has no way to receive extra
 // context beyond the VALUEs Ruby gives it, so the handler and error class have
 // to be reachable some other way. g_native_error_class needs no
@@ -172,7 +172,7 @@ static VALUE rc_native_call(VALUE self, VALUE name, VALUE args_json) {
     }
 
     // Copy the error into a Ruby string, and free the C buffer, before
-    // rb_exc_raise -- it longjmps past this frame, so nothing malloc'd may
+    // rb_exc_raise: it longjmps past this frame, so nothing malloc'd may
     // still be owned here when it fires. Same hazard rc_error_message_for_state
     // documents around rb_eval_string_protect.
     VALUE message = error_out != NULL
@@ -210,7 +210,7 @@ void rubycuts_install_native_bridge(rubycuts_native_handler handler) {
 }
 
 // Set from any thread via rubycuts_request_cancel(), polled on the VM thread
-// by rc_cancel_hook(). Atomic because it crosses threads without a lock --
+// by rc_cancel_hook(). Atomic because it crosses threads without a lock:
 // the VM thread must never block on anything the requesting thread might be
 // holding.
 static _Atomic int g_cancel_requested = 0;

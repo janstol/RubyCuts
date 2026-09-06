@@ -22,7 +22,7 @@ struct IntentOutputTests {
     }
 
     @Test func cleanRunReturnsStdoutEvenWhenResultIsNonEmpty() throws {
-        // The contract returns `$stdout`, not the last expression's `to_s` --
+        // The contract returns `$stdout`, not the last expression's `to_s`:
         // a script like `puts 'hi'; 42` prints `hi\n` and evaluates to `42`,
         // and Shortcuts should get `hi\n`, not `42`.
         let result = RunResult(stdout: "hi\n", stderr: "", result: "42", errorMessage: nil)
@@ -81,7 +81,7 @@ struct IntentOutputTests {
     }
 
     @Test func backtraceIsOrderedBetweenMessageAndStderr() throws {
-        // Order is message, then backtrace, then stderr -- the trace belongs
+        // Order is message, then backtrace, then stderr: the trace belongs
         // directly under the raise it describes.
         let result = RunResult(
             stdout: "", stderr: "warn\n", result: "", errorMessage: "boom",
@@ -97,7 +97,7 @@ struct IntentOutputTests {
 
     @Test func emptyCrashAndEmptyStderrSucceedsWithEmptyStdout() throws {
         // A boot failure surfaces as a `RunResult` with `errorMessage` set, so
-        // it fails -- but a genuinely empty result (no error, no stderr) is a
+        // it fails, but a genuinely empty result (no error, no stderr) is a
         // clean run whose stdout happens to be empty (e.g. `42` with no `puts`).
         let result = RunResult(stdout: "", stderr: "", result: "42", errorMessage: nil)
 
@@ -112,7 +112,7 @@ struct IntentOutputTests {
         RubyCuts.output(from: result)
     }
 
-    // MARK: - parseEnv(_:) -- the "Environment" text field -> ENV pairs
+    // MARK: - parseEnv(_:): the "Environment" text field -> ENV pairs
     //
     // Labeled 2-tuples don't conform to `Equatable`, so arrays of
     // `(key:value:)` pairs can't use `==` directly. ``kv(_:)`` renders each
@@ -146,7 +146,7 @@ struct IntentOutputTests {
     }
 
     @Test func parseEnvSkipsEmptyKey() {
-        // A line `=value` has no real key, so it's skipped too -- setting
+        // A line `=value` has no real key, so it's skipped too: setting
         // `ENV[""]` in Ruby would be a meaningless error otherwise.
         let pairs = parseEnv("=value\nKEY=ok")
         #expect(Self.kv(pairs) == ["KEY=ok"])

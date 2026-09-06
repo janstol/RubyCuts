@@ -3,7 +3,7 @@ import Testing
 
 @testable import RubyCuts
 
-/// A `RubyGemsAPI` stub that always fails to find any gem -- enough to drive
+/// A `RubyGemsAPI` stub that always fails to find any gem, enough to drive
 /// `GemLibrary.prepareInstall(name:requirement:)` down its failure path
 /// offline, without needing a real dependency graph like `StubRubyGemsAPI`
 /// provides.
@@ -93,7 +93,7 @@ struct GemLibraryTests {
     }
 
     @Test func prepareInstallOnABundledGemSurfacesTheBundledMessageInsteadOfAPlan() async throws {
-        // sqlite3 is baked into the binary (see BundledGem) -- resolving it
+        // sqlite3 is baked into the binary (see BundledGem), so resolving it
         // through the sheet must explain that, not silently no-op or park a
         // plan that would fail the C-extension check on confirm.
         let store = try makeStore()

@@ -9,12 +9,12 @@ import Testing
 /// Before `RubyRuntime` got its own dedicated thread (Phase 8 Wave B), every
 /// test body ran fully synchronously on the main actor, so the three
 /// `@Suite(.serialized)` suites could never interleave with each other even
-/// though `.serialized` only orders tests *within* one suite -- there was
+/// though `.serialized` only orders tests *within* one suite. There was
 /// simply no `await` anywhere for a scheduler to interleave at. Adding
 /// `await` to every VM call broke that accidental guarantee: two suites
 /// could now wedge evals into each other's multi-eval sequences (e.g.
 /// `RubyRuntimeTests`'s ENV save/restore round-trip). Nesting all three
-/// under this `.serialized` parent restores it -- `.serialized` is
+/// under this `.serialized` parent restores it: `.serialized` is
 /// inherited by nested suites.
 @Suite(.serialized)
 struct EmbeddedRubyTests {}

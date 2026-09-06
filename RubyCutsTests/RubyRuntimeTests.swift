@@ -10,11 +10,11 @@ import Testing
 // double-load resolv.rb and leave RbConfig undefined for the loser (seen on
 // the iOS Simulator; macOS scheduling happened not to trip it). `.serialized`
 // runs the suite's tests one at a time, matching the runtime's single-threaded
-// contract. The app itself is unaffected -- `RubyRuntime`'s own actor
+// contract. The app itself is unaffected: `RubyRuntime`'s own actor
 // isolation already serializes every call onto its one dedicated VM thread,
 // one at a time, no matter which actor a caller awaits it from. Nested under
 // ``EmbeddedRubyTests`` so `.serialized` covers `NativeBridgeTests` and
-// `GemArchiveTests` too -- see that type's doc comment.
+// `GemArchiveTests` too; see that type's doc comment.
 extension EmbeddedRubyTests {
     @MainActor
     @Suite(.serialized)
@@ -29,7 +29,7 @@ extension EmbeddedRubyTests {
             // does not. Without loadRbConfig(), stdlib files that reference RbConfig
             // without an explicit `require 'rbconfig'` (resolv.rb's `WINDOWS`
             // constant, fileutils.rb) raise `NameError: uninitialized constant
-            // RbConfig` in a fresh process -- which is exactly what the real app
+            // RbConfig` in a fresh process, which is exactly what the real app
             // hit doing `require 'net/http'`. Placed first in this `.serialized`
             // suite so, in its source-order run, only boot has had a chance to load
             // rbconfig; if boot stops loading it, this fails before later tests
@@ -115,7 +115,7 @@ extension EmbeddedRubyTests {
         @Test func requiresNetHTTP() async throws {
             // Locks in the sanitized rbconfig.rb fix: `require 'net/http'` used to
             // fail outright at `require 'resolv'`, because resolv.rb's top-level
-            // `WINDOWS` constant always touches RbConfig (rbconfig.rb was excluded --
+            // `WINDOWS` constant always touches RbConfig (rbconfig.rb was excluded;
             // see docs/embedding-cruby.md). With a sanitized rbconfig.rb on
             // $LOAD_PATH, loading now succeeds. TLS itself is a separate capability
             // (covered by requiresNetHTTPOverTLS once OpenSSL is merged in); this
@@ -169,7 +169,7 @@ extension EmbeddedRubyTests {
 
         @Test func requiresSQLite3() async throws {
             // Proves the sqlite3 ext loaded (Init_sqlite3_native registered
-            // under the "sqlite3/sqlite3_native" feature name -- see
+            // under the "sqlite3/sqlite3_native" feature name; see
             // install_sqlite3_ext_sources! in scripts/build-cruby.rb) and the
             // amalgamation it's linked against actually works: open an
             // in-memory DB, create a table, insert, and read the row back.
@@ -189,7 +189,7 @@ extension EmbeddedRubyTests {
             #expect(version.hasPrefix("3.53"))
 
             // Proves -DSQLITE_ENABLE_FTS5 survived build_sqlite! and
-            // merge_static_extensions! -- an FTS5 virtual table only creates
+            // merge_static_extensions!: an FTS5 virtual table only creates
             // successfully if the amalgamation was actually compiled with it.
             let fts5 = try await RubyRuntime.shared.evaluate(
                 "db2 = SQLite3::Database.new(':memory:'); "
@@ -201,7 +201,7 @@ extension EmbeddedRubyTests {
         @Test func bundledSQLite3GemVersionMatchesTheVMsSQLite3Version() async throws {
             // The drift guard between BundledGem.all's Swift-side constant and
             // the version actually baked into the VM (SQLITE3_GEM_VERSION_PIN
-            // in scripts/build-cruby.rb) -- a bumped pin that forgets to bump
+            // in scripts/build-cruby.rb): a bumped pin that forgets to bump
             // BundledGem.all would otherwise ship a Gems sheet lying about the
             // version.
             let bundled = try #require(BundledGem.all.first { $0.name == "sqlite3" })
@@ -212,7 +212,7 @@ extension EmbeddedRubyTests {
 
         @Test func requiresNetHTTPOverTLS() async throws {
             // Offline proxy for TLS availability: net/http loads, Net::HTTP accepts
-            // use_ssl=true, and an SSLContext builds (the real TLS primitive -- the
+            // use_ssl=true, and an SSLContext builds (the real TLS primitive; the
             // context is otherwise constructed lazily inside connect(), a network
             // call). A live HTTPS round-trip is a manual smoke test, not a unit test.
             let result = try await RubyRuntime.shared.evaluate(
@@ -225,13 +225,13 @@ extension EmbeddedRubyTests {
 
         @Test func trustsBundledCACertificates() async throws {
             // Proves the boot wiring (RubyRuntime.configureTLS) loaded the bundled
-            // Mozilla CA bundle into OpenSSL's shared default cert store -- the one
+            // Mozilla CA bundle into OpenSSL's shared default cert store, the one
             // Net::HTTP's SSLContext#set_params assigns to every HTTPS connection
             // that doesn't set its own cert_store. The first cert in cacert.pem is a
             // self-signed trusted root; verifying it against DEFAULT_CERT_STORE
             // succeeds only if the store actually contains it. An empty store (boot
             // wiring broken, or the bundle missing from the build) rejects it, so
-            // this catches regressions offline -- no network, no live handshake.
+            // this catches regressions offline: no network, no live handshake.
             let result = try await RubyRuntime.shared.evaluate(
                 "require 'openssl'; "
                     + "pem = File.read(File.join($LOAD_PATH.first, 'cacert.pem')); "
@@ -243,12 +243,12 @@ extension EmbeddedRubyTests {
 
         @Test func setDefaultPathsOnAFreshStoreAlsoTrustsTheBundledCACertificates() async throws {
             // Found live, testing Phase 7: httparty doesn't rely on Net::HTTP's
-            // DEFAULT_CERT_STORE fallback -- it builds its own
+            // DEFAULT_CERT_STORE fallback: it builds its own
             // OpenSSL::X509::Store.new.tap(&:set_default_paths) and assigns it
             // directly as the connection's cert_store, bypassing
             // DEFAULT_CERT_STORE entirely. Guards RubyRuntime.configureTLS's
             // redefinition of X509::Store#set_default_paths, which every store
-            // built that way -- not just DEFAULT_CERT_STORE -- now picks up.
+            // built that way, not just DEFAULT_CERT_STORE, now picks up.
             let result = try await RubyRuntime.shared.evaluate(
                 "require 'openssl'; "
                     + "pem = File.read(File.join($LOAD_PATH.first, 'cacert.pem')); "
@@ -264,7 +264,7 @@ extension EmbeddedRubyTests {
             // could keep working via stale .build-cruby paths seeded by ruby_init_loadpath()
             // while the same code silently ships broken on device. Widened for Phase 7:
             // `installGemPaths()` now appends every installed gem's `lib/` dir after
-            // stdlib, so the old "exactly one entry" assertion no longer holds -- what
+            // stdlib, so the old "exactly one entry" assertion no longer holds. What
             // must still hold is that stdlib leads (`configureTLS()` depends on that
             // for locating `cacert.pem`) and every other entry sits under the gems root.
             let firstEntry = try await RubyRuntime.shared.evaluate("$LOAD_PATH.first")
@@ -282,7 +282,7 @@ extension EmbeddedRubyTests {
             #expect(result == "Shift_JIS")
         }
 
-        // MARK: - run(_:): STDOUT/STDERR capture (Phase 4 partial -- ARGV/STDIN/ENV
+        // MARK: - run(_:): STDOUT/STDERR capture (Phase 4 partial; ARGV/STDIN/ENV
         // are deferred to the App Intents slice; this covers STDOUT/STDERR + error)
 
         @Test func runCapturesPutsToStdout() async {
@@ -311,7 +311,7 @@ extension EmbeddedRubyTests {
 
         @Test func runRaisesPopulateErrorAndPreservePartialStdout() async {
             // A script that prints then raises: stdout holds what printed before the
-            // raise, and the error message is set -- the console shows both. This is
+            // raise, and the error message is set: the console shows both. This is
             // the reason `run` is non-throwing (evaluate's throws path would drop the
             // partial stdout).
             let result = await RubyRuntime.shared.run("puts 'before'; raise 'boom'")
@@ -373,7 +373,7 @@ extension EmbeddedRubyTests {
             #expect(restored == "restored")
         }
 
-        // MARK: - Top-level jumps (return/break/...) -- the shim's non-RAISE tag path
+        // MARK: - Top-level jumps (return/break/...): the shim's non-RAISE tag path
         //
         // Guards rubycuts_shim.c's rc_error_message_for_state: rb_eval_string_protect
         // surfaces a top-level `return` as TAG_RETURN (not TAG_RAISE), and ec->errinfo
@@ -404,7 +404,7 @@ extension EmbeddedRubyTests {
 
         @Test func topLevelBreakReportsAnErrorWithoutCrashing() async {
             // A bare `break` at the top level is a syntax error (a real TAG_RAISE
-            // exception), not a TAG_BREAK jump -- so this exercises the shim's normal
+            // exception), not a TAG_BREAK jump. So this exercises the shim's normal
             // exception-message path, not the synthesized-message path. It must not
             // crash and must report some error.
             let result = await RubyRuntime.shared.run("break")
@@ -420,7 +420,7 @@ extension EmbeddedRubyTests {
         }
 
         @Test func vmIsUsableAfterATopLevelReturn() async throws {
-            // The throw data must be cleared so the VM is clean for later evals -- a
+            // The throw data must be cleared so the VM is clean for later evals: a
             // corrupted errinfo would surface as a crash or stale error next time.
             _ = await RubyRuntime.shared.run("return {}")
             let ok = try await RubyRuntime.shared.evaluate("1 + 1")
@@ -458,7 +458,7 @@ extension EmbeddedRubyTests {
         @Test func plainExitIsAlreadySafe() async {
             // Regression guard: plain `exit` raises SystemExit natively (no override
             // needed) and was always caught. The message is MRI's "exit" string, not
-            // "SystemExit" like the exit! override produces -- the point here is just
+            // "SystemExit" like the exit! override produces. The point here is just
             // that it's caught and doesn't kill the host.
             let result = await RubyRuntime.shared.run("exit")
             #expect(result.hasError)
@@ -476,8 +476,8 @@ extension EmbeddedRubyTests {
         // store, resolve a stored script through the ``ScriptEntity`` picker path
         // (entity -> ``Script`` -> ``ScriptStore/source(of:)``), run it via
         // ``runToOutput(_:)``, and confirm the captured `$stdout` flows out to the
-        // intent's return value. Kept in this `.serialized` suite -- not a second
-        // one -- so all VM-driving tests share one serial execution contract (the
+        // intent's return value. Kept in this `.serialized` suite, not a second
+        // one, so all VM-driving tests share one serial execution contract (the
         // cross-suite double-load hazard the suite header warns about). The pure
         // ``output(from:)`` decision is covered separately in `IntentOutputTests`.
 
@@ -525,13 +525,13 @@ extension EmbeddedRubyTests {
             #expect(error.message.hasPrefix("boom\n"))
         }
 
-        // MARK: - run(_:input:) -- ARGV / STDIN / ENV plumbing (Phase 4 input side)
+        // MARK: - run(_:input:): ARGV / STDIN / ENV plumbing (Phase 4 input side)
         //
         // The VM-driving contract for the input slice: a non-empty ``RunInput``
         // reaches the script as `ARGV` / `$stdin` / `ENV`, an empty one runs today's
         // plain capture path, and the teardown restores prior state so a Shortcut
         // run's env never bleeds into a later console `evaluate`. Same `.serialized`
-        // suite as every other VM-driving test -- the single interpreter is
+        // suite as every other VM-driving test: the single interpreter is
         // non-thread-safe, so all VM work shares one serial execution contract.
 
         @Test func runReceivesArgv() async {
@@ -631,7 +631,7 @@ extension EmbeddedRubyTests {
         }
 
         @Test func cancelInterruptsAnEmptyBodiedIteration() async throws {
-            // RUBY_EVENT_LINE alone never fires inside `{ }`'s empty body --
+            // RUBY_EVENT_LINE alone never fires inside `{ }`'s empty body:
             // there's no statement to sit between. B_CALL (the block's own
             // entry) is what the hook catches instead, so this is the case
             // that justifies including it alongside LINE/CALL.
@@ -665,7 +665,7 @@ extension EmbeddedRubyTests {
 
         @Test func taskCancellationCancelsTheRun() async throws {
             // Exercises `runCancellable(_:input:)`'s `onCancel` handler
-            // directly -- the Shortcuts/Stop-button path -- rather than
+            // directly, the Shortcuts/Stop-button path, rather than
             // calling `requestCancel()` by hand.
             let runTask = Task {
                 await RubyRuntime.shared.runCancellable("loop { }")

@@ -8,7 +8,7 @@ import Foundation
 
 /// The `Device::Clipboard` capability: read and write the system pasteboard
 /// from Ruby. `UIPasteboard.general` on iOS, `NSPasteboard.general` on
-/// macOS -- both synchronous and needing no entitlement.
+/// macOS: both synchronous and needing no entitlement.
 ///
 /// Reading on iOS shows the system paste banner. That's Apple's privacy gate
 /// on pasteboard reads, not something to suppress or work around.
@@ -28,7 +28,7 @@ enum ClipboardCapability {
 
     /// The Ruby surface this capability adds: `Device::Clipboard.text` / `.text=`.
     /// `nonisolated` so `NativeBridge.preludeSource` can read it from the VM
-    /// thread with no main-actor hop -- it's a plain `String` constant.
+    /// thread with no main-actor hop: it's a plain `String` constant.
     nonisolated static let preludeSource = """
         module Device
           module Clipboard
@@ -45,7 +45,7 @@ enum ClipboardCapability {
         """
 
     /// Reads the current pasteboard text, or `nil` if the pasteboard holds no
-    /// string content. Not `private` -- ``NativeBridgeTests`` reads and
+    /// string content. Not `private`: ``NativeBridgeTests`` reads and
     /// restores the developer's real clipboard around its round-trip test
     /// through this, rather than through Ruby, to avoid nil/empty-string
     /// ambiguity.
@@ -60,7 +60,7 @@ enum ClipboardCapability {
     }
 
     /// Sets the pasteboard's text content, or clears it entirely when `text`
-    /// is `nil`. The `nil` case only matters to test restoration -- the
+    /// is `nil`. The `nil` case only matters to test restoration: the
     /// registered `device.clipboard.set` handler always passes a real string.
     static func setText(_ text: String?) {
         guard let text else {

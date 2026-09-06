@@ -2,7 +2,7 @@ import Foundation
 
 /// One gem this resolution decided to install: the exact version chosen, and
 /// where to download it from. Order in a resolution's result array is
-/// dependency-discovery order (breadth-first), not install order -- it
+/// dependency-discovery order (breadth-first), not install order. It
 /// carries no contract, since `$LOAD_PATH` resolves `require` by name
 /// regardless of load order.
 ///
@@ -18,7 +18,7 @@ struct ResolvedGem: Sendable, Equatable {
 
     /// VoiceOver phrasing for one "Ready to Install" row, e.g. `"httparty,
     /// version 0.22.0"`. Lives here rather than on `GemListView`'s
-    /// `GemPlanSection` -- that's a `private struct`, and this composition
+    /// `GemPlanSection`: that's a `private struct`, and this composition
     /// needs to be testable without rendering a view. Deliberately doesn't
     /// include the requested/dependency tag: that's context only
     /// `GemPlanSection` has (its `requested` gem name), so the view appends
@@ -54,7 +54,7 @@ enum GemResolverError: Error, Sendable, Equatable {
 /// the same gem that can't both be satisfied, that's
 /// ``GemResolverError/conflictingRequirements(gem:first:second:)``, not a
 /// search for a version that works for both. Real backtracking resolution is
-/// Bundler's job -- naive is the right call for V1, since the failure mode
+/// Bundler's job. Naive is the right call for V1, since the failure mode
 /// is an honest error message, not a wrong install.
 struct GemResolver: Sendable {
     nonisolated let api: RubyGemsAPI
@@ -63,7 +63,7 @@ struct GemResolver: Sendable {
     /// runtime dependency it transitively needs. `installed` is a snapshot
     /// of what's already on disk (name -> version); a gem already installed
     /// at a version satisfying every constraint gathered so far is skipped
-    /// entirely -- neither downloaded again nor recursed into (its own
+    /// entirely: neither downloaded again nor recursed into (its own
     /// dependencies are assumed already satisfied from when it was
     /// installed).
     func resolve(

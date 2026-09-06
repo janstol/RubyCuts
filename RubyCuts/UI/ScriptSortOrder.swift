@@ -2,7 +2,7 @@ import Foundation
 
 /// How ``ScriptLibrary/scripts`` are ordered in the list. Persisted across
 /// launches (see ``ScriptLibrary/sortOrder``), so it's `String`-backed rather
-/// than an `Int` enum -- a raw value that survives a future case reorder.
+/// than an `Int` enum: a raw value that survives a future case reorder.
 enum ScriptSortOrder: String, CaseIterable, Identifiable {
     /// Alphabetical by display name. The default, and ``ScriptStore/list()``'s
     /// own sort, so this order needs no re-sorting on top of what the store

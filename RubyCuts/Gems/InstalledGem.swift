@@ -1,11 +1,11 @@
 import Foundation
 
-/// A gem installed into the app's sandbox -- a thin wrapper around its
+/// A gem installed into the app's sandbox, a thin wrapper around its
 /// install directory, with no cached metadata, mirroring ``Script``'s
 /// "thin wrapper, no cached state" shape.
 ///
 /// The directory name is `<name>-<version>` (matching RubyGems' own
-/// convention), which is also where ``name``/``version`` are read from --
+/// convention), which is also where ``name``/``version`` are read from:
 /// there's no separate metadata file to go stale.
 ///
 /// Opted out of the app target's MainActor-by-default isolation, matching
@@ -26,7 +26,7 @@ struct InstalledGem: Identifiable, Hashable, Sendable {
     nonisolated var version: String { Self.split(directoryURL.lastPathComponent).version }
 
     /// The directory `$LOAD_PATH` should point at. Every gem's payload puts
-    /// its requireable files under `lib/` -- RubyGems' own convention, and
+    /// its requireable files under `lib/`, RubyGems' own convention, and
     /// what ``GemArchive`` extracts verbatim.
     nonisolated var libURL: URL { directoryURL.appending(component: "lib") }
 
@@ -40,7 +40,7 @@ struct InstalledGem: Identifiable, Hashable, Sendable {
 
     /// Splits `<name>-<version>` on its last `-`. RubyGems versions only
     /// ever contain digits and dots, never `-`, so the last `-` is always
-    /// the name/version boundary -- even for a hyphenated gem name like
+    /// the name/version boundary, even for a hyphenated gem name like
     /// `mini-portile2`.
     nonisolated private static func split(_ dirName: String) -> (name: String, version: String) {
         guard let lastDash = dirName.lastIndex(of: "-") else {

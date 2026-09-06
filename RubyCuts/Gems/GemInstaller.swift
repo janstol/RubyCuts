@@ -4,12 +4,12 @@ import Foundation
 /// An error raised while installing a gem through ``GemInstaller``.
 enum GemInstallerError: Error, Sendable {
     /// The downloaded bytes' SHA-256 didn't match what rubygems.org reported
-    /// for this version -- refuse to extract a payload that doesn't match
+    /// for this version. Refuse to extract a payload that doesn't match
     /// its own advertised checksum.
     case checksumMismatch(gem: String)
 
     /// The gem (or a dependency) contains a C extension, discovered only
-    /// after downloading and extracting -- the v2 API doesn't reliably
+    /// after downloading and extracting: the v2 API doesn't reliably
     /// expose `extensions`, so this can't be caught during resolution.
     case cExtension(gem: String, detail: String)
 
@@ -18,7 +18,7 @@ enum GemInstallerError: Error, Sendable {
     case archiveRejected(gem: String, detail: String)
 
     /// The gem requested at the top level is already baked into the app
-    /// (see ``BundledGem``) -- installing it would be a silent no-op at
+    /// (see ``BundledGem``): installing it would be a silent no-op at
     /// best, so this is raised instead of quietly resolving to nothing. A
     /// gem depended on *transitively* isn't affected: ``GemResolver``
     /// already treats it as satisfied via the seed in
@@ -65,7 +65,7 @@ enum GemInstallPhase: Equatable, Sendable {
 
 /// Orchestrates a gem install end to end: resolve dependencies, download and
 /// verify each `.gem`, extract it, move it into ``GemStore``, and append its
-/// `lib/` directory to `$LOAD_PATH` immediately -- so the gem is requireable
+/// `lib/` directory to `$LOAD_PATH` immediately, so the gem is requireable
 /// without an app restart. (``RubyRuntime/bootIfNeeded()`` does the same
 /// append at boot for gems installed in a previous run.)
 ///
@@ -89,7 +89,7 @@ struct GemInstaller {
     }
 
     /// Resolves `name` (optionally pinned by `requirement`, e.g. `"~> 1.0"`)
-    /// into the exact set of gems an install would download -- `name` itself
+    /// into the exact set of gems an install would download: `name` itself
     /// plus every runtime dependency it needs that isn't already installed.
     /// Nothing is downloaded or written to disk; this is the preview half of
     /// the two-step install flow, letting the caller show the plan before
@@ -112,7 +112,7 @@ struct GemInstaller {
     /// order, reporting each phase to `onPhase` as it begins. Returns the
     /// gems this call actually installed.
     ///
-    /// `onPhase` is called synchronously on the main actor -- `GemInstaller`
+    /// `onPhase` is called synchronously on the main actor: `GemInstaller`
     /// is `@MainActor`, so no `@Sendable` or actor hop is needed here.
     func install(
         plan: [ResolvedGem], onPhase: (GemInstallPhase) -> Void

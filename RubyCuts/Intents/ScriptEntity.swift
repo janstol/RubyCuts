@@ -3,7 +3,7 @@ import Foundation
 
 /// The Shortcuts-picker surface for a stored ``Script``: an ``AppEntity`` whose
 /// value is one row from ``ScriptStore/list()``. This is what the "Run Ruby
-/// Script" intent's `@Parameter` presents -- a typed, selectable script rather
+/// Script" intent's `@Parameter` presents: a typed, selectable script rather
 /// than a free-text filename.
 ///
 /// **Identity:** the App Intents framework only accepts `String`, `UUID`,
@@ -13,14 +13,14 @@ import Foundation
 /// (and thus to a ``Script``) through ``script``. That is stable enough for V1:
 /// the file URL doesn't move unless the script is renamed/moved on disk, in
 /// which case a stored Shortcut referencing it will fail at run time with a
-/// clear "script not found" -- acceptable, and noted in the PRD.
+/// clear "script not found", acceptable, and noted in the PRD.
 ///
 /// **Isolation:** a plain `Sendable` value type (two `String`s). The
 /// ``Script``/``ScriptStore`` it wraps are `nonisolated` (they opt out of the
 /// app target's MainActor-default), and ``ScriptQuery`` calls them from a
 /// `Sendable` `EntityQuery`, so no actor coupling here.
 struct ScriptEntity: AppEntity {
-    /// The script file URL's absolute string -- the stable id App Intents
+    /// The script file URL's absolute string: the stable id App Intents
     /// persists in a stored Shortcut. See the class doc on why this is a
     /// `String` and not a `URL`.
     let id: String
@@ -50,7 +50,7 @@ struct ScriptEntity: AppEntity {
 /// ``ScriptStore/userScripts`` (the app's Documents directory today, the iCloud
 /// swap point later) and resolves ids back to entities.
 ///
-/// `Sendable` (an `EntityQuery` requirement): it holds no state -- every call
+/// `Sendable` (an `EntityQuery` requirement): it holds no state. Every call
 /// re-lists the directory, so there's nothing to guard. ``ScriptStore/list()``
 /// is `nonisolated` and fast for small dirs, so these async entry points just
 /// bridge to it.
@@ -73,7 +73,7 @@ struct ScriptQuery: EntityQuery {
 }
 
 extension ScriptEntity {
-    /// Convenience to build an entity straight from a ``Script`` -- the shape
+    /// Convenience to build an entity straight from a ``Script``: the shape
     /// the query and tests use, kept here so callers don't repeat the
     /// `absoluteString`/`name` pair.
     init(_ script: Script) {

@@ -1,13 +1,13 @@
 import SwiftUI
 
 /// The in-app answer to "what is RubyCuts for" and "how do I wire this into a
-/// Shortcut" -- PRD 3.6's in-app documentation of the ARGV/STDIN/ENV contract
+/// Shortcut": PRD 3.6's in-app documentation of the ARGV/STDIN/ENV contract
 /// and the native bridge, and PRD 6's success metric that a new user reaches
 /// a working Shortcut without leaving the app.
 ///
 /// Content-only, matching ``GemListView``: a `List` of `Section`s and a
 /// `.navigationTitle`, no navigation chrome or sizing frame of its own. The
-/// host supplies those -- a sheet from ``ScriptListView`` on iOS/iPadOS, a
+/// host supplies those: a sheet from ``ScriptListView`` on iOS/iPadOS, a
 /// dedicated `Window` scene reached from the Help menu on macOS.
 struct ReferenceView: View {
     var body: some View {
@@ -51,7 +51,7 @@ struct ReferenceView: View {
             ReferenceRow(
                 code: "ENV[\"KEY\"]",
                 explanation:
-                    "Reads one line of the Shortcuts \"Environment\" field, formatted KEY=value -- one pair per line."
+                    "Reads one line of the Shortcuts \"Environment\" field, formatted KEY=value, one pair per line."
             )
         }
     }
@@ -85,7 +85,7 @@ struct ReferenceView: View {
                 explanation: "Sets the system pasteboard's text."
             )
             Text(
-                "On iOS, reading the pasteboard shows the system paste banner -- that's Apple's privacy gate, not something RubyCuts can suppress."
+                "On iOS, reading the pasteboard shows the system paste banner. That's Apple's privacy gate, not something RubyCuts can suppress."
             )
             .foregroundStyle(.secondary)
         }
@@ -98,7 +98,7 @@ struct ReferenceView: View {
                 explanation: "Posts a local notification."
             )
             Text(
-                "The first call after installing the app raises while the system shows its permission prompt in the background. Allow it, then call notify again -- the second call succeeds."
+                "The first call after installing the app raises while the system shows its permission prompt in the background. Allow it, then call notify again: the second call succeeds."
             )
             .foregroundStyle(.secondary)
         }
@@ -108,14 +108,14 @@ struct ReferenceView: View {
         Section("Ruby Environment") {
             ReferenceRow(
                 code: "RUBY_VERSION",
-                explanation: "CRuby 3.4.9, embedded directly -- no system Ruby involved."
+                explanation: "CRuby 3.4.9, embedded directly, no system Ruby involved."
             )
             Text("Stdlib is bundled, including json, csv, net/http, and openssl.")
                 .foregroundStyle(.secondary)
             Text("sqlite3 is bundled as a C extension.")
                 .foregroundStyle(.secondary)
             Text(
-                "Pure-Ruby gems can be installed from Settings. Gems with a C extension can't be loaded -- the App Store's W^X rules block dlopen-ing anything downloaded at runtime."
+                "Pure-Ruby gems can be installed from Settings. Gems with a C extension can't be loaded: the App Store's W^X rules block dlopen-ing anything downloaded at runtime."
             )
             .foregroundStyle(.secondary)
         }

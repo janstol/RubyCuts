@@ -4,7 +4,7 @@ import Testing
 @testable import RubyCuts
 
 // Tests for the installed-gem store, mirroring `ScriptStoreTests`. Each test
-// builds its own store on a unique temp directory and defers its removal --
+// builds its own store on a unique temp directory and defers its removal:
 // isolated, safe to run concurrently, no `.serialized` needed.
 struct GemStoreTests {
 

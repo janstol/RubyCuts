@@ -15,7 +15,7 @@ private final class FixtureBundleMarker {}
 // `gzip(_:)` helper below), so this suite joins the same `.serialized`
 // contract `RubyRuntimeTests` documents: the embedded VM is a single
 // non-thread-safe interpreter. Nested under ``EmbeddedRubyTests`` so
-// `.serialized` covers `RubyRuntimeTests` and `NativeBridgeTests` too -- see
+// `.serialized` covers `RubyRuntimeTests` and `NativeBridgeTests` too; see
 // that type's doc comment.
 extension EmbeddedRubyTests {
     @MainActor
@@ -125,7 +125,7 @@ extension EmbeddedRubyTests {
 
         /// Builds a `.gem` (an outer, uncompressed tar containing one
         /// `data.tar.gz` entry) whose inner tar holds exactly `innerEntries`,
-        /// hand-built to exercise ``GemArchive``'s safety rules -- no real
+        /// hand-built to exercise ``GemArchive``'s safety rules: no real
         /// `gem build` can produce a path-escaping or symlinked entry, since
         /// RubyGems itself won't let you.
         private static func makeMaliciousGem(
@@ -200,7 +200,7 @@ extension EmbeddedRubyTests {
             return header + body
         }
 
-        /// Gzips `data` through the embedded Ruby VM's `Zlib::GzipWriter` --
+        /// Gzips `data` through the embedded Ruby VM's `Zlib::GzipWriter`:
         /// `Init_zlib` is statically linked (see ``GemArchive``'s doc comment),
         /// so this is the same primitive real gem downloads decompress with, not
         /// a Swift-side approximation.

@@ -2,13 +2,13 @@ import SwiftUI
 
 /// Edits one script's source and runs it. Takes the ``Script`` and the
 /// ``ScriptStore`` it lives in (the list view and the preview use the same
-/// path), loads source on demand, and saves back on demand -- mirroring Phase
+/// path), loads source on demand, and saves back on demand, mirroring Phase
 /// 2's "source stays on disk, read when needed" design.
 ///
 /// Running is wired straight into ``RubyRuntime/shared`` via a Run toolbar
 /// button, which becomes a Stop button for the run's duration: the result
 /// populates ``runResult`` and renders in a ``ConsoleOutputView`` panel below
-/// the editor. There's no separate console view model -- a passthrough to a
+/// the editor. There's no separate console view model: a passthrough to a
 /// singleton would be ceremony, and the console has no state worth observing
 /// beyond the last result (yet; live streaming + history would justify
 /// extracting one).
@@ -21,19 +21,19 @@ import SwiftUI
 /// which stays as the discoverable affordance and the macOS convention.
 /// ``isDirty`` drives an "Edited" marker next to the title so the state is
 /// visible before either trigger fires. An autosave failure can't use the
-/// local error alert -- the view may already be leaving -- so it's reported
+/// local error alert, since the view may already be leaving, so it's reported
 /// through ``onSaveError`` instead, which the list view wires to
 /// ``ScriptLibrary/errorMessage``; an explicit-save failure still uses the
 /// local alert, since the editor is guaranteed visible when that happens.
 ///
 /// The editor holds its own error state (not the list VM's) because an error
-/// here is local to the detail surface, not list state -- ``onSaveError`` is
+/// here is local to the detail surface, not list state. ``onSaveError`` is
 /// a narrow, one-directional exception to that for the autosave case above,
 /// not a reference to the list VM itself. Renaming is also reachable here on
 /// iOS/iPadOS, through the editable navigation title, in addition to the
 /// list row's context menu. macOS doesn't get a title-based rename
-/// affordance -- confirmed live that neither a plain editable title binding
-/// nor `.navigationDocument` unlocks one outside a `DocumentGroup` app -- so
+/// affordance. Confirmed live that neither a plain editable title binding
+/// nor `.navigationDocument` unlocks one outside a `DocumentGroup` app, so
 /// there the context menu (a sheet, not an alert; see
 /// `ScriptListView.RenameSheet`) is the only rename path.
 struct ScriptEditorView: View {
@@ -53,8 +53,8 @@ struct ScriptEditorView: View {
     var onSaved: () -> Void = {}
 
     /// Called when the user commits a new name in the editable title
-    /// (iOS/iPadOS only -- see the type doc comment). Returns the renamed
-    /// ``Script`` on success and `nil` on failure -- the list view owns the
+    /// (iOS/iPadOS only; see the type doc comment). Returns the renamed
+    /// ``Script`` on success and `nil` on failure: the list view owns the
     /// store mutation and surfaces the error, and `nil` tells the editor to
     /// revert the title text. Defaults to a no-op that always fails, so
     /// previews and tests that don't wire it simply can't rename.
@@ -89,7 +89,7 @@ struct ScriptEditorView: View {
 
     /// The console panel's height, dragged via ``ConsoleResizeHandle``.
     /// `@AppStorage`, not the injected-`UserDefaults` seam ``ScriptLibrary``
-    /// uses elsewhere -- this is per-view chrome with no test surface and no
+    /// uses elsewhere. This is per-view chrome with no test surface and no
     /// view model to hang it on, so threading a `UserDefaults` down here
     /// would be abstraction the case doesn't need.
     @AppStorage("consoleHeight") private var consoleHeight: Double = 220
@@ -97,7 +97,7 @@ struct ScriptEditorView: View {
     /// The minimum height the console panel can shrink to, and the minimum
     /// height reserved for the editor above it, before the resize handle's
     /// own space is subtracted from `available`. `@ScaledMetric` rather than
-    /// a plain constant, so both grow with Dynamic Type -- at AX5, the
+    /// a plain constant, so both grow with Dynamic Type. At AX5, the
     /// console header alone exceeds a fixed 100pt, and a fixed minimum would
     /// leave the body scroll view no room at all.
     @ScaledMetric(relativeTo: .body) private var minConsoleHeight: Double = 100
@@ -159,8 +159,8 @@ struct ScriptEditorView: View {
     /// The editor's on-screen content: the text view, the console panel
     /// when a run has produced output, and the navigation title. Split out
     /// of ``body`` so the type-checker isn't asked to solve this together
-    /// with the toolbar and the rest of ``body``'s modifiers in one pass --
-    /// combined, that expression was slow enough to time out.
+    /// with the toolbar and the rest of ``body``'s modifiers in one pass.
+    /// Combined, that expression was slow enough to time out.
     private var editorContent: some View {
         GeometryReader { proxy in
             VStack(spacing: 0) {
@@ -186,7 +186,7 @@ struct ScriptEditorView: View {
         }
         #if os(macOS)
             // An editable `.navigationTitle` binding doesn't get a
-            // click-to-rename affordance here -- confirmed live, and
+            // click-to-rename affordance here. Confirmed live, and
             // `.navigationDocument` doesn't unlock it either. Apple's docs
             // scope `.navigationDocument` to document-based (`DocumentGroup`)
             // apps; RubyCuts is a plain `WindowGroup`, and making it one
@@ -205,7 +205,7 @@ struct ScriptEditorView: View {
         #endif
     }
 
-    /// The resize handle's own laid-out height -- see
+    /// The resize handle's own laid-out height. See
     /// ``ConsoleResizeHandle``'s doc comment for why that stays a fixed 8pt
     /// on every platform even though its *hit target* grows on iOS/iPadOS.
     private static let resizeHandleHeight: Double = 8
@@ -213,7 +213,7 @@ struct ScriptEditorView: View {
     /// The range ``ConsoleResizeHandle`` may drag ``consoleHeight`` within,
     /// given `available` (the editor content's total height from
     /// `GeometryReader`). Extracted into its own typed function rather than
-    /// inlined in the view body -- this view has documented type-checker
+    /// inlined in the view body. This view has documented type-checker
     /// fragility (see ``toolbarButtons``'s doc comment), so new conditional
     /// or arithmetic expressions get pulled out, not inlined.
     private func consoleHeightBounds(in available: CGFloat) -> ClosedRange<Double> {
@@ -228,7 +228,7 @@ struct ScriptEditorView: View {
     /// `available`. Reading `consoleHeight` back through the clamp (rather
     /// than trusting the stored value directly) is what keeps a height
     /// dragged tall on a big window from squeezing the editor to nothing
-    /// after the window -- or the whole app, on a small iPhone -- shrinks.
+    /// after the window, or the whole app on a small iPhone, shrinks.
     private func clampedConsoleHeight(in available: CGFloat) -> CGFloat {
         let bounds = consoleHeightBounds(in: available)
         return CGFloat(min(max(consoleHeight, bounds.lowerBound), bounds.upperBound))
@@ -237,7 +237,7 @@ struct ScriptEditorView: View {
     /// The `runScriptAction` published via `.focusedSceneValue` in ``body``.
     /// A computed property with an explicit type, rather than an inline
     /// ternary in the modifier chain, so the type-checker doesn't have to
-    /// solve it together with the rest of that chain -- see
+    /// solve it together with the rest of that chain. See
     /// ``toolbarButtons``'s doc comment for the same issue elsewhere in this
     /// view. Mirrors the Run button's `.disabled(!didLoad)`.
     private var runAction: (() -> Void)? {
@@ -262,7 +262,7 @@ struct ScriptEditorView: View {
         return { save() }
     }
 
-    /// The primary-action toolbar's contents. Extracted out of ``body`` --
+    /// The primary-action toolbar's contents. Extracted out of ``body``:
     /// inlined directly into `ToolbarItemGroup`'s `ViewBuilder`, the mix of
     /// `#if` and `if`/`else` branches alongside the individual buttons below
     /// was slow enough for the compiler to give up type-checking it.
@@ -302,7 +302,7 @@ struct ScriptEditorView: View {
         .tint(.orange)
         #if !os(macOS)
             // On macOS this shortcut is owned by the ⌘. menu item in
-            // `ScriptCommands` -- registering it here too would leave
+            // `ScriptCommands`; registering it here too would leave
             // AppKit two bindings for one key.
             .keyboardShortcut(".", modifiers: .command)
         #endif
@@ -340,7 +340,7 @@ struct ScriptEditorView: View {
     }
 
     /// Writes `source` to disk. `silent` distinguishes an autosave (the view
-    /// may be disappearing, so the local alert may never be seen -- report
+    /// may be disappearing, so the local alert may never be seen; report
     /// through ``onSaveError`` instead) from the explicit Save button (the
     /// editor is guaranteed visible, so the local alert works as before).
     /// Returns whether the save succeeded, so ``commitRename(to:)`` can tell
@@ -348,7 +348,7 @@ struct ScriptEditorView: View {
     ///
     /// A silent autosave first checks that `script.url` still exists.
     /// Renaming or deleting the open script from the list changes `selection`,
-    /// which tears this view down via `.id(selection)` -- but that happens
+    /// which tears this view down via `.id(selection)`. But that happens
     /// *after* the file's already moved or gone, so `.onDisappear`'s autosave
     /// would otherwise write to a stale path and resurrect a phantom copy of
     /// a script that was just renamed or deleted out from under it (confirmed
@@ -405,12 +405,12 @@ struct ScriptEditorView: View {
     /// Runs the current source through the embedded Ruby VM. `RubyRuntime`
     /// runs on its own dedicated thread now (see its doc comment), so
     /// `await`ing it here suspends this task rather than blocking the main
-    /// actor -- the window stays draggable, the list stays scrollable, and
+    /// actor. The window stays draggable, the list stays scrollable, and
     /// the spinner keeps animating for the whole run.
     ///
     /// Cancellable via the Stop button that replaces Run while `isRunning`:
     /// cancelling ``runTask`` trips ``RubyRuntime/runCancellable(_:input:)``'s
-    /// `onCancel` handler, which is what actually stops the VM -- this method
+    /// `onCancel` handler, which is what actually stops the VM; this method
     /// itself only starts and tracks the task. Per ``RubyRuntime``'s doc
     /// comment, that stop only lands at the next Ruby-level checkpoint, so a
     /// script blocked inside a single C call (`sleep`, a network read) keeps
@@ -430,7 +430,7 @@ struct ScriptEditorView: View {
 }
 
 /// Backing view for ``ScriptEditorView``'s `#Preview`. Extracted into its own
-/// type so the preview body stays a plain `ViewBuilder` -- the I/O setup (a
+/// type so the preview body stays a plain `ViewBuilder`. The I/O setup (a
 /// temp-dir store + a seeded script) is local file I/O, allowed in previews
 /// per the repo convention, but mixing `try?` and optionals into the preview
 /// closure overloads the typechecker.

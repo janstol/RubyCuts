@@ -3,11 +3,11 @@ import Testing
 @testable import RubyCuts
 
 // Compiles every seeded sample's source inside the real VM and expects no
-// `SyntaxError` -- catches a typo in shipped sample code without *executing*
+// `SyntaxError`, catching a typo in shipped sample code without *executing*
 // it, so this test causes no clipboard writes, no notifications, and no
 // network. Nested under `EmbeddedRubyTests` so `.serialized` covers the same
 // single non-thread-safe interpreter as `RubyRuntimeTests`,
-// `NativeBridgeTests`, and `GemArchiveTests` -- see that type's doc comment.
+// `NativeBridgeTests`, and `GemArchiveTests`; see that type's doc comment.
 extension EmbeddedRubyTests {
     @MainActor
     @Suite(.serialized)

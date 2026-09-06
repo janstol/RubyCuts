@@ -4,7 +4,7 @@ import Foundation
 /// Text-input options used at each text `@Parameter` below: multiline, with
 /// autocorrect / smart quotes / smart dashes / auto-capitalization all off.
 /// Shortcuts' defaults (smart quotes, sentence capitalization, autocorrect)
-/// would silently mangle Ruby source or piped data -- e.g. turning `'hi'` into
+/// would silently mangle Ruby source or piped data, e.g. turning `'hi'` into
 /// `'hi'` with curly quotes, which is a syntax error in Ruby. Inlined at each
 /// `@Parameter` (rather than shared via a `let`) because the App Intents
 /// metadata extractor parses each `@Parameter`'s arguments at compile time and
@@ -12,12 +12,12 @@ import Foundation
 
 /// The error surfaced in Shortcuts when a "Run ..." Ruby intent fails. Conforms
 /// to `CustomLocalizedStringResourceConvertible`, which is the protocol the App
-/// Intents failure UI actually reads -- the PRD 3.1 contract that a failed run
+/// Intents failure UI actually reads: the PRD 3.1 contract that a failed run
 /// reports *what Ruby said*, not "an error occurred" / the error's type name.
 ///
 /// `CustomStringConvertible` alone turned out not to be enough: Shortcuts
 /// rendered "The operation couldn't be completed. (RubyCuts.RubyRunError
-/// error 1.)" -- the generic `NSError` fallback -- because the failure sheet
+/// error 1.)", the generic `NSError` fallback, because the failure sheet
 /// looks up `localizedStringResource`, not `description`. Keeping
 /// `description` too, for non-Shortcuts contexts (logs, the test assertions,
 /// `po` in the debugger) where `CustomStringConvertible` is what's printed.
@@ -27,7 +27,7 @@ import Foundation
 /// `LocalizationValue` literal (a *key to look up*), but a `String` variable
 /// can't be one, so the string-interpolation form `"\(message)"` carries it
 /// through as a `%@` substitution whose resolved value is the message text
-/// itself -- no localization table involved.
+/// itself, no localization table involved.
 struct RubyRunError: Error, CustomLocalizedStringResourceConvertible, CustomStringConvertible {
     /// The Ruby-side message: the exception `to_s` (when the script raised)
     /// and/or the captured `$stderr` text, joined so the failure shows
@@ -46,7 +46,7 @@ struct RubyRunError: Error, CustomLocalizedStringResourceConvertible, CustomStri
 /// anything else (a raise *or* a populated `$stderr`) fails with a
 /// ``RubyRunError`` combining the message and stderr.
 ///
-/// Pure on purpose -- no VM, no I/O -- so the contract is unit-testable without
+/// Pure on purpose, no VM, no I/O, so the contract is unit-testable without
 /// booting CRuby. ``runToOutput(_:)`` is the only side-effectful caller; this
 /// function is the seam.
 ///
@@ -89,11 +89,11 @@ private func combinedMessage(_ result: RunResult) -> String {
 /// `input` carries the ARGV/STDIN/ENV a Shortcut forwarded in; it defaults to
 /// ``RunInput/empty`` so callers that don't pass input (the existing test paths)
 /// stay on the no-input run. The pure ``output(from:)`` contract is unchanged,
-/// so `IntentOutputTests` is unaffected -- this is the only side-effectful
+/// so `IntentOutputTests` is unaffected; this is the only side-effectful
 /// caller.
 ///
 /// `async` because ``RubyRuntime/shared`` runs on its own dedicated thread
-/// (see its doc comment), not whichever actor calls in -- both `perform()`
+/// (see its doc comment), not whichever actor calls in. Both `perform()`
 /// call sites already `await` here, so nothing about the Shortcuts contract
 /// changes.
 ///
@@ -103,7 +103,7 @@ private func combinedMessage(_ result: RunResult) -> String {
 /// the VM's cancellation hook. A cancelled run comes back from
 /// `runCancellable` as an ordinary ``RunResult`` with `wasCancelled` set and
 /// `errorMessage` populated, so it surfaces as a normal ``RubyRunError``
-/// through the existing ``output(from:)`` contract -- no change to that
+/// through the existing ``output(from:)`` contract: no change to that
 /// function, and `IntentOutputTests` is unaffected.
 func runToOutput(_ source: String, input: RunInput = .empty) async throws -> String {
     let result = await RubyRuntime.shared.runCancellable(source, input: input)
@@ -116,7 +116,7 @@ func runToOutput(_ source: String, input: RunInput = .empty) async throws -> Str
 /// Shortcuts failure UI.
 ///
 /// The three input parameters are all optional with empty defaults, so a simple
-/// `puts "hi"` isn't cluttered with required fields -- ARGV/STDIN/Environment
+/// `puts "hi"` isn't cluttered with required fields: ARGV/STDIN/Environment
 /// are filled only when the script reads input. ARGV is a Shortcuts List of
 /// strings (each becomes one `ARGV` element); STDIN is a string piped from a
 /// previous action (fed to `$stdin`); Environment is a `KEY=value`-per-line
@@ -158,7 +158,7 @@ struct RunInlineRubyIntent: AppIntent {
     var env: String
 
     // Code is declared last so Shortcuts renders the input fields above it and
-    // the (multiline) code editor below -- the script is the main payload, so it
+    // the (multiline) code editor below. The script is the main payload, so it
     // gets the large field under the smaller inputs.
     @Parameter(
         title: "Code",
@@ -194,7 +194,7 @@ struct RunInlineRubyIntent: AppIntent {
 /// The script is picked through ``ScriptEntity``'s picker, so the user selects
 /// a saved script by name rather than typing a path. A stored Shortcut holds the
 /// script's file-URL id; if that script has since been moved or deleted the
-/// read throws and the intent fails with "script not found" -- acceptable for
+/// read throws and the intent fails with "script not found", acceptable for
 /// V1 (noted in the PRD).
 struct RunRubyScriptIntent: AppIntent {
     @Parameter(

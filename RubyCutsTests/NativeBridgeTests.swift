@@ -9,7 +9,7 @@ import UserNotifications
 // `RubyRuntime.shared`. `NativeBridge.shared` is likewise a singleton, so
 // each test registers its own uniquely-named capability rather than reusing
 // one across tests. Nested under ``EmbeddedRubyTests`` so `.serialized`
-// covers `RubyRuntimeTests` and `GemArchiveTests` too -- see that type's
+// covers `RubyRuntimeTests` and `GemArchiveTests` too; see that type's
 // doc comment.
 extension EmbeddedRubyTests {
     @MainActor
@@ -21,7 +21,7 @@ extension EmbeddedRubyTests {
         @Test func roundTripsThroughARegisteredHandler() async throws {
             // Boots the VM (RubyCuts::Native/NativeError are defined at boot) and
             // proves a handler registered directly on the shared registry is
-            // reachable from Ruby -- the mechanism, independent of any built-in
+            // reachable from Ruby, the mechanism, independent of any built-in
             // capability.
             NativeBridge.shared.register("test.echo") { args in args.first }
             let result = try await RubyRuntime.shared.evaluate(
@@ -130,7 +130,7 @@ extension EmbeddedRubyTests {
         // MARK: - Device::Notification
 
         @Test func notifyRaisesWhenCachedAuthorizationIsDenied() async throws {
-            // Drives the guard purely off the cached status -- no real
+            // Drives the guard purely off the cached status: no real
             // authorization prompt or delivery, which needs a device.
             let previous = NotificationCapability.cachedAuthorizationStatus
             defer { NotificationCapability.cachedAuthorizationStatus = previous }
