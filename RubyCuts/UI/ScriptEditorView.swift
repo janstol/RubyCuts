@@ -60,6 +60,13 @@ struct ScriptEditorView: View {
     /// previews and tests that don't wire it simply can't rename.
     var onRename: (String) -> Script? = { _ in nil }
 
+    /// Installs this editor's pending-save hook with the owner, or removes it
+    /// when passed `nil`. The sidebar's rename needs a way to flush the
+    /// buffer that lives here as `@State` and is otherwise unreachable from
+    /// the list. Defaults to a no-op so previews and tests that don't wire
+    /// it are unaffected.
+    var onFlushHookChange: ((() -> Bool)?) -> Void = { _ in }
+
     @State private var source: String = ""
 
     /// The name shown in the editable navigation title on iOS/iPadOS. Seeded
@@ -134,8 +141,16 @@ struct ScriptEditorView: View {
                     showError = true
                 }
                 didLoad = true
+                // Registered only after the load completes: handing out a
+                // hook over an empty `source` would let a rename that lands
+                // mid-load flush nothing and overwrite the real file.
+                onFlushHookChange(flushForRename)
             }
             .onDisappear {
+                // Deregister before the autosave below: once this view is
+                // going away, the library must stop reaching for a hook
+                // whose `save()` is about to run its own last time anyway.
+                onFlushHookChange(nil)
                 if isDirty {
                     save(silent: true)
                 }
@@ -343,8 +358,9 @@ struct ScriptEditorView: View {
     /// may be disappearing, so the local alert may never be seen; report
     /// through ``onSaveError`` instead) from the explicit Save button (the
     /// editor is guaranteed visible, so the local alert works as before).
-    /// Returns whether the save succeeded, so ``commitRename(to:)`` can tell
-    /// whether it's safe to move the file out from under the old URL.
+    /// Returns whether the save succeeded, so ``flushForRename()`` can tell
+    /// the library whether it's safe to move the file out from under the
+    /// old URL.
     ///
     /// A silent autosave first checks that `script.url` still exists.
     /// Renaming or deleting the open script from the list changes `selection`,
@@ -380,22 +396,41 @@ struct ScriptEditorView: View {
         }
     }
 
-    /// Commits an edit to ``editableName`` as a rename. Order matters here:
-    /// a rename moves the file out from under `script.url`, so unsaved
-    /// source has to reach the *old* URL first, before ``onRename`` moves it.
+    /// Writes any unsaved source to disk so a rename started elsewhere (the
+    /// sidebar's context menu) moves the edits along with the file. `true`
+    /// when it is safe to move.
+    ///
+    /// Silent, so a failure reports through ``onSaveError`` and the list's
+    /// single alert, rather than racing a second alert from this view while
+    /// the rename sheet dismisses.
+    ///
+    /// Captures `self` once, at registration time in ``body``'s `.task`.
+    /// That's safe for everything `save()` touches: `source`, `savedSource`,
+    /// and the other properties it reads/writes are all `@State` or `let`,
+    /// and a `@State` read goes through a box keyed by this view's identity:
+    /// `.id(selection)` in `ScriptListView` makes that identity
+    /// per-script, so the closure keeps reaching the right instance's state
+    /// even though the `View` value itself is long gone by the time the
+    /// hook runs. It would *not* be safe if this ever read `@Environment` or
+    /// `@ScaledMetric`: those are resolved from the environment at the point
+    /// of use, not stored in the per-identity box, so a captured read of
+    /// either would freeze at the environment in effect when the hook was
+    /// registered.
+    private func flushForRename() -> Bool {
+        guard isDirty else { return true }
+        return save(silent: true)
+    }
+
+    /// Commits an edit to ``editableName`` as a rename. The pending-save
+    /// hook registered with ``ScriptLibrary`` (see ``flushForRename()``)
+    /// covers flushing unsaved source to the *old* URL before ``onRename``
+    /// moves it, the same as it does for the sidebar's rename, so this has
+    /// only the name to validate and the revert-on-failure to handle.
     private func commitRename(to newValue: String) {
         let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed != script.name else {
             editableName = script.name
             return
-        }
-        if isDirty {
-            guard save() else {
-                // Renaming on top of a failed save would strand the edits
-                // under a URL nothing points at anymore.
-                editableName = script.name
-                return
-            }
         }
         if onRename(trimmed) == nil {
             editableName = script.name

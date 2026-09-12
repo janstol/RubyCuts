@@ -181,6 +181,13 @@ struct ScriptListView: View {
                         }
                         selection = renamed
                         return renamed
+                    },
+                    onFlushHookChange: { hook in
+                        if let hook {
+                            library.registerEditorSave(for: script, hook)
+                        } else {
+                            library.unregisterEditorSave(for: script)
+                        }
                     }
                 )
                 .id(selection)

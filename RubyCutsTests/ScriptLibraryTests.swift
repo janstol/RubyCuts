@@ -127,6 +127,93 @@ struct ScriptLibraryTests {
         #expect(library.scripts.first?.name == "before")
     }
 
+    // MARK: - Editor save hook
+
+    @Test func renameFlushesTheRegisteredEditorHookBeforeMoving() throws {
+        let store = try makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directoryURL) }
+
+        let library = ScriptLibrary(store: store)
+        let script = try #require(library.create(name: "before"))
+        library.registerEditorSave(for: script) {
+            try? store.write(script, source: "flushed content")
+            return true
+        }
+
+        let renamed = try #require(library.rename(script, to: "after"))
+
+        // The flush wrote to the *old* URL before the move, so its content
+        // has to have travelled along with the file to the new one.
+        let contents = try String(contentsOf: renamed.url, encoding: .utf8)
+        #expect(contents == "flushed content")
+    }
+
+    @Test func renameAbortsWhenTheHookFlushFails() throws {
+        let store = try makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directoryURL) }
+
+        let library = ScriptLibrary(store: store)
+        let script = try #require(library.create(name: "before"))
+        library.registerEditorSave(for: script) {
+            // Mirrors how a real editor's silent save reports failure: it
+            // sets `errorMessage` itself through `onSaveError`, before
+            // `rename` sees the `false` return.
+            library.errorMessage = "flush failed"
+            return false
+        }
+
+        let renamed = library.rename(script, to: "after")
+
+        #expect(renamed == nil)
+        // The flush's own message must survive, not be cleared by `rename`.
+        #expect(library.errorMessage == "flush failed")
+        // Nothing moved: the original file is still there and no file
+        // exists under the new name.
+        #expect(FileManager.default.fileExists(atPath: script.url.path))
+        let newURL = store.directoryURL.appending(component: "after.rb")
+        #expect(!FileManager.default.fileExists(atPath: newURL.path))
+    }
+
+    @Test func renameIgnoresAHookRegisteredForADifferentScript() throws {
+        let store = try makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directoryURL) }
+
+        let library = ScriptLibrary(store: store)
+        let target = try #require(library.create(name: "before"))
+        let other = try #require(library.create(name: "other"))
+        var flushCalled = false
+        library.registerEditorSave(for: other) {
+            flushCalled = true
+            return false
+        }
+
+        let renamed = library.rename(target, to: "after")
+
+        #expect(renamed?.name == "after")
+        #expect(!flushCalled)
+    }
+
+    @Test func unregisterWithAMismatchedScriptLeavesTheRegistrationIntact() throws {
+        let store = try makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directoryURL) }
+
+        let library = ScriptLibrary(store: store)
+        let target = try #require(library.create(name: "before"))
+        let other = try #require(library.create(name: "other"))
+        var flushCalled = false
+        library.registerEditorSave(for: target) {
+            flushCalled = true
+            return true
+        }
+
+        // The `.id(selection)` teardown-ordering case: a stale deregistration
+        // for a different script must not clear this one's hook.
+        library.unregisterEditorSave(for: other)
+        _ = library.rename(target, to: "after")
+
+        #expect(flushCalled)
+    }
+
     @Test func createWithEmptyNameSetsErrorAndReturnsNil() throws {
         let store = try makeStore()
         defer { try? FileManager.default.removeItem(at: store.directoryURL) }

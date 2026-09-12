@@ -20,11 +20,30 @@ import Observation
 /// ``errorMessage`` (shown in an alert by the list view). After each mutation the
 /// VM re-`list`s to stay consistent with disk, simpler than threading `throws`
 /// through SwiftUI, and enough for the walking skeleton.
+/// A hook the open editor installs so the library can flush its unsaved
+/// buffer to disk before a rename moves the file out from under it.
+///
+/// `script` identifies which editor the hook belongs to. Under
+/// `.id(selection)` SwiftUI can build the replacement editor before tearing
+/// the old one down, so deregistration is identity-checked and a stale
+/// teardown can't clear a registration that isn't its own.
+///
+/// `flush` returns whether it is safe to move the file: `false` means the
+/// buffer is still unsaved and the rename must not proceed.
+struct EditorSaveHook {
+    let script: Script
+    let flush: () -> Bool
+}
+
 @Observable
 final class ScriptLibrary {
     /// The scripts currently on disk, sorted by name. Refreshed after every
     /// mutation so this stays in sync with the filesystem.
     private(set) var scripts: [Script] = []
+
+    /// The open editor's pending-save hook, if one is registered. See
+    /// ``EditorSaveHook``'s doc comment.
+    private(set) var editorSaveHook: EditorSaveHook?
 
     /// A message describing the last failure, shown in an alert. Cleared at the
     /// start of the next operation so a transient error doesn't linger.
@@ -110,11 +129,32 @@ final class ScriptLibrary {
         return script
     }
 
+    /// Installs `flush` as the pending-save hook for `script`, so a rename
+    /// started elsewhere (the sidebar's context menu) can flush that
+    /// editor's unsaved buffer before ``rename(_:to:)`` moves the file.
+    func registerEditorSave(for script: Script, _ flush: @escaping () -> Bool) {
+        editorSaveHook = EditorSaveHook(script: script, flush: flush)
+    }
+
+    /// Removes the pending-save hook for `script`, if that's still the one
+    /// registered. Identity-checked rather than an unconditional clear: see
+    /// ``EditorSaveHook``'s doc comment on why a stale teardown must not be
+    /// able to clear a newer registration.
+    func unregisterEditorSave(for script: Script) {
+        guard editorSaveHook?.script == script else { return }
+        editorSaveHook = nil
+    }
+
     /// Renames the script and returns the ``Script`` at its new URL. On
     /// failure, sets ``errorMessage`` and returns `nil`; ``scripts`` is left
     /// consistent by re-`list`ing. Mirrors ``create(name:)`` exactly.
     func rename(_ script: Script, to newName: String) -> Script? {
         errorMessage = nil
+        if let hook = editorSaveHook, hook.script == script, !hook.flush() {
+            // The flush already reported why, through the editor's
+            // `onSaveError`.
+            return nil
+        }
         let renamed: Script
         do {
             renamed = try store.rename(script, to: newName)
