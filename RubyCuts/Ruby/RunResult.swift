@@ -11,7 +11,7 @@ import Foundation
 /// `backtrace` is empty on a clean run, and also on a non-exception
 /// control-flow failure (a top-level `return`/`break`/`throw`), since
 /// neither has an exception object to read frames from.
-struct RunResult: Sendable {
+nonisolated struct RunResult: Sendable {
     /// Everything the script wrote to `$stdout` (`puts`, `print`, `$>.write`).
     var stdout: String
 

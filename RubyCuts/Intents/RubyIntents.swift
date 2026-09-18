@@ -55,7 +55,7 @@ struct RubyRunError: Error, CustomLocalizedStringResourceConvertible, CustomStri
 /// only `warn`s or writes `$stderr` but doesn't raise still fails the intent,
 /// because downstream Shortcut actions shouldn't consume a stream the script
 /// itself flagged as an error.
-func output(from result: RunResult) -> Result<String, RubyRunError> {
+nonisolated func output(from result: RunResult) -> Result<String, RubyRunError> {
     if !result.stderr.isEmpty || result.hasError {
         return .failure(RubyRunError(message: combinedMessage(result)))
     }
@@ -67,7 +67,7 @@ func output(from result: RunResult) -> Result<String, RubyRunError> {
 /// padded with blank lines. Order is error message first (the headline), then
 /// the backtrace (the frames that raise came from), then stderr (the context
 /// around it).
-private func combinedMessage(_ result: RunResult) -> String {
+nonisolated private func combinedMessage(_ result: RunResult) -> String {
     var parts: [String] = []
     if let message = result.errorMessage, !message.isEmpty {
         parts.append(message)
