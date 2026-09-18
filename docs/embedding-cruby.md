@@ -40,7 +40,7 @@ The Xcode project does **not** run this script as part of a normal build. Buildi
 ## Why the flags are what they are
 
 ```
-MACOSX_DEPLOYMENT_TARGET=15.0 \
+MACOSX_DEPLOYMENT_TARGET=26.0 \
 CFLAGS="-pipe -Os -fvisibility=hidden" \
 ./configure --prefix=<install> \
   --disable-shared --disable-dln --disable-install-doc \
@@ -61,16 +61,16 @@ CFLAGS="-pipe -Os -fvisibility=hidden" \
 The macOS arm64 target builds natively (no `--host` cross-compile flag), since the build machine's own architecture already matches: Apple Silicon Xcode running on Apple Silicon macOS. The two iOS targets are real cross-compiles and need more:
 
 ```
-IPHONEOS_DEPLOYMENT_TARGET=18.0 \
-CFLAGS="-pipe -Os -fvisibility=hidden -target arm64-apple-ios18.0 -isysroot <iphoneos SDK path> -I<stub-include>" \
-LDFLAGS="-target arm64-apple-ios18.0 -isysroot <iphoneos SDK path>" \
+IPHONEOS_DEPLOYMENT_TARGET=26.0 \
+CFLAGS="-pipe -Os -fvisibility=hidden -target arm64-apple-ios26.0 -isysroot <iphoneos SDK path> -I<stub-include>" \
+LDFLAGS="-target arm64-apple-ios26.0 -isysroot <iphoneos SDK path>" \
 ac_cv_func_backtrace=no ac_cv_func_system=no ac_cv_func_syscall=no ac_cv_func___syscall=no \
 ac_cv_func_getentropy=no ac_cv_func_dup3=no ac_cv_func_pipe2=no \
 ./configure --prefix=<install> --host=aarch64-apple-darwin --with-baseruby=<host ruby> \
   ...same flags as macOS above...
 ```
 
-(the simulator row is identical but for `-target arm64-apple-ios18.0-simulator`, the `iphonesimulator` SDK path, and a different install destination)
+(the simulator row is identical but for `-target arm64-apple-ios26.0-simulator`, the `iphonesimulator` SDK path, and a different install destination)
 
 - `--host=aarch64-apple-darwin` tells autoconf this is a cross-compile, so it can't run test binaries and has to trust its probes (or the `ac_cv_func_*` overrides below) instead of executing them.
 - `-target <triple> -isysroot <sdk path>` on both `CFLAGS` and `LDFLAGS`. The compile step needs the target triple and iOS sysroot instead of the host's default; `LDFLAGS` carries the same because `configure`'s own link probes (`AC_CHECK_FUNC`-style checks that compile-and-link a tiny probe program) need to resolve against the iOS SDK too, not just the final `make` link.

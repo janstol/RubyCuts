@@ -8,12 +8,12 @@ It's inspired by [Rubyist](https://rubyist.app), but aims to be actively maintai
 
 Pre-alpha, but the core loop works: CRuby 3.4.9 runs embedded on iOS, iPadOS, and macOS, scripts are stored and edited in the app, and both Shortcuts actions ("Run Inline Ruby", "Run Ruby Script") wire `ARGV`/`STDIN`/`ENV` in and `STDOUT`/`STDERR` back out. There's a small native bridge (`Device::Clipboard`, `Device::Notification`), pure-Ruby gem installs from rubygems.org (plus a bundled `sqlite3`), and a first-launch set of sample scripts with an in-app reference.
 
-Not yet ready to ship: there's no app icon (a hard App Store blocker), iCloud sync is blocked on a paid Apple Developer account, and several UI/UX items (script row metadata, gem install feedback, an accessibility pass) are still open. Expect breaking changes.
+Not yet ready to ship: iCloud sync is blocked on a paid Apple Developer account, App Store submission (with guideline 2.5.2 on interpreted code in mind) hasn't been attempted, and a handful of correctness fixes from a code review are still open. Expect breaking changes.
 
 ## Requirements
 
-- Xcode 26
-- iOS 18+ / iPadOS 18+, or macOS 15+
+- Xcode 27
+- iOS 26+ / iPadOS 26+, or macOS 26+
 
 ## Building
 

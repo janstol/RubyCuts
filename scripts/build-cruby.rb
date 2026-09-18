@@ -97,7 +97,7 @@ CACERT_PEM_URL = "https://curl.se/ca/cacert.pem"
 CACERT_PEM_PATH = File.join(SRC_DIR, "cacert.pem")
 CACERT_SHA256 = "f66dff1bdf8f96060b8177976f8b7d9254bc89bc4db933d769f7384d28480bc9"
 
-IOS_DEPLOYMENT_TARGET = "18.0" # matches IPHONEOS_DEPLOYMENT_TARGET in the project
+IOS_DEPLOYMENT_TARGET = "26.0" # matches IPHONEOS_DEPLOYMENT_TARGET in the project
 
 # Functions the iOS SDK declares but doesn't let an app call. Autoconf finds them and Ruby then emits calls that fail App Store review or crash. From the xord/cruby recipe.
 IOS_AC_OVERRIDES = {
@@ -119,7 +119,7 @@ TARGETS = {
     lib_subdir: "macosx",
     include_subdir: "macosx",
     deployment_target_env: "MACOSX_DEPLOYMENT_TARGET",
-    deployment_target: "15.0",
+    deployment_target: "26.0",
     host: nil, # native build: the host toolchain already targets macOS arm64
     triple: nil,
   },
@@ -132,7 +132,7 @@ TARGETS = {
     deployment_target_env: "IPHONEOS_DEPLOYMENT_TARGET",
     deployment_target: IOS_DEPLOYMENT_TARGET,
     host: "aarch64-apple-darwin",
-    triple: "arm64-apple-ios18.0-simulator",
+    triple: "arm64-apple-ios26.0-simulator",
   },
   "iphoneos-arm64" => {
     enabled: true,
@@ -143,7 +143,7 @@ TARGETS = {
     deployment_target_env: "IPHONEOS_DEPLOYMENT_TARGET",
     deployment_target: IOS_DEPLOYMENT_TARGET,
     host: "aarch64-apple-darwin",
-    triple: "arm64-apple-ios18.0",
+    triple: "arm64-apple-ios26.0",
   },
 }.freeze
 

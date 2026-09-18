@@ -4,7 +4,7 @@ import Observation
 /// The view model backing the script list, the project's first view model, and
 /// the pattern Phase 3's editor/console VMs and Phase 5's intents should follow.
 ///
-/// `@Observable` (the current Swift idiom; the app targets iOS 18 / macOS 15, so
+/// `@Observable` (the current Swift idiom; the app targets iOS 26 / macOS 26, so
 /// it's available), not `ObservableObject`/`@Published`. MainActor isolation is
 /// implicit via the app target's `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, so
 /// no explicit `@MainActor` annotation: match the project default. Only the data

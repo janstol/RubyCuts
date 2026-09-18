@@ -24,8 +24,8 @@ extension FocusedValues {
 /// selected, a run in progress, etc.) the corresponding menu item disables
 /// itself for free.
 ///
-/// `@FocusedValue`/`@Entry` on `FocusedValues` needs Xcode 16 / macOS 15 /
-/// iOS 18, which the project already targets. If this ever misbehaves, the
+/// `@FocusedValue`/`@Entry` on `FocusedValues` needs macOS 15 / iOS 18, well
+/// below the project's macOS 26 / iOS 26 floor. If this ever misbehaves, the
 /// fallback is hand-written `FocusedValueKey` conformances: four lines
 /// each, with identical call sites.
 struct ScriptCommands: Commands {
