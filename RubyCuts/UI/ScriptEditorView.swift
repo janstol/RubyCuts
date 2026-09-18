@@ -204,6 +204,7 @@ struct ScriptEditorView: View {
                         .textInputAutocapitalization(.none)
                     #endif
                     .frame(maxHeight: .infinity)
+                    .background(editorAppearanceFix)
                     .accessibilityLabel("Script Source")
 
                 if let runResult {
@@ -235,6 +236,19 @@ struct ScriptEditorView: View {
             // `.navigationDocument`.
             .navigationTitle($editableName)
             .onChange(of: editableName) { _, newValue in commitRename(to: newValue) }
+        #endif
+    }
+
+    /// The macOS-only workaround for the attributed `TextEditor` pinning its
+    /// scroll view to the light appearance; see ``TextEditorAppearanceFix``.
+    /// Nothing on iOS. A typed property rather than an inline `#if` in the
+    /// modifier chain, per this view's type-checker history.
+    @ViewBuilder
+    private var editorAppearanceFix: some View {
+        #if os(macOS)
+            TextEditorAppearanceFix()
+        #else
+            EmptyView()
         #endif
     }
 
