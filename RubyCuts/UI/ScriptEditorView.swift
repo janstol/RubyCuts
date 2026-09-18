@@ -67,7 +67,16 @@ struct ScriptEditorView: View {
     /// it are unaffected.
     var onFlushHookChange: ((() -> Bool)?) -> Void = { _ in }
 
-    @State private var source: String = ""
+    /// The editor buffer. An `AttributedString` rather than a `String` so
+    /// ``RubySyntaxHighlighting`` can color it in place (attribute-only, the
+    /// characters are the script); everything that needs the plain source
+    /// reads ``sourceText``.
+    @State private var source = AttributedString()
+
+    /// The characters `source` held the last time it was highlighted. Lets
+    /// ``rehighlight()`` tell a real edit from its own attribute-only
+    /// re-coloring, which also fires `onChange`.
+    @State private var lastHighlightedText = ""
 
     /// The name shown in the editable navigation title on iOS/iPadOS. Seeded
     /// from `script.name` and committed through ``onRename`` when the user
@@ -114,7 +123,13 @@ struct ScriptEditorView: View {
     /// completes, so the "Edited" marker can't flash on briefly while the
     /// `.task` below is still populating `source`.
     private var isDirty: Bool {
-        didLoad && source != savedSource
+        didLoad && sourceText != savedSource
+    }
+
+    /// The plain characters of ``source``, without highlighting attributes:
+    /// what gets saved, run, and compared against ``savedSource``.
+    private var sourceText: String {
+        String(source.characters)
     }
 
     var body: some View {
@@ -134,8 +149,10 @@ struct ScriptEditorView: View {
                 // empty.
                 editableName = script.name
                 do {
-                    source = try store.source(of: script)
-                    savedSource = source
+                    let text = try store.source(of: script)
+                    source = RubySyntaxHighlighting.highlighted(text)
+                    savedSource = text
+                    lastHighlightedText = text
                 } catch {
                     errorMessage = error.localizedDescription
                     showError = true
@@ -164,6 +181,7 @@ struct ScriptEditorView: View {
                     save(silent: true)
                 }
             }
+            .onChange(of: source) { _, _ in rehighlight() }
             .alert("Error", isPresented: $showError) {
                 Button("OK", role: .cancel) {}
             } message: {
@@ -379,8 +397,9 @@ struct ScriptEditorView: View {
             return true
         }
         do {
-            try store.write(script, source: source)
-            savedSource = source
+            let text = sourceText
+            try store.write(script, source: text)
+            savedSource = text
             errorMessage = nil
             onSaved()
             return true
@@ -421,6 +440,19 @@ struct ScriptEditorView: View {
         return save(silent: true)
     }
 
+    /// Re-runs the highlighter after a text change. Attribute-only edits
+    /// (our own re-coloring) also fire `onChange`, so bail when the
+    /// characters are unchanged; that both stops the feedback loop and
+    /// avoids double work per keystroke. A full re-tokenize per keystroke is
+    /// O(n) and fast for script-sized inputs; no debounce until a manual
+    /// pass shows latency.
+    private func rehighlight() {
+        let text = sourceText
+        guard text != lastHighlightedText else { return }
+        lastHighlightedText = text
+        RubySyntaxHighlighting.apply(to: &source)
+    }
+
     /// Commits an edit to ``editableName`` as a rename. The pending-save
     /// hook registered with ``ScriptLibrary`` (see ``flushForRename()``)
     /// covers flushing unsaved source to the *old* URL before ``onRename``
@@ -453,7 +485,7 @@ struct ScriptEditorView: View {
     private func run() {
         isRunning = true
         runTask = Task {
-            runResult = await RubyRuntime.shared.runCancellable(source)
+            runResult = await RubyRuntime.shared.runCancellable(sourceText)
             isRunning = false
             runTask = nil
         }
