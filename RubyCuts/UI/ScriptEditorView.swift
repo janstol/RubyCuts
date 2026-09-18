@@ -134,11 +134,7 @@ struct ScriptEditorView: View {
 
     var body: some View {
         editorContent
-            .toolbar {
-                ToolbarItemGroup(placement: .primaryAction) {
-                    toolbarButtons
-                }
-            }
+            .toolbar { editorToolbar }
             .focusedSceneValue(\.runScriptAction, runAction)
             .focusedSceneValue(\.stopScriptAction, stopAction)
             .focusedSceneValue(\.saveScriptAction, saveAction)
@@ -203,6 +199,15 @@ struct ScriptEditorView: View {
                     #if os(iOS)
                         .textInputAutocapitalization(.none)
                     #endif
+                    // Breathing room between the code and the split divider
+                    // and the toolbar. Safe-area padding rather than plain
+                    // padding, so the scroll view itself still runs edge to
+                    // edge and the toolbar's scroll edge effect keeps
+                    // covering it. (`contentMargins(for: .scrollContent)` is
+                    // ignored by the attributed editor; the safe area is
+                    // what it turns into scroll insets, confirmed live.)
+                    .safeAreaPadding(.horizontal, 12)
+                    .safeAreaPadding(.top, 8)
                     .frame(maxHeight: .infinity)
                     .background(editorAppearanceFix)
                     .accessibilityLabel("Script Source")
@@ -261,7 +266,7 @@ struct ScriptEditorView: View {
     /// given `available` (the editor content's total height from
     /// `GeometryReader`). Extracted into its own typed function rather than
     /// inlined in the view body. This view has documented type-checker
-    /// fragility (see ``toolbarButtons``'s doc comment), so new conditional
+    /// fragility (see ``editorToolbar``'s doc comment), so new conditional
     /// or arithmetic expressions get pulled out, not inlined.
     private func consoleHeightBounds(in available: CGFloat) -> ClosedRange<Double> {
         let maxHeight = max(
@@ -285,7 +290,7 @@ struct ScriptEditorView: View {
     /// A computed property with an explicit type, rather than an inline
     /// ternary in the modifier chain, so the type-checker doesn't have to
     /// solve it together with the rest of that chain. See
-    /// ``toolbarButtons``'s doc comment for the same issue elsewhere in this
+    /// ``editorToolbar``'s doc comment for the same issue elsewhere in this
     /// view. Mirrors the Run button's `.disabled(!didLoad)`.
     private var runAction: (() -> Void)? {
         guard didLoad && !isRunning else { return nil }
@@ -309,22 +314,40 @@ struct ScriptEditorView: View {
         return { save() }
     }
 
-    /// The primary-action toolbar's contents. Extracted out of ``body``:
-    /// inlined directly into `ToolbarItemGroup`'s `ViewBuilder`, the mix of
-    /// `#if` and `if`/`else` branches alongside the individual buttons below
-    /// was slow enough for the compiler to give up type-checking it.
-    @ViewBuilder
-    private var toolbarButtons: some View {
+    /// The toolbar's contents: Run (or a spinner plus Stop while a run is in
+    /// flight) as the prominent action, then a fixed spacer so Save sits in
+    /// its own glass platter rather than sharing a pill with Run. Extracted
+    /// out of ``body`` and split into typed pieces: inlined directly into
+    /// the toolbar builder, the mix of `#if` and `if`/`else` branches
+    /// alongside the individual buttons below was slow enough for the
+    /// compiler to give up type-checking it.
+    @ToolbarContentBuilder
+    private var editorToolbar: some ToolbarContent {
         #if !os(macOS)
             // No `navigationSubtitle` on iOS/iPadOS, so the modified marker
             // rides along in the toolbar instead, now that the title itself
             // is an editable binding.
             if isDirty {
-                Text("Edited")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                ToolbarItem(placement: .primaryAction) {
+                    Text("Edited")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
         #endif
+        ToolbarItemGroup(placement: .primaryAction) {
+            runControls
+        }
+        ToolbarSpacer(.fixed, placement: .primaryAction)
+        ToolbarItem(placement: .primaryAction) {
+            saveButton
+        }
+    }
+
+    /// Run before a run starts; a spinner and Stop while one is in flight.
+    /// See ``editorToolbar``'s doc comment for why this is its own property.
+    @ViewBuilder
+    private var runControls: some View {
         if isRunning {
             ProgressView()
                 .accessibilityLabel("Running")
@@ -332,10 +355,9 @@ struct ScriptEditorView: View {
         } else {
             runButton
         }
-        saveButton
     }
 
-    /// See ``toolbarButtons``'s doc comment for why this is its own
+    /// See ``editorToolbar``'s doc comment for why this is its own
     /// property.
     private var stopButton: some View {
         Button {
@@ -344,6 +366,7 @@ struct ScriptEditorView: View {
             Label("Stop", systemImage: "stop.fill")
         }
         .labelStyle(.titleAndIcon)
+        .buttonStyle(.glassProminent)
         // Orange, not red: cancelling a run isn't destructive, and red is
         // reserved for the console's "Failed" badge.
         .tint(.orange)
@@ -364,6 +387,10 @@ struct ScriptEditorView: View {
             Label("Run", systemImage: "play.fill")
         }
         .labelStyle(.titleAndIcon)
+        // The one prominent control in the window: accent-tinted glass reads
+        // as "the thing to press", while Save and the sidebar's items stay
+        // plain glass.
+        .buttonStyle(.glassProminent)
         #if !os(macOS)
             .keyboardShortcut("r", modifiers: .command)
         #endif
@@ -378,7 +405,9 @@ struct ScriptEditorView: View {
         } label: {
             Label("Save", systemImage: "square.and.arrow.down")
         }
-        .labelStyle(.titleAndIcon)
+        // Icon only: the tooltip and the ⌘S menu item already name it, and a
+        // second text label next to Run made the toolbar read heavy.
+        .labelStyle(.iconOnly)
         #if !os(macOS)
             .keyboardShortcut("s", modifiers: .command)
         #endif
