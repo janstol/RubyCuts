@@ -404,10 +404,15 @@ struct ScriptEditorView: View {
             save()
         } label: {
             Label("Save", systemImage: "square.and.arrow.down")
+                // A text-only label gets no glyph inset, so without this the
+                // word hugs the edges of its glass platter.
+                .padding(.horizontal, 6)
         }
-        // Icon only: the tooltip and the ⌘S menu item already name it, and a
-        // second text label next to Run made the toolbar read heavy.
-        .labelStyle(.iconOnly)
+        // Title only: SF Symbols has no glyph that says "save" without also
+        // saying "download" (or naming a piece of hardware), and an icon next
+        // to Run's made the toolbar read heavy. The `Label` stays so the
+        // accessibility name and the menu item keep their symbol.
+        .labelStyle(.titleOnly)
         #if !os(macOS)
             .keyboardShortcut("s", modifiers: .command)
         #endif
