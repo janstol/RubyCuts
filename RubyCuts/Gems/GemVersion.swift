@@ -56,6 +56,10 @@ struct GemVersion: Comparable, Sendable, CustomStringConvertible {
             parsedSegments.append(Int(part).map(Segment.number) ?? .text(String(part)))
         }
 
+        // Like Gem::Version, a version starts with a number: "latest" or
+        // "rc1" alone isn't a version, even though "1.0.rc1" is.
+        guard case .number = parsedSegments.first else { return nil }
+
         self.raw = trimmed
         self.segments = parsedSegments
     }
@@ -123,6 +127,26 @@ struct GemRequirement: Sendable, CustomStringConvertible {
         nonisolated let op: Operator
         nonisolated let version: GemVersion
 
+        /// For a `~>` clause, its exclusive upper bound; `nil` for every
+        /// other operator. Computed once at parse time so a `~>` whose bound
+        /// can't be represented is rejected there, not discovered at
+        /// comparison time.
+        nonisolated private let upperBound: GemVersion?
+
+        /// Fails only for a `~>` clause whose upper bound can't be computed:
+        /// incrementing would overflow `Int`, or the segment to increment
+        /// isn't a number.
+        nonisolated init?(op: Operator, version: GemVersion) {
+            self.op = op
+            self.version = version
+            if op == .pessimistic {
+                guard let bound = Clause.pessimisticUpperBound(of: version) else { return nil }
+                self.upperBound = bound
+            } else {
+                self.upperBound = nil
+            }
+        }
+
         nonisolated func satisfied(by candidate: GemVersion) -> Bool {
             switch op {
             case .greaterThanOrEqual: return candidate >= version
@@ -132,29 +156,32 @@ struct GemRequirement: Sendable, CustomStringConvertible {
             case .equal: return candidate == version
             case .notEqual: return candidate != version
             case .pessimistic:
-                guard let upperBound = Clause.pessimisticUpperBound(of: version) else {
-                    return false
-                }
+                guard let upperBound else { return false }
                 return candidate >= version && candidate < upperBound
             }
         }
 
         /// `~> a.b.c` allows `>= a.b.c, < a.(b+1)`: drop the version's last
         /// segment entirely, then increment the segment now left at the end.
-        /// `~> a` (a single segment) allows `>= a, < (a+1)`.
+        /// `~> a` (a single segment) allows `>= a, < (a+1)`. Returns `nil`
+        /// when the increment would overflow `Int` (`~> 9223372036854775807`)
+        /// or the segment to increment isn't numeric.
         nonisolated private static func pessimisticUpperBound(of version: GemVersion) -> GemVersion?
         {
             var segments = version.segments
             guard let dropped = segments.popLast(), case .number(let droppedNumber) = dropped
             else { return nil }
 
-            guard case .number(let last) = segments.popLast() else {
+            guard let remaining = segments.popLast() else {
                 // A single-segment requirement ("~> 5"): the dropped segment
                 // itself is the one to increment.
-                let bumped = droppedNumber + 1
+                guard let bumped = incremented(droppedNumber) else { return nil }
                 return GemVersion(raw: "\(bumped)", segments: [.number(bumped)])
             }
-            segments.append(.number(last + 1))
+            guard case .number(let last) = remaining, let bumped = incremented(last) else {
+                return nil
+            }
+            segments.append(.number(bumped))
 
             let raw = segments.map { segment -> String in
                 switch segment {
@@ -163,6 +190,12 @@ struct GemRequirement: Sendable, CustomStringConvertible {
                 }
             }.joined(separator: ".")
             return GemVersion(raw: raw, segments: segments)
+        }
+
+        /// `number + 1`, or `nil` if that overflows `Int`.
+        nonisolated private static func incremented(_ number: Int) -> Int? {
+            let (sum, overflow) = number.addingReportingOverflow(1)
+            return overflow ? nil : sum
         }
     }
 

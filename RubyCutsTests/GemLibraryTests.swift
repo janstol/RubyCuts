@@ -21,6 +21,25 @@ private struct AlwaysFailingRubyGemsAPI: RubyGemsAPI {
     }
 }
 
+/// A `RubyGemsAPI` stub that fails the test if it's called at all, for
+/// paths that must be rejected before any network request.
+private struct UnreachableRubyGemsAPI: RubyGemsAPI {
+    func versions(ofGem name: String) async throws -> [GemVersionInfo] {
+        Issue.record("unexpected versions(ofGem: \(name)) call")
+        throw RubyGemsAPIError.gemNotFound(name)
+    }
+
+    func versionDetails(ofGem name: String, version: String) async throws -> GemVersionDetails {
+        Issue.record("unexpected versionDetails(ofGem: \(name)) call")
+        throw RubyGemsAPIError.gemNotFound(name)
+    }
+
+    func search(query: String) async throws -> [GemSearchResult] {
+        Issue.record("unexpected search(query: \(query)) call")
+        throw RubyGemsAPIError.gemNotFound(query)
+    }
+}
+
 // Tests for the gems sheet's view model, mirroring `ScriptLibraryTests`.
 // Each test builds its own library on a unique temp-dir `GemStore` and
 // defers its removal. `@MainActor` because `GemLibrary`/`GemInstaller` are
@@ -90,6 +109,25 @@ struct GemLibraryTests {
         #expect(library.errorMessage != nil)
         #expect(library.installState == .idle)
         #expect(library.gems.isEmpty)
+    }
+
+    @Test(arguments: ["~>> 1.0", "~> \(Int.max)", "latest"])
+    func prepareInstallRejectsAMalformedRequirementWithoutAnyNetworkRequest(
+        requirement: String
+    ) async throws {
+        // A typo in the requirement must not be dropped and silently resolve
+        // the newest version. UnreachableRubyGemsAPI records an issue if
+        // resolution reaches the network at all.
+        let store = try makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directoryURL) }
+        let installer = GemInstaller(api: UnreachableRubyGemsAPI(), store: store)
+        let library = GemLibrary(store: store, installer: installer)
+
+        await library.prepareInstall(name: "httparty", requirement: requirement)
+
+        let message = try #require(library.errorMessage)
+        #expect(message.contains("'\(requirement)' isn't a valid version requirement"))
+        #expect(library.installState == .idle)
     }
 
     @Test func prepareInstallOnABundledGemSurfacesTheBundledMessageInsteadOfAPlan() async throws {

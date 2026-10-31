@@ -24,6 +24,12 @@ enum GemInstallerError: Error, Sendable {
     /// already treats it as satisfied via the seed in
     /// ``GemInstaller/bundledVersionsByName()``.
     case alreadyBundled(gem: String, version: String)
+
+    /// The user typed a version requirement that doesn't parse (`"~>> 1.0"`,
+    /// or a `~>` too large to bound). Raised before any network request,
+    /// rather than dropping the constraint and installing whatever version
+    /// is newest.
+    case invalidRequirement(String)
 }
 
 /// One step of an in-flight install, reported to the caller as it begins.
@@ -105,7 +111,15 @@ struct GemInstaller {
             throw GemInstallerError.alreadyBundled(gem: bundled.name, version: bundled.version)
         }
 
-        let parsedRequirement = requirement.flatMap { GemRequirement($0) }
+        // `nil` means no requirement was given. A non-nil one that doesn't
+        // parse is the user's typo, not "no constraint", so it's an error.
+        var parsedRequirement: GemRequirement?
+        if let requirement {
+            guard let parsed = GemRequirement(requirement) else {
+                throw GemInstallerError.invalidRequirement(requirement)
+            }
+            parsedRequirement = parsed
+        }
 
         let resolver = GemResolver(api: api)
         return try await resolver.resolve(

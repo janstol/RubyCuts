@@ -105,4 +105,52 @@ struct GemVersionTests {
     @Test func unparsableRequirementReturnsNil() {
         #expect(GemRequirement("not a version") == nil)
     }
+
+    @Test func aVersionMustStartWithANumber() throws {
+        #expect(GemVersion("latest") == nil)
+        #expect(GemVersion("rc1.0") == nil)
+        #expect(GemRequirement("latest") == nil)
+        #expect(try #require(GemVersion("1.0.rc1")).segments.count == 3)
+    }
+
+    @Test func aDoubledOperatorIsRejected() {
+        #expect(GemRequirement("~>> 1.0") == nil)
+    }
+
+    // MARK: - GemRequirement: pessimistic bounds at Int's limit
+    //
+    // `~>` increments a segment to build its upper bound. At Int.max that
+    // increment used to trap at comparison time; now the requirement is
+    // rejected at parse time instead, and Int.max - 1 still works.
+
+    @Test(arguments: [
+        "~> \(Int.max)",  // single segment: the only segment is incremented
+        "~> \(Int.max).0",  // multi segment: the second-to-last is incremented
+        "~> 1.\(Int.max).5",
+    ])
+    func pessimisticWhoseBoundWouldOverflowIsRejected(requirement: String) {
+        #expect(GemRequirement(requirement) == nil)
+    }
+
+    @Test func pessimisticJustBelowTheLimitStillWorks() throws {
+        let single = try #require(GemRequirement("~> \(Int.max - 1)"))
+        #expect(single.satisfied(by: try #require(GemVersion("\(Int.max - 1)"))))
+        #expect(!single.satisfied(by: try #require(GemVersion("\(Int.max)"))))
+
+        let multi = try #require(GemRequirement("~> \(Int.max - 1).0"))
+        #expect(multi.satisfied(by: try #require(GemVersion("\(Int.max - 1).7"))))
+        #expect(!multi.satisfied(by: try #require(GemVersion("\(Int.max).0"))))
+    }
+
+    @Test func aLargeLastSegmentDoesNotOverflowAMultiSegmentBound() throws {
+        // Only the second-to-last segment is incremented, so Int.max in the
+        // dropped last position is fine: ~> 1.Int.max allows >= 1.Int.max, < 2.
+        let requirement = try #require(GemRequirement("~> 1.\(Int.max)"))
+        #expect(requirement.satisfied(by: try #require(GemVersion("1.\(Int.max)"))))
+        #expect(!requirement.satisfied(by: try #require(GemVersion("2.0"))))
+    }
+
+    @Test func pessimisticWithANonNumericSegmentToIncrementIsRejected() {
+        #expect(GemRequirement("~> 1.rc.0") == nil)
+    }
 }
