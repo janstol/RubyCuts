@@ -501,6 +501,11 @@ actor RubyRuntime {
             )
         }
 
+        // A key can appear more than once (`parseEnv` keeps duplicates). The
+        // last value wins, like repeated assignments would, but only the
+        // first occurrence records a backup: backing up again would save the
+        // previous occurrence's value instead of the one from before the run,
+        // and teardown would then leave that supplied value behind.
         if !input.env.isEmpty {
             let pairs = input.env.map { (k, v) in
                 "[\"\(base64(k))\", \"\(base64(v))\"]"
@@ -508,7 +513,8 @@ actor RubyRuntime {
             parts.append(
                 "$rc_env_backup = {}; "
                     + "[\(pairs)].each { |k, v| dk = Base64.decode64(k); "
-                    + "$rc_env_backup[dk] = ENV[dk]; ENV[dk] = Base64.decode64(v) }"
+                    + "$rc_env_backup[dk] = ENV[dk] unless $rc_env_backup.key?(dk); "
+                    + "ENV[dk] = Base64.decode64(v) }"
             )
         }
 

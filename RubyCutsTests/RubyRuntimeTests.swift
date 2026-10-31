@@ -600,6 +600,42 @@ extension EmbeddedRubyTests {
             _ = try? await RubyRuntime.shared.evaluate("ENV.delete('RC_Y')")
         }
 
+        // Duplicate ENV keys: the last value is what the script sees, and
+        // teardown restores the state from before the run, not the first
+        // supplied value. Each case also runs a script that raises, since
+        // teardown has to hold on that path too.
+
+        @Test(arguments: ["puts ENV['RC_DUP']", "raise 'boom'"])
+        func duplicateEnvKeyPreviouslyAbsentIsRemovedAfterTheRun(script: String) async throws {
+            _ = try await RubyRuntime.shared.evaluate("ENV.delete('RC_DUP'); nil")
+            let result = await RubyRuntime.shared.run(
+                script, input: RunInput(env: [("RC_DUP", "first"), ("RC_DUP", "second")])
+            )
+            if script.hasPrefix("raise") {
+                #expect(result.hasError)
+            } else {
+                #expect(result.stdout == "second\n")
+            }
+            let after = try await RubyRuntime.shared.evaluate("ENV['RC_DUP'].inspect")
+            #expect(after == "nil")
+        }
+
+        @Test(arguments: ["puts ENV['RC_DUP']", "raise 'boom'"])
+        func duplicateEnvKeyPreviouslyPresentIsRestoredAfterTheRun(script: String) async throws {
+            _ = try await RubyRuntime.shared.evaluate("ENV['RC_DUP'] = 'original'")
+            let result = await RubyRuntime.shared.run(
+                script, input: RunInput(env: [("RC_DUP", "first"), ("RC_DUP", "second")])
+            )
+            if script.hasPrefix("raise") {
+                #expect(result.hasError)
+            } else {
+                #expect(result.stdout == "second\n")
+            }
+            let after = try await RubyRuntime.shared.evaluate("ENV['RC_DUP']")
+            #expect(after == "original")
+            _ = try? await RubyRuntime.shared.evaluate("ENV.delete('RC_DUP')")
+        }
+
         // MARK: - Conversions at the C boundary
         //
         // Guards rubycuts_shim.c's rubycuts_eval and rc_error_message_for_state:
