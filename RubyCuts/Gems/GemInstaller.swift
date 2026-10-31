@@ -213,6 +213,11 @@ struct GemInstaller {
         for (index, target) in plan.enumerated() {
             let extractedURL = try await stage(
                 target, in: stagingRoot, index: index, total: plan.count, onPhase: onPhase)
+            // The requested gem is always first in the plan; everything after
+            // it came in as a dependency.
+            try GemStore.writeMetadata(
+                GemMetadata(requested: index == 0, dependencies: target.dependencies),
+                into: extractedURL)
             staged.append((target, extractedURL))
         }
 

@@ -190,5 +190,25 @@ extension EmbeddedRubyTests {
                 #expect(try store.list().isEmpty)
             }
         }
+
+        @Test func anInstallRecordsWhichGemWasRequested() async throws {
+            let fixture = try Self.fixture()
+            try await Self.withTempStore { store in
+                let downloader = StubGemDownloader(fixture: fixture)
+                let installer = Self.makeInstaller(
+                    store: store, downloader: downloader, fixture: fixture)
+                let plan = try await installer.plan(name: "rc_parent", requirement: nil)
+
+                let installed = try await installer.install(plan: plan) { _ in }
+
+                let parent = try #require(installed.first { $0.name == "rc_parent" })
+                let child = try #require(installed.first { $0.name == "rc_child" })
+                #expect(
+                    store.metadata(for: parent)
+                        == GemMetadata(requested: true, dependencies: ["rc_child"]))
+                #expect(
+                    store.metadata(for: child) == GemMetadata(requested: false, dependencies: []))
+            }
+        }
     }
 }

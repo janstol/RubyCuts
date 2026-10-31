@@ -96,6 +96,92 @@ final class GemLibrary {
             errorMessage = Self.describe(error)
             gems = []
         }
+        metadataByName = Dictionary(
+            gems.compactMap { gem in store.metadata(for: gem).map { (gem.name, $0) } },
+            uniquingKeysWith: { first, _ in first })
+    }
+
+    /// Each installed gem's ``GemMetadata``, by gem name. A gem missing here
+    /// was installed before metadata existed and hasn't been backfilled yet.
+    private(set) var metadataByName: [String: GemMetadata] = [:]
+
+    /// Whether ``backfillMetadata()`` is already running, so overlapping
+    /// calls (two views' `.task`s) don't fetch twice.
+    private var isBackfilling = false
+
+    /// The installed gems that list `name` as a dependency, sorted by name.
+    func dependents(of name: String) -> [String] {
+        gems.map(\.name)
+            .filter { $0 != name && metadataByName[$0]?.dependencies.contains(name) == true }
+            .sorted()
+    }
+
+    /// What deleting `gem` would affect: the installed gems that need it,
+    /// and the dependencies it leaves unused. See ``GemDeletion``.
+    func deletion(of gem: InstalledGem) -> GemDeletion {
+        GemDeletion(
+            gem: gem, dependents: dependents(of: gem.name), orphans: orphanedDependencies(of: gem))
+    }
+
+    /// The installed dependencies that deleting `gem` would leave unused,
+    /// followed transitively (httparty -> multi_xml -> bigdecimal). A gem
+    /// counts only if it came in as a dependency (not requested by the
+    /// user) and every installed gem that needs it is being removed too.
+    /// Gems without metadata are never offered: their history is unknown.
+    private func orphanedDependencies(of gem: InstalledGem) -> [InstalledGem] {
+        var removing: Set<String> = [gem.name]
+        var changed = true
+        while changed {
+            changed = false
+            for candidate in gems where !removing.contains(candidate.name) {
+                guard let metadata = metadataByName[candidate.name], !metadata.requested else {
+                    continue
+                }
+                let users = dependents(of: candidate.name)
+                if !users.isEmpty, users.allSatisfy(removing.contains) {
+                    removing.insert(candidate.name)
+                    changed = true
+                }
+            }
+        }
+        return gems.filter { $0.name != gem.name && removing.contains($0.name) }
+    }
+
+    /// Fills in ``GemMetadata`` for installed gems that have none, by asking
+    /// rubygems.org for each one's dependencies once. A gem no other
+    /// installed gem depends on is recorded as requested, the rest as
+    /// dependencies. Best effort: a gem whose lookup fails stays without
+    /// metadata and is tried again next time. Silent, since nothing the user
+    /// did failed.
+    func backfillMetadata() async {
+        guard !isBackfilling else { return }
+        let missing = gems.filter { metadataByName[$0.name] == nil }
+        guard !missing.isEmpty else { return }
+        isBackfilling = true
+        defer { isBackfilling = false }
+
+        var fetched: [InstalledGem: [String]] = [:]
+        for gem in missing {
+            guard
+                let details = try? await installer.api.versionDetails(
+                    ofGem: gem.name, version: gem.version)
+            else { continue }
+            fetched[gem] = details.dependencies.runtime.map(\.name)
+        }
+        guard !fetched.isEmpty else { return }
+
+        var known = metadataByName
+        for (gem, dependencies) in fetched {
+            known[gem.name] = GemMetadata(requested: false, dependencies: dependencies)
+        }
+        for (gem, dependencies) in fetched {
+            let needed = known.contains { name, metadata in
+                name != gem.name && metadata.dependencies.contains(gem.name)
+            }
+            let metadata = GemMetadata(requested: !needed, dependencies: dependencies)
+            try? GemStore.writeMetadata(metadata, into: gem.directoryURL)
+        }
+        refresh()
     }
 
     /// Resolves `name` (+ optional `requirement`, e.g. `"~> 1.0"`) into the
@@ -199,13 +285,18 @@ final class GemLibrary {
         gems.contains { $0.name == name } || BundledGem.all.contains { $0.name == name }
     }
 
-    /// Deletes the gem's directory and re-lists. Sets ``errorMessage`` on
-    /// failure, matching ``ScriptLibrary/delete(_:)``.
-    func delete(_ gem: InstalledGem) {
+    /// Deletes the gem's directory, and those of `others` (the orphaned
+    /// dependencies from ``deletion(of:)``, when the user chose to remove
+    /// them too), then re-lists. Stops at the first failure and sets
+    /// ``errorMessage``, matching ``ScriptLibrary/delete(_:)``.
+    func delete(_ gem: InstalledGem, alongWith others: [InstalledGem] = []) {
         errorMessage = nil
         do {
-            try store.delete(gem)
+            for target in [gem] + others {
+                try store.delete(target)
+            }
         } catch {
+            refresh()
             errorMessage = Self.describe(error)
             return
         }

@@ -96,6 +96,23 @@ struct GemStore: Sendable {
         return InstalledGem(directoryURL: target)
     }
 
+    /// The gem's ``GemMetadata``, or `nil` if it has none yet (installed
+    /// before metadata existed) or the file can't be read.
+    nonisolated func metadata(for gem: InstalledGem) -> GemMetadata? {
+        let url = gem.directoryURL.appending(component: GemMetadata.fileName)
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return try? JSONDecoder().decode(GemMetadata.self, from: data)
+    }
+
+    /// Writes `metadata` into the gem directory at `directoryURL`, either an
+    /// installed gem's or a staged one about to be moved in.
+    nonisolated static func writeMetadata(_ metadata: GemMetadata, into directoryURL: URL) throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        try encoder.encode(metadata).write(
+            to: directoryURL.appending(component: GemMetadata.fileName), options: .atomic)
+    }
+
     /// Deletes the gem's directory from disk.
     nonisolated func delete(_ gem: InstalledGem) throws {
         try FileManager.default.removeItem(at: gem.directoryURL)

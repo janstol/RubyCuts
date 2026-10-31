@@ -14,7 +14,8 @@ struct GemListView: View {
     @State private var gemRequirement = ""
 
     /// The gem pending deletion confirmation, set by the context menu and by
-    /// `.onDelete`. Non-`nil` drives the confirmation dialog below.
+    /// the swipe action. Non-`nil` drives the confirmation dialog on that gem's
+    /// row (see `pendingDelete(of:)`).
     @State private var pendingDelete: InstalledGem?
 
     init(library: GemLibrary = GemLibrary()) {
@@ -31,6 +32,7 @@ struct GemListView: View {
             .navigationTitle("Gems")
             .task {
                 library.refresh()
+                await library.backfillMetadata()
             }
             .task(id: gemName) {
                 // Debounce: a new keystroke re-runs this task, cancelling
@@ -55,24 +57,18 @@ struct GemListView: View {
             } message: {
                 Text(library.errorMessage ?? "")
             }
-            .confirmationDialog(
-                "Delete Gem",
-                isPresented: .init(
-                    get: { pendingDelete != nil },
-                    set: { if !$0 { pendingDelete = nil } }
-                ),
-                presenting: pendingDelete
-            ) { gem in
-                Button("Delete \(gem.name)", role: .destructive) {
-                    library.delete(gem)
-                    pendingDelete = nil
-                }
-                Button("Cancel", role: .cancel) {
-                    pendingDelete = nil
-                }
-            } message: { gem in
-                Text("\"\(gem.name)\" will need to be reinstalled to use it again.")
-            }
+    }
+
+    /// `pendingDelete`, narrowed to `gem`: non-`nil` only while `gem` is the
+    /// one being deleted. Lets each row carry its own confirmation, so iOS
+    /// 26 points the dialog at that row rather than at the top of the list
+    /// (it shows confirmation dialogs as popovers on the view they're
+    /// attached to).
+    private func pendingDelete(of gem: InstalledGem) -> Binding<InstalledGem?> {
+        .init(
+            get: { pendingDelete == gem ? gem : nil },
+            set: { pendingDelete = $0 }
+        )
     }
 
     private var content: some View {
@@ -184,28 +180,37 @@ struct GemListView: View {
         } else {
             Section("Installed") {
                 ForEach(library.gems) { gem in
+                    let users = library.dependents(of: gem.name)
+                    let usedBy =
+                        users.isEmpty
+                        ? "" : "used by \(ListFormatter.localizedString(byJoining: users))"
+                    let usedBySuffix = usedBy.isEmpty ? "" : ", \(usedBy)"
                     VStack(alignment: .leading) {
                         Text(gem.name)
-                        Text(gem.version)
+                        Text(usedBy.isEmpty ? gem.version : "\(gem.version) · \(usedBy)")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
                     .accessibilityElement(children: .combine)
-                    .accessibilityLabel("\(gem.name), version \(gem.version)")
+                    .accessibilityLabel("\(gem.name), version \(gem.version)\(usedBySuffix)")
                     .contextMenu {
                         Button("Delete", role: .destructive) {
                             pendingDelete = gem
                         }
                     }
-                }
-                .onDelete { indexSet in
-                    // A confirmation dialog can only present one gem at a
-                    // time, so a multi-row swipe/delete only ever offers the
-                    // first, matching the context menu's single-gem
-                    // confirmation rather than a batch one.
-                    if let index = indexSet.first {
-                        pendingDelete = library.gems[index]
+                    // Not `.onDelete` (or a `.destructive` swipe button):
+                    // both animate the row away before the confirmation
+                    // appears, and cancelling never brings it back. This
+                    // only asks; the row goes when the delete happens.
+                    .swipeActions {
+                        Button {
+                            pendingDelete = gem
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                        .tint(.red)
                     }
+                    .gemDeleteConfirmation(pendingDelete(of: gem), library: library)
                 }
             }
         }
@@ -237,22 +242,29 @@ struct GemListView: View {
 
 /// The parked, not-yet-downloaded plan from ``GemLibrary/prepareInstall(name:requirement:)``:
 /// one row per resolved gem, an "Install N Gems" primary action, and a
-/// Cancel. Its own `private struct`, not inline in ``GemListView/content``:
-/// this file's sibling `ScriptListView` has a documented history of defeating
-/// the type checker once conditionals and closures pile into one `body`.
-private struct GemPlanSection: View {
+/// Cancel. Its own struct, not inline in ``GemListView/content``: this
+/// file's sibling `ScriptListView` has a documented history of defeating the
+/// type checker once conditionals and closures pile into one `body`.
+/// Internal so the macOS ``GemInstallSheet`` reuses it, with
+/// `showsActions: false` since that sheet has its own buttons.
+struct GemPlanSection: View {
     let plan: [ResolvedGem]
     let requested: String
     let onInstall: () -> Void
     let onCancel: () -> Void
+    var showsActions = true
 
     var body: some View {
         Section("Ready to Install") {
             ForEach(plan, id: \.name) { gem in
                 row(for: gem)
             }
-            Button("Install \(plan.count) \(plan.count == 1 ? "Gem" : "Gems")", action: onInstall)
-            Button("Cancel", role: .cancel, action: onCancel)
+            if showsActions {
+                Button(
+                    "Install \(plan.count) \(plan.count == 1 ? "Gem" : "Gems")",
+                    action: onInstall)
+                Button("Cancel", role: .cancel, action: onCancel)
+            }
         }
     }
 
@@ -306,11 +318,12 @@ private struct GemPlanSection: View {
 }
 
 /// Live search results for the name field: one row per match, tapped to
-/// resolve straight into ``GemPlanSection``. Its own `private struct` for
-/// the same type-checker reason as ``GemPlanSection``. Shows "No gems
+/// resolve straight into ``GemPlanSection``. Its own struct for
+/// the same type-checker reason as ``GemPlanSection``, internal so the macOS
+/// ``GemInstallSheet`` reuses it. Shows "No gems
 /// match" as a plain caption row rather than a `ContentUnavailableView`:
 /// this is a section inside a `List`, not a whole screen.
-private struct GemSearchSection: View {
+struct GemSearchSection: View {
     let results: [GemSearchResult]
     let isAvailable: (String) -> Bool
     let onSelect: (String) -> Void
@@ -391,9 +404,10 @@ private struct GemSearchSection: View {
 }
 
 /// The determinate progress shown while ``GemLibrary/confirmInstall()`` is
-/// downloading and extracting a parked plan. Its own `private struct` for
-/// the same type-checker reason as ``GemPlanSection``.
-private struct GemInstallProgressSection: View {
+/// downloading and extracting a parked plan. Its own struct for
+/// the same type-checker reason as ``GemPlanSection``, internal so the macOS
+/// ``GemInstallSheet`` reuses it.
+struct GemInstallProgressSection: View {
     let phase: GemInstallPhase
 
     var body: some View {

@@ -29,12 +29,14 @@ private struct ScriptStorageSection: View {
     /// gained a second concern. The comment that used to sit here already
     /// flagged a `TabView` as the expected next step once that happened.
     ///
-    /// Wrapped in an explicit frame because a `Settings` scene has no
-    /// sensible intrinsic size to fall back to, the same class of missing
-    /// desktop sizing that used to make `GemListView`'s own sheet frame
-    /// necessary. `min`/`ideal` rather than a hard `width`/`height`: at
-    /// macOS's larger-text accessibility setting a fixed frame clips its
-    /// content instead of growing to fit it.
+    /// Each tab gets its own frame, because a `Settings` scene has no
+    /// sensible intrinsic size to fall back to, and so the window takes
+    /// each tab's height instead of one size for both. `min`/`ideal` rather
+    /// than a hard `width`/`height`: at macOS's larger-text accessibility
+    /// setting a fixed frame clips its content instead of growing to fit it.
+    ///
+    /// The Gems tab is ``GemSettingsMacPane``, not the iOS ``GemListView``,
+    /// whose one long `List` looked out of place in a Mac settings window.
     struct GemSettingsPane: View {
         let scriptLibrary: ScriptLibrary
 
@@ -42,14 +44,15 @@ private struct ScriptStorageSection: View {
             TabView {
                 Tab("Scripts", systemImage: "doc.text") {
                     ScriptSettingsPane(library: scriptLibrary)
+                        .frame(minWidth: 500, idealWidth: 500, minHeight: 300, idealHeight: 300)
                 }
                 #if RUBYCUTS_GEMS
                     Tab("Gems", systemImage: "shippingbox") {
-                        GemListView()
+                        GemSettingsMacPane()
+                            .frame(minWidth: 500, idealWidth: 500, minHeight: 420, idealHeight: 420)
                     }
                 #endif
             }
-            .frame(minWidth: 480, idealWidth: 480, minHeight: 460, idealHeight: 460)
         }
     }
 

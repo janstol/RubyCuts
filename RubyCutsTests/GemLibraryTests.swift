@@ -283,4 +283,182 @@ struct GemLibraryTests {
         #expect(phase.label == "Extracting csv (2 of 4)")
         #expect(phase.fractionCompleted == 0.375)
     }
+
+    // MARK: - Dependency metadata: used by, delete warnings, orphans
+
+    /// Creates an installed gem directory, with ``GemMetadata`` when
+    /// `metadata` is given (a gem installed before metadata existed has none).
+    @discardableResult
+    private func installFake(
+        _ name: String, _ version: String, in store: GemStore, metadata: GemMetadata?
+    ) throws -> InstalledGem {
+        let directory = store.destinationURL(name: name, version: version)
+        try FileManager.default.createDirectory(
+            at: directory.appending(component: "lib"), withIntermediateDirectories: true)
+        if let metadata {
+            try GemStore.writeMetadata(metadata, into: directory)
+        }
+        return InstalledGem(directoryURL: directory)
+    }
+
+    /// httparty as installed: requested, with csv, mini_mime and multi_xml as
+    /// dependencies, and multi_xml pulling in bigdecimal.
+    private func makeHttpartyLibrary(in store: GemStore) throws -> GemLibrary {
+        let dependency = { (deps: [String]) in GemMetadata(requested: false, dependencies: deps) }
+        try installFake(
+            "httparty", "0.24.2", in: store,
+            metadata: GemMetadata(requested: true, dependencies: ["csv", "mini_mime", "multi_xml"]))
+        try installFake("csv", "3.3.6", in: store, metadata: dependency([]))
+        try installFake("mini_mime", "1.1.5", in: store, metadata: dependency([]))
+        try installFake("multi_xml", "0.9.1", in: store, metadata: dependency(["bigdecimal"]))
+        try installFake("bigdecimal", "4.1.2", in: store, metadata: dependency([]))
+        let library = GemLibrary(
+            store: store, installer: GemInstaller(api: UnreachableRubyGemsAPI(), store: store))
+        library.refresh()
+        return library
+    }
+
+    private func gem(_ name: String, in library: GemLibrary) throws -> InstalledGem {
+        try #require(library.gems.first { $0.name == name })
+    }
+
+    @Test func dependentsComeFromTheRecordedMetadata() throws {
+        let store = try makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directoryURL) }
+        let library = try makeHttpartyLibrary(in: store)
+
+        #expect(library.dependents(of: "csv") == ["httparty"])
+        #expect(library.dependents(of: "bigdecimal") == ["multi_xml"])
+        #expect(library.dependents(of: "httparty").isEmpty)
+    }
+
+    @Test func deletingTheRequestedGemOffersItsWholeDependencyTree() throws {
+        let store = try makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directoryURL) }
+        let library = try makeHttpartyLibrary(in: store)
+
+        let deletion = library.deletion(of: try gem("httparty", in: library))
+
+        #expect(deletion.dependents.isEmpty)
+        #expect(
+            Set(deletion.orphans.map(\.name)) == ["csv", "mini_mime", "multi_xml", "bigdecimal"])
+        #expect(deletion.deleteWithOrphansLabel == "Delete httparty and 4 Dependencies")
+        #expect(deletion.message.contains("installed for httparty"))
+    }
+
+    @Test func aDependencyAnotherGemStillUsesIsNotOffered() throws {
+        let store = try makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directoryURL) }
+        try installFake(
+            "other", "1.0.0", in: store,
+            metadata: GemMetadata(requested: true, dependencies: ["csv"]))
+        let library = try makeHttpartyLibrary(in: store)
+
+        let deletion = library.deletion(of: try gem("httparty", in: library))
+
+        #expect(!deletion.orphans.map(\.name).contains("csv"))
+        #expect(deletion.orphans.map(\.name).contains("mini_mime"))
+    }
+
+    @Test func aRequestedOrUnknownDependencyIsNotOffered() throws {
+        let store = try makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directoryURL) }
+        let library = try makeHttpartyLibrary(in: store)
+        // mini_mime installed by name too; csv from before metadata existed.
+        try GemStore.writeMetadata(
+            GemMetadata(requested: true, dependencies: []),
+            into: try gem("mini_mime", in: library).directoryURL)
+        try FileManager.default.removeItem(
+            at: try gem("csv", in: library).directoryURL.appending(component: GemMetadata.fileName))
+        library.refresh()
+
+        let names = library.deletion(of: try gem("httparty", in: library)).orphans.map(\.name)
+
+        #expect(!names.contains("mini_mime"))
+        #expect(!names.contains("csv"))
+        #expect(names.contains("multi_xml"))
+    }
+
+    @Test func deletingANeededGemWarnsWhoNeedsIt() throws {
+        let store = try makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directoryURL) }
+        let library = try makeHttpartyLibrary(in: store)
+
+        let deletion = library.deletion(of: try gem("csv", in: library))
+
+        #expect(deletion.dependents == ["httparty"])
+        #expect(deletion.orphans.isEmpty)
+        #expect(deletion.message.hasPrefix("httparty needs csv."))
+    }
+
+    @Test func deleteAlongWithRemovesTheOrphansToo() throws {
+        let store = try makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directoryURL) }
+        let library = try makeHttpartyLibrary(in: store)
+        let deletion = library.deletion(of: try gem("httparty", in: library))
+
+        library.delete(deletion.gem, alongWith: deletion.orphans)
+
+        #expect(library.gems.isEmpty)
+        #expect(library.errorMessage == nil)
+    }
+
+    @Test func backfillRecordsDependenciesAndInfersWhatWasRequested() async throws {
+        let store = try makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directoryURL) }
+        for (name, version) in [
+            ("httparty", "0.22.0"), ("csv", "3.3.0"), ("mini_mime", "1.1.5"),
+            ("multi_xml", "0.7.1"),
+        ] {
+            try installFake(name, version, in: store, metadata: nil)
+        }
+        let library = GemLibrary(
+            store: store,
+            installer: GemInstaller(
+                api: StubRubyGemsAPI(catalog: Self.httpartyCatalog), store: store))
+        library.refresh()
+
+        await library.backfillMetadata()
+
+        #expect(library.metadataByName["httparty"]?.requested == true)
+        #expect(
+            library.metadataByName["httparty"]?.dependencies == ["csv", "mini_mime", "multi_xml"])
+        #expect(library.metadataByName["csv"] == GemMetadata(requested: false, dependencies: []))
+        #expect(library.dependents(of: "multi_xml") == ["httparty"])
+        // Written to disk, so the next launch doesn't ask again.
+        #expect(store.metadata(for: try gem("csv", in: library)) != nil)
+    }
+
+    @Test func aFailedBackfillLeavesTheGemAloneAndShowsNoError() async throws {
+        let store = try makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directoryURL) }
+        try installFake("httparty", "0.22.0", in: store, metadata: nil)
+        let library = GemLibrary(
+            store: store, installer: GemInstaller(api: AlwaysFailingRubyGemsAPI(), store: store))
+        library.refresh()
+
+        await library.backfillMetadata()
+
+        #expect(library.metadataByName.isEmpty)
+        #expect(library.errorMessage == nil)
+    }
+
+    @Test func aResolvedPlanCarriesEachGemsDependencies() async throws {
+        let store = try makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directoryURL) }
+        let library = GemLibrary(
+            store: store,
+            installer: GemInstaller(
+                api: StubRubyGemsAPI(catalog: Self.httpartyCatalog), store: store))
+
+        await library.prepareInstall(name: "httparty", requirement: "")
+
+        guard case .readyToInstall(let plan, _) = library.installState else {
+            Issue.record("expected .readyToInstall, got \(library.installState)")
+            return
+        }
+        #expect(
+            plan.first { $0.name == "httparty" }?.dependencies == ["csv", "mini_mime", "multi_xml"])
+        #expect(plan.first { $0.name == "csv" }?.dependencies == [])
+    }
 }

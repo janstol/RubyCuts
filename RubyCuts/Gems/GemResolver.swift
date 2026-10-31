@@ -16,6 +16,11 @@ struct ResolvedGem: Sendable, Equatable {
     nonisolated let downloadURL: URL
     nonisolated let sha256: String
 
+    /// The names of this version's runtime dependencies, recorded in its
+    /// ``GemMetadata`` once installed. Empty by default, so a hand-built
+    /// value (previews, tests) doesn't have to spell it out.
+    nonisolated var dependencies: [String] = []
+
     /// VoiceOver phrasing for one "Ready to Install" row, e.g. `"httparty,
     /// version 0.22.0"`. Lives here rather than on `GemListView`'s
     /// `GemPlanSection`: that's a `private struct`, and this composition
@@ -124,7 +129,8 @@ struct GemResolver: Sendable {
             plan.append(
                 ResolvedGem(
                     name: gemName, version: selected, downloadURL: details.gemUri,
-                    sha256: details.sha
+                    sha256: details.sha,
+                    dependencies: details.dependencies.runtime.map(\.name)
                 )
             )
             try Self.enqueueDependencies(of: details, into: &queue)
