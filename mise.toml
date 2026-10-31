@@ -47,6 +47,10 @@ echo "$files" | xargs swift format lint --configuration .swift-format
 description = "swift-format the given files in place (new files only)"
 run = "swift format format --configuration .swift-format -i"
 
+[tasks.release]
+description = "Archive the iOS app and upload it to TestFlight (--no-upload to only archive); needs ASC_KEY_ID/ASC_ISSUER_ID, see scripts/release.sh"
+run = "scripts/release.sh"
+
 [tasks.hooks]
 description = "Enable the repo's git hooks (advisory swift-format lint on commit)"
 run = "git config core.hooksPath .githooks"
