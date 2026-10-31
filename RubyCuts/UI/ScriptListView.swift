@@ -44,7 +44,8 @@ struct ScriptListView: View {
     @State private var renameTarget: Script?
 
     /// The script pending deletion confirmation, set by the context menu and
-    /// by `.onDelete`. Non-`nil` drives the confirmation dialog below.
+    /// by the swipe action and, on macOS, the Delete key. Non-`nil` drives
+    /// the confirmation dialog on that script's row (see `row(for:)`).
     @State private var pendingDelete: Script?
 
     init(library: ScriptLibrary = ScriptLibrary()) {
@@ -147,27 +148,6 @@ struct ScriptListView: View {
                 } message: {
                     Text(library.errorMessage ?? "")
                 }
-                .confirmationDialog(
-                    "Delete Script",
-                    isPresented: .init(
-                        get: { pendingDelete != nil },
-                        set: { if !$0 { pendingDelete = nil } }
-                    ),
-                    presenting: pendingDelete
-                ) { script in
-                    Button("Delete \(script.name)", role: .destructive) {
-                        library.delete(script)
-                        if selection == script {
-                            selection = nil
-                        }
-                        pendingDelete = nil
-                    }
-                    Button("Cancel", role: .cancel) {
-                        pendingDelete = nil
-                    }
-                } message: { script in
-                    Text("\"\(script.name)\" can't be recovered once deleted.")
-                }
         } detail: {
             if let script = selection {
                 ScriptEditorView(
@@ -221,28 +201,68 @@ struct ScriptListView: View {
         } else {
             List(selection: $selection) {
                 ForEach(filteredScripts) { script in
-                    ScriptRow(script: script)
-                        .tag(script)
-                        .contextMenu {
-                            Button("Rename") {
-                                renameTarget = script
-                            }
-                            Button("Delete", role: .destructive) {
-                                pendingDelete = script
-                            }
-                        }
-                }
-                .onDelete { indexSet in
-                    // A confirmation dialog can only present one script at a
-                    // time, so a multi-row swipe/delete only ever offers the
-                    // first, matching the context menu's single-script
-                    // confirmation rather than a batch one.
-                    if let index = indexSet.first {
-                        pendingDelete = filteredScripts[index]
-                    }
+                    row(for: script)
                 }
             }
+            #if os(macOS)
+                // The Delete key and Edit ▸ Delete, which `.onDelete` used to
+                // provide on macOS. Also only asks.
+                .onDeleteCommand {
+                    pendingDelete = selection
+                }
+            #endif
         }
+    }
+
+    /// One sidebar row with its rename/delete affordances. Split out of
+    /// `content` to keep that expression small for the type checker.
+    private func row(for script: Script) -> some View {
+        ScriptRow(script: script)
+            .tag(script)
+            .contextMenu {
+                Button("Rename") {
+                    renameTarget = script
+                }
+                Button("Delete", role: .destructive) {
+                    pendingDelete = script
+                }
+            }
+            // A swipe action, not `.onDelete`: `.onDelete` animates the row
+            // away before the confirmation appears, and cancelling never
+            // brings it back. This only asks; the row goes when the delete
+            // happens. Not `role: .destructive` either, which removes the row
+            // the same way; tinted red to look the part.
+            .swipeActions {
+                Button {
+                    pendingDelete = script
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+                .tint(.red)
+            }
+            // On the row, not the list: iOS 26 shows a confirmation dialog as
+            // a popover pointing at the view it's attached to, so attached to
+            // the whole list it always appeared at the top of the screen.
+            .confirmationDialog(
+                "Delete Script",
+                isPresented: .init(
+                    get: { pendingDelete == script },
+                    set: { if !$0 { pendingDelete = nil } }
+                )
+            ) {
+                Button("Delete \(script.name)", role: .destructive) {
+                    library.delete(script)
+                    if selection == script {
+                        selection = nil
+                    }
+                    pendingDelete = nil
+                }
+                Button("Cancel", role: .cancel) {
+                    pendingDelete = nil
+                }
+            } message: {
+                Text("\"\(script.name)\" can't be recovered once deleted.")
+            }
     }
 
     /// ``library/scripts`` narrowed to those whose name contains
