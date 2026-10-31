@@ -115,28 +115,62 @@ struct GemResolverTests {
     }
 
     @Test func aDependencyAlreadySatisfiedByABundledGemIsNeverFetched() async throws {
-        // Mirrors what GemInstaller.installedVersionsByName() actually does
-        // since Phase 7's sqlite3 slice: seed `installed` with every
-        // BundledGem before resolving, so a gem that depends on sqlite3
-        // resolves as already-satisfied. `catalog` deliberately has no
-        // "sqlite3" entry: if the resolver ever tried to fetch it despite
-        // the seed, StubRubyGemsAPI would raise `gemNotFound` and this test
-        // would fail, not silently pass.
+        // Mirrors what GemInstaller.bundledVersionsByName() actually does
+        // since Phase 7's sqlite3 slice: pass every BundledGem as `bundled`
+        // before resolving, so a gem that depends on sqlite3 resolves as
+        // already-satisfied. `catalog` deliberately has no "sqlite3" entry:
+        // if the resolver ever tried to fetch it (versions or details)
+        // despite the seed, StubRubyGemsAPI would raise `gemNotFound` and
+        // this test would fail, not silently pass.
         let catalog: [String: [StubRubyGemsAPI.Version]] = [
             "needs-sqlite3": [
                 StubRubyGemsAPI.Version("1.0.0", dependencies: [("sqlite3", ">= 0")])
             ]
         ]
         let resolver = GemResolver(api: StubRubyGemsAPI(catalog: catalog))
-        let installed = ["sqlite3": try #require(GemVersion("2.9.6"))]
+        let bundled = ["sqlite3": try #require(GemVersion("2.9.6"))]
 
         let plan = try await resolver.resolve(
-            name: "needs-sqlite3", requirement: nil, installed: installed
+            name: "needs-sqlite3", requirement: nil, installed: [:], bundled: bundled
         )
 
         let names = Set(plan.map(\.name))
         #expect(names == ["needs-sqlite3"])
         #expect(!names.contains("sqlite3"))
+    }
+
+    @Test func anInstalledGemWithAMissingDependencyResolvesToJustThatDependency() async throws {
+        // httparty is on disk but csv isn't: deleted since, or an earlier
+        // install failed before csv landed. Reinstalling httparty must still
+        // walk its dependencies and plan csv, or the gem stays unusable.
+        let resolver = GemResolver(api: StubRubyGemsAPI(catalog: Self.httpartyCatalog))
+        let installed = [
+            "httparty": try #require(GemVersion("0.22.0")),
+            "mini_mime": try #require(GemVersion("1.1.5")),
+            "multi_xml": try #require(GemVersion("0.7.1")),
+        ]
+
+        let plan = try await resolver.resolve(
+            name: "httparty", requirement: nil, installed: installed
+        )
+
+        #expect(plan.map(\.name) == ["csv"])
+    }
+
+    @Test func aFullyInstalledGemResolvesToAnEmptyPlan() async throws {
+        let resolver = GemResolver(api: StubRubyGemsAPI(catalog: Self.httpartyCatalog))
+        let installed = [
+            "httparty": try #require(GemVersion("0.22.0")),
+            "csv": try #require(GemVersion("3.3.0")),
+            "mini_mime": try #require(GemVersion("1.1.5")),
+            "multi_xml": try #require(GemVersion("0.7.1")),
+        ]
+
+        let plan = try await resolver.resolve(
+            name: "httparty", requirement: nil, installed: installed
+        )
+
+        #expect(plan.isEmpty)
     }
 
     @Test func conflictingRequirementsProduceANamedError() async throws {

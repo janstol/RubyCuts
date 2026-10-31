@@ -103,7 +103,7 @@ extension EmbeddedRubyTests {
 
         // MARK: - Fixture helpers
 
-        private static func fixtureURL(_ name: String) throws -> URL {
+        static func fixtureURL(_ name: String) throws -> URL {
             let bundle = Bundle(for: FixtureBundleMarker.self)
             // Whether `PBXFileSystemSynchronizedRootGroup` preserves the
             // `Fixtures/` subdirectory in `Copy Bundle Resources` (vs. flattening

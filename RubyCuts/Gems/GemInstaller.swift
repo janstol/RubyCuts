@@ -22,7 +22,7 @@ enum GemInstallerError: Error, Sendable {
     /// best, so this is raised instead of quietly resolving to nothing. A
     /// gem depended on *transitively* isn't affected: ``GemResolver``
     /// already treats it as satisfied via the seed in
-    /// ``GemInstaller/installedVersionsByName()``.
+    /// ``GemInstaller/bundledVersionsByName()``.
     case alreadyBundled(gem: String, version: String)
 }
 
@@ -74,18 +74,24 @@ enum GemInstallPhase: Equatable, Sendable {
 /// which is `async`.
 @MainActor
 struct GemInstaller {
+    /// Fetches a `.gem` file's bytes.
+    typealias Download = @Sendable (URL) async throws -> Data
+
     let api: RubyGemsAPI
     let store: GemStore
-    private let session: URLSession
+    private let download: Download
 
+    /// - Parameter download: How `.gem` files are fetched. The default goes
+    ///   to the network through `URLSession.shared`; tests pass a stub to
+    ///   serve fixture bytes or inject a failure.
     init(
         api: RubyGemsAPI = LiveRubyGemsAPI(),
         store: GemStore = .installedGems,
-        session: URLSession = .shared
+        download: @escaping Download = { try await URLSession.shared.data(from: $0).0 }
     ) {
         self.api = api
         self.store = store
-        self.session = session
+        self.download = download
     }
 
     /// Resolves `name` (optionally pinned by `requirement`, e.g. `"~> 1.0"`)
@@ -100,66 +106,100 @@ struct GemInstaller {
         }
 
         let parsedRequirement = requirement.flatMap { GemRequirement($0) }
-        let installedVersions = try installedVersionsByName()
 
         let resolver = GemResolver(api: api)
         return try await resolver.resolve(
-            name: name, requirement: parsedRequirement, installed: installedVersions
+            name: name, requirement: parsedRequirement, installed: try installedVersionsByName(),
+            bundled: Self.bundledVersionsByName()
         )
     }
 
-    /// Downloads, verifies, extracts, and installs every gem in `plan`, in
-    /// order, reporting each phase to `onPhase` as it begins. Returns the
-    /// gems this call actually installed.
+    /// Downloads, verifies, extracts, and installs every gem in `plan`,
+    /// reporting each phase to `onPhase` as it begins. Returns the gems this
+    /// call installed, in plan order.
+    ///
+    /// **All or nothing, as far as the network is concerned.** Every gem is
+    /// downloaded, checksummed, and extracted into a staging directory
+    /// first; only once the whole plan has staged does anything move into
+    /// ``GemStore``. A failed download, a checksum mismatch, or a rejected
+    /// archive partway through leaves the store exactly as it was, so a
+    /// retry resolves the same plan again instead of finding the requested
+    /// gem already installed without its dependencies. Gems are committed
+    /// in reverse plan order, which puts the requested gem (always first in
+    /// the plan) last: if a local move fails during commit, the requested
+    /// gem is the one left out, and ``GemResolver`` picks the remainder back
+    /// up on the next attempt.
     ///
     /// `onPhase` is called synchronously on the main actor: `GemInstaller`
     /// is `@MainActor`, so no `@Sendable` or actor hop is needed here.
     func install(
         plan: [ResolvedGem], onPhase: (GemInstallPhase) -> Void
     ) async throws -> [InstalledGem] {
-        var installed: [InstalledGem] = []
-        for (index, target) in plan.enumerated() {
-            installed.append(
-                try await installOne(target, index: index, total: plan.count, onPhase: onPhase)
-            )
+        // Validate before downloading anything: the store refuses a second
+        // version of an installed gem, and finding that out at commit time
+        // would waste every download before it.
+        for target in plan where try store.isInstalled(target.name) {
+            throw GemStoreError.alreadyInstalled(target.name)
         }
-        return installed
+
+        let stagingRoot = FileManager.default.temporaryDirectory
+            .appending(component: "RubyCutsGemInstall-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: stagingRoot, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: stagingRoot) }
+
+        var staged: [(target: ResolvedGem, extractedURL: URL)] = []
+        for (index, target) in plan.enumerated() {
+            let extractedURL = try await stage(
+                target, in: stagingRoot, index: index, total: plan.count, onPhase: onPhase)
+            staged.append((target, extractedURL))
+        }
+
+        var installed: [InstalledGem] = []
+        for (target, extractedURL) in staged.reversed() {
+            let gem = try store.install(
+                from: extractedURL, name: target.name, version: target.version.raw
+            )
+            await RubyRuntime.shared.appendLoadPath(gem.libURL)
+            installed.append(gem)
+        }
+        return installed.reversed()
     }
 
-    /// Everything ``GemResolver`` should treat as already satisfied: every
-    /// ``BundledGem`` (seeded first, so a gem depending on `sqlite3`
-    /// resolves without a download) overlaid with whatever ``GemStore``
-    /// actually has on disk.
+    /// What ``GemStore`` actually has on disk, for ``GemResolver``'s
+    /// `installed`.
     private func installedVersionsByName() throws -> [String: GemVersion] {
-        var result: [String: GemVersion] = BundledGem.all.reduce(into: [:]) { result, bundled in
-            if let version = GemVersion(bundled.version) {
-                result[bundled.name] = version
-            }
-        }
-        for gem in try store.list() {
+        try store.list().reduce(into: [:]) { result, gem in
             if let version = GemVersion(gem.version) {
                 result[gem.name] = version
             }
         }
-        return result
     }
 
-    private func installOne(
-        _ target: ResolvedGem, index: Int, total: Int, onPhase: (GemInstallPhase) -> Void
-    ) async throws -> InstalledGem {
+    /// Every ``BundledGem``, for ``GemResolver``'s `bundled`, so a gem
+    /// depending on `sqlite3` resolves without a download.
+    private static func bundledVersionsByName() -> [String: GemVersion] {
+        BundledGem.all.reduce(into: [:]) { result, bundled in
+            if let version = GemVersion(bundled.version) {
+                result[bundled.name] = version
+            }
+        }
+    }
+
+    /// Downloads, verifies, and extracts one gem into its own directory
+    /// under `stagingRoot`, returning that directory. Writes nothing to the
+    /// store.
+    private func stage(
+        _ target: ResolvedGem, in stagingRoot: URL, index: Int, total: Int,
+        onPhase: (GemInstallPhase) -> Void
+    ) async throws -> URL {
         onPhase(.downloading(gem: target.name, index: index, total: total))
-        let (data, _) = try await session.data(from: target.downloadURL)
+        let data = try await download(target.downloadURL)
         try Self.verifyChecksum(data, expectedHex: target.sha256, gemName: target.name)
 
-        let tempRoot = FileManager.default.temporaryDirectory
-            .appending(component: "RubyCutsGemInstall-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: tempRoot) }
-
-        let gemFileURL = tempRoot.appending(component: "\(target.name).gem")
+        let gemFileURL = stagingRoot.appending(component: "\(index)-\(target.name).gem")
         try data.write(to: gemFileURL)
 
-        let extractedURL = tempRoot.appending(component: "extracted")
+        let extractedURL = stagingRoot.appending(component: "\(index)-\(target.name)")
         onPhase(.extracting(gem: target.name, index: index, total: total))
         do {
             try await GemArchive.extract(gemFileURL: gemFileURL, destination: extractedURL)
@@ -168,12 +208,7 @@ struct GemInstaller {
         } catch GemArchiveError.unsafeArchive(let detail) {
             throw GemInstallerError.archiveRejected(gem: target.name, detail: detail)
         }
-
-        let gem = try store.install(
-            from: extractedURL, name: target.name, version: target.version.raw
-        )
-        await RubyRuntime.shared.appendLoadPath(gem.libURL)
-        return gem
+        return extractedURL
     }
 
     private static func verifyChecksum(_ data: Data, expectedHex: String, gemName: String) throws {

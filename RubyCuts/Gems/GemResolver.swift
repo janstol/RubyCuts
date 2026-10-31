@@ -60,16 +60,25 @@ struct GemResolver: Sendable {
     nonisolated let api: RubyGemsAPI
 
     /// Resolves `name` (optionally pinned by `requirement`) and every
-    /// runtime dependency it transitively needs. `installed` is a snapshot
-    /// of what's already on disk (name -> version); a gem already installed
-    /// at a version satisfying every constraint gathered so far is skipped
-    /// entirely: neither downloaded again nor recursed into (its own
-    /// dependencies are assumed already satisfied from when it was
-    /// installed).
+    /// runtime dependency it transitively needs.
+    ///
+    /// - `installed` is a snapshot of what's on disk (name -> version). A gem
+    ///   installed at a version satisfying every constraint gathered so far
+    ///   isn't downloaded again, but its dependencies are still walked: one
+    ///   of them may have been deleted since, or never landed because an
+    ///   earlier install failed partway. Walking them is what lets
+    ///   reinstalling the parent repair it. That costs one version-details
+    ///   request per installed gem in the graph, and it's best-effort: if the
+    ///   request fails (a yanked version, say) that gem's dependencies are
+    ///   left as they are rather than failing the whole resolution.
+    /// - `bundled` is what's baked into the app (``BundledGem``). Those are
+    ///   satisfied outright and never walked: their own dependencies are
+    ///   compiled in with them, not something to install.
     func resolve(
         name: String,
         requirement: GemRequirement?,
-        installed: [String: GemVersion]
+        installed: [String: GemVersion],
+        bundled: [String: GemVersion] = [:]
     ) async throws -> [ResolvedGem] {
         var chosen: [String: (version: GemVersion, requirement: GemRequirement?)] = [:]
         var plan: [ResolvedGem] = []
@@ -89,10 +98,22 @@ struct GemResolver: Sendable {
                 continue
             }
 
+            if let bundledVersion = bundled[gemName],
+                gemRequirement?.satisfied(by: bundledVersion) ?? true
+            {
+                chosen[gemName] = (bundledVersion, gemRequirement)
+                continue
+            }
+
             if let installedVersion = installed[gemName],
                 gemRequirement?.satisfied(by: installedVersion) ?? true
             {
                 chosen[gemName] = (installedVersion, gemRequirement)
+                if let details = try? await api.versionDetails(
+                    ofGem: gemName, version: installedVersion.raw)
+                {
+                    try Self.enqueueDependencies(of: details, into: &queue)
+                }
                 continue
             }
 
@@ -106,18 +127,25 @@ struct GemResolver: Sendable {
                     sha256: details.sha
                 )
             )
-
-            for dependency in details.dependencies.runtime {
-                guard let dependencyRequirement = GemRequirement(dependency.requirements) else {
-                    throw GemResolverError.unparsableRequirement(
-                        gem: dependency.name, requirement: dependency.requirements
-                    )
-                }
-                queue.append((dependency.name, dependencyRequirement))
-            }
+            try Self.enqueueDependencies(of: details, into: &queue)
         }
 
         return plan
+    }
+
+    /// Appends `details`' runtime dependencies to the resolution queue.
+    private nonisolated static func enqueueDependencies(
+        of details: GemVersionDetails,
+        into queue: inout [(name: String, requirement: GemRequirement?)]
+    ) throws {
+        for dependency in details.dependencies.runtime {
+            guard let dependencyRequirement = GemRequirement(dependency.requirements) else {
+                throw GemResolverError.unparsableRequirement(
+                    gem: dependency.name, requirement: dependency.requirements
+                )
+            }
+            queue.append((dependency.name, dependencyRequirement))
+        }
     }
 
     /// Picks the newest non-prerelease `platform: "ruby"` version of `name`

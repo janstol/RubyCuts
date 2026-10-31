@@ -33,6 +33,11 @@ struct StubRubyGemsAPI: RubyGemsAPI {
     /// name -> every published version.
     let catalog: [String: [Version]]
 
+    /// The SHA-256 every version reports, for tests that actually download
+    /// and verify a fixture. `nil` (the default) reports a placeholder
+    /// `sha-<name>-<version>`, enough for tests that only resolve.
+    var sha256: String? = nil
+
     func versions(ofGem name: String) async throws -> [GemVersionInfo] {
         guard let versions = catalog[name] else {
             throw RubyGemsAPIError.gemNotFound(name)
@@ -52,7 +57,7 @@ struct StubRubyGemsAPI: RubyGemsAPI {
         return GemVersionDetails(
             dependencies: GemDependencies(runtime: runtime),
             gemUri: URL(string: "https://rubygems.org/gems/\(name)-\(version).gem")!,
-            sha: "sha-\(name)-\(version)"
+            sha: sha256 ?? "sha-\(name)-\(version)"
         )
     }
 

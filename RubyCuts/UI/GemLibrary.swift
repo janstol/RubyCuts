@@ -135,10 +135,10 @@ final class GemLibrary {
     /// linger into the next operation), which would silently wipe out the
     /// error this method just set, the same clobbering ``delete(_:)``
     /// avoids by returning early. Failure still re-reads ``gems`` directly
-    /// (without going through `refresh()`), since a gem earlier in the
-    /// install plan can have already landed on disk before a later one
-    /// failed, e.g. a checksum mismatch on the second of three resolved
-    /// gems.
+    /// (without going through `refresh()`): a download or extraction failure
+    /// leaves the store untouched (``GemInstaller/install(plan:onPhase:)``
+    /// stages everything first), but a local move failing during the final
+    /// commit can still leave part of the plan on disk.
     func confirmInstall() async {
         guard case .readyToInstall(let plan, _) = installState else { return }
         errorMessage = nil
