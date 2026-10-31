@@ -9,7 +9,7 @@ import Foundation
 /// beyond the URL". ``modifiedAt`` earns its place because ``ScriptStore/list()``
 /// already has it in hand from the directory scan that produces every
 /// ``Script`` in the first place, so it costs nothing extra to carry.
-/// `Identifiable` (via ``id``) lets Phase 3 list views use `ForEach(scripts)`;
+/// `Identifiable` (via ``id``) lets list views use `ForEach(scripts)`;
 /// `Hashable` and `Sendable` come for free from `URL`.
 ///
 /// Opted out of the app target's MainActor-by-default isolation (see

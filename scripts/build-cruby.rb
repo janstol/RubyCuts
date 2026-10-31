@@ -110,7 +110,7 @@ IOS_AC_OVERRIDES = {
   "ac_cv_func_pipe2" => "no",
 }.freeze
 
-# One row per SDK/arch this project builds for. lib_subdir/include_subdir are exactly Xcode's PLATFORM_NAME values, so Config/Shared.xcconfig and the "Check CRuby is built" build phase can key off $(PLATFORM_NAME) instead of enumerating SDKs. The shape of this table, not just the macOS row, was deliberate from slice 1: the iphoneos/iphonesimulator rows below add their own flag set (a --host + triple, --without-fiddle, the syscall/backtrace autoconf overrides) without restructuring the build functions.
+# One row per SDK/arch this project builds for. lib_subdir/include_subdir are exactly Xcode's PLATFORM_NAME values, so Config/Shared.xcconfig and the "Check CRuby is built" build phase can key off $(PLATFORM_NAME) instead of enumerating SDKs. The shape of this table, not just the macOS row, was deliberate from the start: the iphoneos/iphonesimulator rows below add their own flag set (a --host + triple, --without-fiddle, the syscall/backtrace autoconf overrides) without restructuring the build functions.
 TARGETS = {
   "macosx-arm64" => {
     enabled: true,
@@ -720,7 +720,7 @@ def configure_and_make!(key, target)
     target[:deployment_target_env] => target[:deployment_target],
     "LDFLAGS" => third_party_ldflags,
   }
-  # Cross-compiles (slice 2) can't rely on the toolchain's default SDK and must force it explicitly; a native build picks up Xcode's default.
+  # Cross-compiles (the iOS rows) can't rely on the toolchain's default SDK and must force it explicitly; a native build picks up Xcode's default.
   env["SDKROOT"] = sdk_path if target[:host]
 
   if target[:triple]

@@ -102,7 +102,7 @@ The SHA256s are verified against the official sources (OpenSSL against the `.sha
 
 ### sqlite3 (a pre-baked C-extension gem)
 
-C-extension gems can't be installed at runtime: `GemArchive` rejects any `.gem` containing `ext/**/extconf.rb` outright, because a downloaded `.bundle` can never be `dlopen`ed on a device under App Store W^X rules (see `docs/`-adjacent Phase 7 notes and `GemArchive.swift`). `sqlite3` is the one exception worth shipping anyway: it's compiled straight into `libruby-static.a` at build time instead of downloaded, so `require "sqlite3"` just works, and ``BundledGem`` lists it in the Gems sheet as bundled and non-removable.
+C-extension gems can't be installed at runtime: `GemArchive` rejects any `.gem` containing `ext/**/extconf.rb` outright, because a downloaded `.bundle` can never be `dlopen`ed on a device under App Store W^X rules (see `GemArchive.swift`). `sqlite3` is the one exception worth shipping anyway: it's compiled straight into `libruby-static.a` at build time instead of downloaded, so `require "sqlite3"` just works, and ``BundledGem`` lists it in the Gems sheet as bundled and non-removable.
 
 This needs two pins, not one, both at the top of `scripts/build-cruby.rb` alongside the Ruby/OpenSSL/libyaml pins:
 

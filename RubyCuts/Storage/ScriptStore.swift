@@ -39,8 +39,8 @@ extension ScriptStoreError: LocalizedError {
 }
 
 /// A value-type store over a directory of `.rb` files, the backing layer for
-/// the script list and the "Run Ruby Script" App Intent. No SwiftData: the
-/// PRD stores raw `.rb` files, so the filesystem *is* the database, and this
+/// the script list and the "Run Ruby Script" App Intent. No SwiftData: scripts
+/// are plain `.rb` files, so the filesystem *is* the database, and this
 /// type is a thin set of operations over one directory URL.
 ///
 /// `Sendable` because the only stored state is a `let directoryURL`; the

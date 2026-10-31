@@ -1,9 +1,9 @@
 import SwiftUI
 
 /// The in-app answer to "what is RubyCuts for" and "how do I wire this into a
-/// Shortcut": PRD 3.6's in-app documentation of the ARGV/STDIN/ENV contract
-/// and the native bridge, and PRD 6's success metric that a new user reaches
-/// a working Shortcut without leaving the app.
+/// Shortcut": in-app documentation of the ARGV/STDIN/ENV contract and the
+/// native bridge, so a new user can get to a working Shortcut without leaving
+/// the app.
 ///
 /// Content-only, matching ``GemListView``: a `List` of `Section`s and a
 /// `.navigationTitle`, no navigation chrome or sizing frame of its own. The

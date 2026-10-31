@@ -2,7 +2,7 @@ import Foundation
 import UserNotifications
 
 /// The `Device::Notification` capability: post a local notification from
-/// Ruby. This is the "tell the user something" primitive PRD 3.5 asks for:
+/// Ruby. This is the "tell the user something" primitive:
 /// a local notification rather than a blocking alert, because a script runs
 /// synchronously inside one call into ``RubyRuntime`` (a plain UI alert would
 /// have nothing to interrupt), and because a Shortcut can run a script with

@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The app's root view: a list of scripts backed by ``ScriptLibrary``, with
-/// create / open / delete. Replaces the Phase 1 placeholder `ContentView`.
+/// create / open / delete. Replaces the original placeholder `ContentView`.
 ///
 /// This is the first real product surface and
 /// establishes the pattern future views follow: an `@Observable` view model

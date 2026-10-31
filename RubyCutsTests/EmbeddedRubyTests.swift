@@ -6,7 +6,7 @@ import Testing
 /// here via an `extension EmbeddedRubyTests { ... }` in its own file, not
 /// declared inline).
 ///
-/// Before `RubyRuntime` got its own dedicated thread (Phase 8 Wave B), every
+/// Before `RubyRuntime` got its own dedicated thread, every
 /// test body ran fully synchronously on the main actor, so the three
 /// `@Suite(.serialized)` suites could never interleave with each other even
 /// though `.serialized` only orders tests *within* one suite. There was

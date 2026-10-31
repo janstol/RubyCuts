@@ -97,7 +97,7 @@ extension EmbeddedRubyTests {
         }
 
         @Test func requiresCSV() async throws {
-            // The PRD's literal V1 success metric. Also exercises date, time, strscan,
+            // `require 'csv'` was the first stdlib milestone. Also exercises date, time, strscan,
             // forwardable, and English transitively.
             let result = try await RubyRuntime.shared.evaluate(
                 "require 'csv'; CSV.parse(\"a,b\\n1,2\\n\").last.join(',')"
@@ -241,7 +241,7 @@ extension EmbeddedRubyTests {
         }
 
         @Test func setDefaultPathsOnAFreshStoreAlsoTrustsTheBundledCACertificates() async throws {
-            // Found live, testing Phase 7: httparty doesn't rely on Net::HTTP's
+            // Found live, testing gem installs: httparty doesn't rely on Net::HTTP's
             // DEFAULT_CERT_STORE fallback: it builds its own
             // OpenSSL::X509::Store.new.tap(&:set_default_paths) and assigns it
             // directly as the connection's cert_store, bypassing
@@ -261,7 +261,7 @@ extension EmbeddedRubyTests {
         @Test func loadPathIsExactlyTheBundledStdlibPlusAnyInstalledGems() async throws {
             // The test that would have caught a dev-machine-only pass: without this, macOS
             // could keep working via stale .build-cruby paths seeded by ruby_init_loadpath()
-            // while the same code silently ships broken on device. Widened for Phase 7:
+            // while the same code silently ships broken on device. Widened for gems:
             // `installGemPaths()` now appends every installed gem's `lib/` dir after
             // stdlib, so the old "exactly one entry" assertion no longer holds. What
             // must still hold is that stdlib leads (`configureTLS()` depends on that
@@ -281,8 +281,8 @@ extension EmbeddedRubyTests {
             #expect(result == "Shift_JIS")
         }
 
-        // MARK: - run(_:): STDOUT/STDERR capture (Phase 4 partial; ARGV/STDIN/ENV
-        // are deferred to the App Intents slice; this covers STDOUT/STDERR + error)
+        // MARK: - run(_:): STDOUT/STDERR capture and errors (ARGV/STDIN/ENV input
+        // has its own section below)
 
         @Test func runCapturesPutsToStdout() async {
             // `puts` writes to $stdout; the captured stdout must hold it.
@@ -469,7 +469,7 @@ extension EmbeddedRubyTests {
             #expect(ok == "2")
         }
 
-        // MARK: - "Run Ruby Script" App Intent integration (output-side, Phase 5)
+        // MARK: - "Run Ruby Script" App Intent integration (output side)
         //
         // The one VM-driving contract for the App Intents slice: seed a temp-dir
         // store, resolve a stored script through the ``ScriptEntity`` picker path
@@ -524,7 +524,7 @@ extension EmbeddedRubyTests {
             #expect(error.message.hasPrefix("boom\n"))
         }
 
-        // MARK: - run(_:input:): ARGV / STDIN / ENV plumbing (Phase 4 input side)
+        // MARK: - run(_:input:): ARGV / STDIN / ENV plumbing (input side)
         //
         // The VM-driving contract for the input slice: a non-empty ``RunInput``
         // reaches the script as `ARGV` / `$stdin` / `ENV`, an empty one runs today's
@@ -741,7 +741,7 @@ extension EmbeddedRubyTests {
             }
         }
 
-        // MARK: - Script run cancellation (Phase 8, Wave B)
+        // MARK: - Script run cancellation
         //
         // These work *because* `RubyRuntime` runs on its own dedicated
         // thread: the test's own task isn't blocked while a run occupies the

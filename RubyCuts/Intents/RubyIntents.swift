@@ -12,7 +12,7 @@ import Foundation
 
 /// The error surfaced in Shortcuts when a "Run ..." Ruby intent fails. Conforms
 /// to `CustomLocalizedStringResourceConvertible`, which is the protocol the App
-/// Intents failure UI actually reads: the PRD 3.1 contract that a failed run
+/// Intents failure UI actually reads, so a failed run
 /// reports *what Ruby said*, not "an error occurred" / the error's type name.
 ///
 /// `CustomStringConvertible` alone turned out not to be enough: Shortcuts
@@ -41,7 +41,7 @@ struct RubyRunError: Error, CustomLocalizedStringResourceConvertible, CustomStri
     var description: String { message }
 }
 
-/// The PRD 3.1 output/error contract as a pure decision over a ``RunResult``:
+/// The intents' output/error contract as a pure decision over a ``RunResult``:
 /// a clean run (no exception, empty `$stderr`) returns its captured `$stdout`;
 /// anything else (a raise *or* a populated `$stderr`) fails with a
 /// ``RubyRunError`` combining the message and stderr.
@@ -51,7 +51,7 @@ struct RubyRunError: Error, CustomLocalizedStringResourceConvertible, CustomStri
 /// function is the seam.
 ///
 /// The rule "populated STDERR fails the run" matches the console's read of a
-/// run and the PRD's "fails with the Ruby trace on crash/STDERR": a script that
+/// run (a crash or anything on STDERR fails, with the Ruby trace): a script that
 /// only `warn`s or writes `$stderr` but doesn't raise still fails the intent,
 /// because downstream Shortcut actions shouldn't consume a stream the script
 /// itself flagged as an error.
@@ -91,7 +91,7 @@ nonisolated private func combinedMessage(_ result: RunResult) -> String {
     return parts.joined(separator: "\n")
 }
 
-/// Runs `source` through the embedded VM and applies the PRD output/error
+/// Runs `source` through the embedded VM and applies the output/error
 /// contract (see ``output(from:)``). Returns the captured `$stdout` for the
 /// next Shortcut action to consume, or throws a ``RubyRunError`` describing the
 /// failure.
@@ -206,7 +206,7 @@ struct RunInlineRubyIntent: AppIntent {
 /// script's file name as its id, resolved against the current store at run
 /// time, so the same Shortcut works on every device. If that script has since
 /// been renamed or deleted the read throws and the intent fails, acceptable
-/// for V1 (noted in the PRD).
+/// for V1.
 struct RunRubyScriptIntent: AppIntent {
     @Parameter(
         title: "Script",

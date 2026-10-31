@@ -4,11 +4,19 @@ RubyCuts is an open-source, universal Apple app (iOS, iPadOS, macOS) that lets y
 
 It's inspired by [Rubyist](https://rubyist.app), but aims to be actively maintained and to embed the full CRuby (MRI) environment instead of the limited `mruby` VM, giving you real standard library access (`csv`, `json`, `net/http`, ...) and the ability to pull in pure Ruby gems at runtime.
 
+## Features
+
+- **Real Ruby.** CRuby 3.4.9 (MRI) embedded in the app, with its standard library: `json`, `csv`, `yaml`, `net/http` over HTTPS, `openssl` and more.
+- **Shortcuts actions.** "Run Inline Ruby" and "Run Ruby Script" take `ARGV` (a list), `STDIN` and `ENV` from the Shortcut and return `STDOUT` to the next action. A script that raises or writes to `STDERR` fails the Shortcut with Ruby's error message.
+- **Script editor.** Syntax highlighting, a console with output, errors, backtrace and timing, a Stop button for runaway scripts, plus search, sort, rename and sample scripts to start from.
+- **iCloud Drive sync.** Scripts live in a "RubyCuts" folder in iCloud Drive, so they sync between your devices and you can edit them in any editor. Without iCloud they're kept on the device.
+- **Gems.** Search and install pure-Ruby gems from rubygems.org, dependencies included, and `require` them right away. `sqlite3` comes bundled. Gems with C extensions can't be installed (Apple doesn't allow loading downloaded native code).
+- **Native bridge.** `Device::Clipboard` and `Device::Notification` let scripts read and write the clipboard and post notifications.
+- **iPhone, iPad and Mac.** One universal app, with a menu bar, keyboard shortcuts and a Settings window on the Mac, and a built-in reference for the Ruby-to-Shortcuts contract.
+
 ## Status
 
-Pre-alpha, but the core loop works: CRuby 3.4.9 runs embedded on iOS, iPadOS, and macOS, scripts are stored and edited in the app, and both Shortcuts actions ("Run Inline Ruby", "Run Ruby Script") wire `ARGV`/`STDIN`/`ENV` in and `STDOUT`/`STDERR` back out. There's a small native bridge (`Device::Clipboard`, `Device::Notification`), pure-Ruby gem installs from rubygems.org (plus a bundled `sqlite3`), and a first-launch set of sample scripts with an in-app reference.
-
-Not yet ready to ship: iCloud sync is blocked on a paid Apple Developer account, App Store submission (with guideline 2.5.2 on interpreted code in mind) hasn't been attempted, and a handful of correctness fixes from a code review are still open. Expect breaking changes.
+Everything above works and is in daily use on Mac and iPhone. RubyCuts isn't in the App Store yet: submission is next, with Apple's rules on interpreted code (guideline 2.5.2) in mind.
 
 ## Requirements
 

@@ -1,7 +1,7 @@
 @testable import RubyCuts
 import Testing
 
-// Pure tests of the PRD 3.1 output/error contract (``output(from:)``): the
+// Pure tests of the intents' output/error contract (``output(from:)``): the
 // decision a "Run ..." Ruby intent makes over a captured ``RunResult``, with no
 // VM booted and no I/O. This is the unit-testable seam split out of
 // ``runToOutput(_:)``; the VM-driving half lives in `RubyRuntimeTests` (one
@@ -43,7 +43,7 @@ struct IntentOutputTests {
 
     @Test func stderrOnlyThrowsEvenWithoutACrash() throws {
         // A script that `warn`s but doesn't raise still fails the intent: the
-        // PRD says populated STDERR fails the run, so a downstream action
+        // contract says populated STDERR fails the run, so a downstream action
         // never consumes a stream the script itself flagged as an error.
         let result = RunResult(stdout: "", stderr: "warning\n", result: "nil", errorMessage: nil)
 

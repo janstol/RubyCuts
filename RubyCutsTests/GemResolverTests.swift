@@ -8,8 +8,8 @@ import Testing
 @Suite
 struct GemResolverTests {
 
-    /// httparty's real runtime dependency shape (per the Phase 7 plan's PRD
-    /// success metric): resolving httparty must pull in csv, mini_mime, and
+    /// httparty's real runtime dependency shape (installing httparty is the gem
+    /// feature's headline case): resolving httparty must pull in csv, mini_mime, and
     /// multi_xml.
     private static let httpartyCatalog: [String: [StubRubyGemsAPI.Version]] = [
         "httparty": [
@@ -115,7 +115,7 @@ struct GemResolverTests {
 
     @Test func aDependencyAlreadySatisfiedByABundledGemIsNeverFetched() async throws {
         // Mirrors what GemInstaller.bundledVersionsByName() actually does
-        // since Phase 7's sqlite3 slice: pass every BundledGem as `bundled`
+        // since sqlite3 became a bundled gem: pass every BundledGem as `bundled`
         // before resolving, so a gem that depends on sqlite3 resolves as
         // already-satisfied. `catalog` deliberately has no "sqlite3" entry:
         // if the resolver ever tried to fetch it (versions or details)

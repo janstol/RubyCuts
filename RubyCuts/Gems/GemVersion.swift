@@ -8,7 +8,7 @@ import Foundation
 /// Deliberately narrower than `Gem::Version`: nothing here understands
 /// prerelease ordering. V1 never selects a prerelease: ``RubyGemsAPI``'s
 /// callers filter `prerelease: true` entries out before a version string
-/// ever reaches this type (see the Phase 7 plan), so there's no need to
+/// ever reaches this type, so there's no need to
 /// order one correctly relative to a release.
 ///
 /// Opted out of the app target's MainActor-by-default isolation, matching

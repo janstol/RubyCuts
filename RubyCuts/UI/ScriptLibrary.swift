@@ -2,7 +2,7 @@ import Foundation
 import Observation
 
 /// The view model backing the script list, the project's first view model, and
-/// the pattern Phase 3's editor/console VMs and Phase 5's intents should follow.
+/// the pattern later view models follow.
 ///
 /// `@Observable` (the current Swift idiom; the app targets iOS 26 / macOS 26, so
 /// it's available), not `ObservableObject`/`@Published`. MainActor isolation is
@@ -11,8 +11,7 @@ import Observation
 /// layer (`Script`/`ScriptStore`) opts out with `nonisolated`.
 ///
 /// The VM owns list state only. It does **not** hold `Script` source: source
-/// stays on disk and is read on demand in the editor, exactly as Phase 2
-/// designed, so the editor calls `ScriptStore` directly for `source(of:)` and
+/// stays on disk and is read on demand in the editor, by design, so the editor calls `ScriptStore` directly for `source(of:)` and
 /// `write`. This keeps the VM small and keeps source strings out of observable
 /// list state.
 ///

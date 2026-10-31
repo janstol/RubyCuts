@@ -12,7 +12,7 @@ import Foundation
 /// switches between local and iCloud, while Shortcuts syncs a saved shortcut
 /// across devices. A file name resolves the same everywhere. A script renamed
 /// or deleted since the Shortcut was saved fails at run time with a clear
-/// error, acceptable for V1 and noted in the PRD.
+/// error, acceptable for V1.
 ///
 /// **Isolation:** a plain `Sendable` value type (two `String`s). The
 /// ``Script``/``ScriptStore`` it wraps are `nonisolated` (they opt out of the

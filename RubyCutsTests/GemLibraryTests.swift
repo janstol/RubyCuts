@@ -47,8 +47,8 @@ private struct UnreachableRubyGemsAPI: RubyGemsAPI {
 @Suite
 struct GemLibraryTests {
 
-    /// httparty's real runtime dependency shape (per the Phase 7 plan's PRD
-    /// success metric): resolving httparty must pull in csv, mini_mime, and
+    /// httparty's real runtime dependency shape (installing httparty is the gem
+    /// feature's headline case): resolving httparty must pull in csv, mini_mime, and
     /// multi_xml. Mirrors `GemResolverTests.httpartyCatalog`.
     private static let httpartyCatalog: [String: [StubRubyGemsAPI.Version]] = [
         "httparty": [

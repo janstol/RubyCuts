@@ -389,7 +389,7 @@ actor RubyRuntime {
     /// shadows the C implementations: a `def` in `module Kernel` replaces the
     /// registered C method, and the raised `SystemExit` is caught downstream as
     /// `TAG_RAISE` and surfaced as a run error, exactly the "script exits ->
-    /// run fails" behavior the PRD wants for both the console and App Intents.
+    /// run fails" behavior both the console and the App Intents rely on.
     ///
     /// Best-effort and non-fatal: if the redefine fails, Ruby itself still works;
     /// only `exit!`/`abort` would still terminate the host.
@@ -523,7 +523,7 @@ actor RubyRuntime {
     /// `SSL_CERT_FILE` env var (Ruby's openssl ext doesn't honor one). `$LOAD_PATH.first` is the bundled stdlib dir (the single load-path entry), so the PEM is
     /// locatable in Ruby without a Swift-to-Ruby path round-trip.
     ///
-    /// **The `set_default_paths` override is what Phase 7 gems need.** A gem
+    /// **The `set_default_paths` override is what installed gems need.** A gem
     /// isn't obligated to rely on `Net::HTTP`'s `DEFAULT_CERT_STORE`
     /// fallback: `httparty`, for one, builds its own
     /// `OpenSSL::X509::Store.new.tap { |s| s.set_default_paths }` and assigns
