@@ -36,13 +36,24 @@ jobs:
           path: Vendor/CRuby
           key: cruby-xcode27.2-${{ hashFiles('scripts/build-cruby.rb') }}
 
+      # The Ruby that runs the build script is also CRuby's cross-compile
+      # baseruby, and Homebrew's Ruby (the runner's default) redirects
+      # RubyGems' default directory into Homebrew's own tree, so the iOS
+      # `make install` tries to write there and fails. A mise-installed Ruby,
+      # as the README sets up, installs into the build's own prefix.
+      - name: Install mise and Ruby
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: jdx/mise-action@v2
+        env:
+          MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
+
       - name: Build CRuby
         if: steps.cache.outputs.cache-hit != 'true'
-        # The runner's own Ruby 3.4 runs the build script (stdlib only), and
-        # also serves as the cross-compile baseruby.
+        env:
+          MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
         run: |
-          ruby -v
-          ruby scripts/build-cruby.rb
+          mise exec -- ruby -v
+          mise run cruby
 
       - name: Save CRuby
         if: steps.cache.outputs.cache-hit != 'true'
