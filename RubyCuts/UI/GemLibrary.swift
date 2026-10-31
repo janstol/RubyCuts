@@ -270,6 +270,10 @@ final class GemLibrary {
         case .alreadyBundled(let gem, let version):
             return
                 "'\(gem)' is built into RubyCuts (version \(version)) and doesn't need installing."
+        case .downloadTooLarge(let gem):
+            let limit = ByteCountFormatter.string(
+                fromByteCount: Int64(GemInstaller.maxDownloadBytes), countStyle: .memory)
+            return "'\(gem)' is larger than \(limit), too large to install."
         case .invalidRequirement(let requirement):
             return
                 "'\(requirement)' isn't a valid version requirement. Use a form like '~> 1.2', '>= 2.0', or an exact version such as '1.4.2', or leave it empty for the newest version."

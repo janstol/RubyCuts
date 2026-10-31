@@ -55,9 +55,19 @@ struct RubyRunError: Error, CustomLocalizedStringResourceConvertible, CustomStri
 /// only `warn`s or writes `$stderr` but doesn't raise still fails the intent,
 /// because downstream Shortcut actions shouldn't consume a stream the script
 /// itself flagged as an error.
+///
+/// Output cut off at ``RubyRuntime/capturedOutputByteLimit`` fails too:
+/// handing the next action a silently partial result would be worse than
+/// stopping the Shortcut with a reason.
 nonisolated func output(from result: RunResult) -> Result<String, RubyRunError> {
     if !result.stderr.isEmpty || result.hasError {
         return .failure(RubyRunError(message: combinedMessage(result)))
+    }
+    if result.stdoutTruncated {
+        let limit = ByteCountFormatter.string(
+            fromByteCount: Int64(RubyRuntime.capturedOutputByteLimit), countStyle: .memory)
+        let message = "The script's output is larger than \(limit), so it was cut off."
+        return .failure(RubyRunError(message: message))
     }
     return .success(result.stdout)
 }

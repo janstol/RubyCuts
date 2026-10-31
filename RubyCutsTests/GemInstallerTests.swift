@@ -167,5 +167,28 @@ extension EmbeddedRubyTests {
                 }
             }
         }
+
+        @Test func anOversizedDownloadIsRefusedAndNothingIsInstalled() async throws {
+            let fixture = try Self.fixture()
+            try await Self.withTempStore { store in
+                let downloader = StubGemDownloader(fixture: fixture)
+                let sha = SHA256.hash(data: fixture).map { String(format: "%02x", $0) }.joined()
+                let installer = GemInstaller(
+                    api: StubRubyGemsAPI(catalog: Self.catalog, sha256: sha),
+                    store: store,
+                    download: { try await downloader.download($0) },
+                    maxDownloadBytes: fixture.count - 1
+                )
+                let plan = try await installer.plan(name: "rc_parent", requirement: nil)
+
+                do {
+                    _ = try await installer.install(plan: plan) { _ in }
+                    Issue.record("expected the install to fail")
+                } catch GemInstallerError.downloadTooLarge(let gem) {
+                    #expect(gem == "rc_parent")
+                }
+                #expect(try store.list().isEmpty)
+            }
+        }
     }
 }

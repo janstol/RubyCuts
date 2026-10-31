@@ -868,5 +868,60 @@ extension EmbeddedRubyTests {
             #expect(bRan == "nil")
         }
 
+        // MARK: - Captured output limit
+
+        @Test func stdoutPastTheLimitIsCutOffAndFlagged() async {
+            let limit = RubyRuntime.capturedOutputByteLimit
+            let result = await RubyRuntime.shared.run("print 'x' * \(limit + 10); puts 'after'")
+
+            #expect(result.stdout.utf8.count == limit)
+            #expect(result.stdoutTruncated)
+            #expect(!result.stderrTruncated)
+            #expect(!result.hasError)
+        }
+
+        @Test func manySmallWritesStopGrowingAtTheLimit() async {
+            // 200,000 lines of 11 bytes is about 2 MB, through `puts`, `print`
+            // and `<<`, which all go through the capture's `write`.
+            let result = await RubyRuntime.shared.run(
+                "100_000.times { puts 'y' * 10 }; 50_000.times { print 'z' * 10, \"\\n\" }; "
+                    + "50_000.times { $stdout << 'w' * 10 << \"\\n\" }; 10.times { putc 'p' }")
+
+            #expect(result.stdout.utf8.count <= RubyRuntime.capturedOutputByteLimit)
+            #expect(result.stdoutTruncated)
+            #expect(!result.stdout.contains("p"))
+        }
+
+        @Test func stderrHasItsOwnLimit() async {
+            let limit = RubyRuntime.capturedOutputByteLimit
+            let result = await RubyRuntime.shared.run(
+                "$stderr.write 'e' * \(limit + 1); print 'ok'")
+
+            #expect(result.stderr.utf8.count == limit)
+            #expect(result.stderrTruncated)
+            #expect(result.stdout == "ok")
+            #expect(!result.stdoutTruncated)
+        }
+
+        @Test func aCutThroughAMultibyteCharacterStaysValidText() async {
+            // "é" is two bytes, so one leading "a" puts the limit in the middle
+            // of a character.
+            let limit = RubyRuntime.capturedOutputByteLimit
+            let result = await RubyRuntime.shared.run("print 'a' + 'é' * \(limit)")
+
+            #expect(result.stdoutTruncated)
+            #expect(result.stdout.utf8.count == limit - 1)
+            #expect(result.stdout.hasSuffix("é"))
+        }
+
+        @Test func theRunAfterATruncatedOneStartsFresh() async {
+            _ = await RubyRuntime.shared.run(
+                "print 'x' * \(RubyRuntime.capturedOutputByteLimit + 1)")
+
+            let next = await RubyRuntime.shared.run("puts 'fresh'")
+
+            #expect(next.stdout == "fresh\n")
+            #expect(!next.stdoutTruncated)
+        }
     }
 }

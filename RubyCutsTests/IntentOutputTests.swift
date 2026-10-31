@@ -167,4 +167,16 @@ struct IntentOutputTests {
     private static func kv(_ pairs: [(key: String, value: String)]) -> [String] {
         pairs.map { "\($0.key)=\($0.value)" }
     }
+
+    @Test func truncatedStdoutFailsInsteadOfPassingPartialOutputOn() {
+        var result = RunResult(stdout: "partial", stderr: "", result: "", errorMessage: nil)
+        result.stdoutTruncated = true
+
+        switch Self.output(from: result) {
+        case .success:
+            Issue.record("expected a failure")
+        case .failure(let error):
+            #expect(error.message.contains("cut off"))
+        }
+    }
 }

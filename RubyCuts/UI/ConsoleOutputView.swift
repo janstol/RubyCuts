@@ -30,10 +30,12 @@ struct ConsoleOutputView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
                     if !result.stdout.isEmpty {
-                        section("Output", text: result.stdout)
+                        let output = Self.text(result.stdout, truncated: result.stdoutTruncated)
+                        section("Output", text: Self.displayed(output))
                     }
                     if !result.stderr.isEmpty {
-                        section("Errors", text: result.stderr, tint: .red)
+                        let errors = Self.text(result.stderr, truncated: result.stderrTruncated)
+                        section("Errors", text: Self.displayed(errors), tint: .red)
                     }
                     // Suppressed on cancellation: "run cancelled" as a red error
                     // reads like a bug rather than the user's own action, and the
@@ -174,6 +176,56 @@ struct ConsoleOutputView: View {
         }
     }
 
+    /// A captured stream as the console and the copied transcript show it:
+    /// unchanged, or followed by a note on its own line when the run hit
+    /// ``RubyRuntime/capturedOutputByteLimit``.
+    static func text(_ captured: String, truncated: Bool) -> String {
+        guard truncated else { return captured }
+        let limit = ByteCountFormatter.string(
+            fromByteCount: Int64(RubyRuntime.capturedOutputByteLimit), countStyle: .memory)
+        let separator = captured.hasSuffix("\n") ? "" : "\n"
+        return captured + separator + "[Cut off here: the output is larger than \(limit).]"
+    }
+
+    /// The most lines ``displayed(_:)`` keeps.
+    static let maxDisplayedLines = 300
+
+    /// The most characters ``displayed(_:)`` keeps per line.
+    static let maxDisplayedLineLength = 500
+
+    /// What a section actually draws for `text`: the last
+    /// ``maxDisplayedLines`` lines, each cut at ``maxDisplayedLineLength``
+    /// characters, with a note on top whenever anything was left out.
+    /// Unchanged when it all fits.
+    ///
+    /// A section is one `Text`, and a `Text` too tall or too wide to draw
+    /// (on the order of 10,000 lines, or one very long line) renders blank,
+    /// even though its contents are there: Copy All copied them fine. The
+    /// caps keep the drawn size well inside that, including at the
+    /// iPhone's 3x scale. The tail is kept because the latest output, and
+    /// the "Cut off here" note, are what matter after a long run. Copy All
+    /// (``transcript(for:)``) still has everything.
+    static func displayed(_ text: String) -> String {
+        var lines = text.split(separator: "\n", omittingEmptySubsequences: false)
+        let droppedLines = lines.count > maxDisplayedLines
+        if droppedLines {
+            lines = Array(lines.suffix(maxDisplayedLines))
+        }
+        var shortenedLines = false
+        let shown = lines.map { line -> String in
+            guard line.count > maxDisplayedLineLength else { return String(line) }
+            shortenedLines = true
+            return line.prefix(maxDisplayedLineLength) + "…"
+        }
+        guard droppedLines || shortenedLines else { return text }
+
+        var notes: [String] = []
+        if droppedLines { notes.append("Showing the last \(maxDisplayedLines) lines.") }
+        if shortenedLines { notes.append("Long lines are shortened.") }
+        notes.append("Copy All copies everything.")
+        return "[\(notes.joined(separator: " "))]\n" + shown.joined(separator: "\n")
+    }
+
     /// The Copy All payload: every populated section, labeled and in the
     /// same order the view renders them, skipping empty sections so the
     /// result isn't padded with blank lines. Honors the same "suppress the
@@ -189,10 +241,10 @@ struct ConsoleOutputView: View {
     static func transcript(for result: RunResult) -> String {
         var sections: [String] = []
         if !result.stdout.isEmpty {
-            sections.append("Output:\n\(result.stdout)")
+            sections.append("Output:\n\(text(result.stdout, truncated: result.stdoutTruncated))")
         }
         if !result.stderr.isEmpty {
-            sections.append("Errors:\n\(result.stderr)")
+            sections.append("Errors:\n\(text(result.stderr, truncated: result.stderrTruncated))")
         }
         if let errorMessage = result.errorMessage, !result.wasCancelled {
             sections.append("Error:\n\(errorMessage)")

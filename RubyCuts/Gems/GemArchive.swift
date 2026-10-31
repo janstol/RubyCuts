@@ -3,7 +3,8 @@ import Foundation
 /// An error raised while extracting a `.gem` archive.
 enum GemArchiveError: Error, Sendable {
     /// The archive contains an entry Ruby's extractor rejected: a path
-    /// escape, a symlink/hardlink, or a `.gem` missing `data.tar.gz`
+    /// escape, a symlink/hardlink, a malformed or truncated tar, an archive
+    /// over ``GemArchive/Limits``, or a `.gem` missing `data.tar.gz`
     /// entirely. The message is the Ruby exception's `to_s`.
     case unsafeArchive(String)
 
@@ -30,14 +31,39 @@ enum GemArchiveError: Error, Sendable {
 /// and a payload containing `ext/**/extconf.rb` fails the whole extraction.
 /// Better to refuse the install with an explanation than ship a gem that
 /// silently can't `require`.
+///
+/// Memory stays bounded: the payload is decompressed and written out in
+/// chunks rather than inflated whole, and ``Limits`` caps how much it may
+/// unpack to, so a small, highly compressible archive can't exhaust memory
+/// or disk.
 enum GemArchive {
+    /// How large a gem's payload may be once unpacked.
+    struct Limits: Sendable {
+        /// The most bytes all entries together may declare. Checked against
+        /// each tar header before its body is read, so an archive over the
+        /// limit is rejected without inflating it.
+        var maxUnpackedBytes: Int
+
+        /// The most entries (files, directories) the payload may contain.
+        var maxEntries: Int
+
+        /// 100 MiB and 10,000 entries: far above any real pure-Ruby gem,
+        /// far below what would strain a phone.
+        static let standard = Limits(maxUnpackedBytes: 100 * 1_048_576, maxEntries: 10_000)
+    }
+
     /// Extracts `gemFileURL` (a downloaded `.gem`) into `destination`,
-    /// creating it if needed. On success, `destination` holds the gem's
-    /// payload, typically a `lib/` directory among others. Runs on
-    /// ``RubyRuntime``'s dedicated VM thread, like every other VM call:
-    /// `async` because reaching that thread from the caller's actor is a
-    /// real hop, not a same-actor call.
-    static func extract(gemFileURL: URL, destination: URL) async throws {
+    /// creating it. On success, `destination` holds the gem's payload,
+    /// typically a `lib/` directory among others. On failure nothing is left
+    /// at `destination`: entries are written to a temporary sibling directory
+    /// that is renamed into place only once the whole archive has extracted.
+    ///
+    /// Runs on ``RubyRuntime``'s dedicated VM thread, like every other VM
+    /// call: `async` because reaching that thread from the caller's actor is
+    /// a real hop, not a same-actor call.
+    static func extract(
+        gemFileURL: URL, destination: URL, limits: Limits = .standard
+    ) async throws {
         let gemPathB64 = RubyRuntime.base64(gemFileURL.path)
         let destPathB64 = RubyRuntime.base64(destination.path)
 
@@ -45,7 +71,9 @@ enum GemArchive {
             \(tarReaderSource)
             RubyCutsGemArchive.extract(
               Base64.decode64("\(gemPathB64)"),
-              Base64.decode64("\(destPathB64)")
+              Base64.decode64("\(destPathB64)"),
+              \(limits.maxUnpackedBytes),
+              \(limits.maxEntries)
             )
             """
 
@@ -72,13 +100,21 @@ enum GemArchive {
     /// Strict about structure: every header's checksum is verified, size
     /// fields must be plain octal, and a partial header or an entry body
     /// (padding included) shorter than its header declares fails the whole
-    /// extraction. Entries are all read before anything is written, so a
-    /// malformed archive leaves the destination untouched.
+    /// extraction.
+    ///
+    /// Streams: `each_tar_entry` yields one header at a time with a body
+    /// reader that hands the content over in 64 KiB chunks, and the payload
+    /// is read straight from the `GzipReader` instead of being inflated into
+    /// one string first. The entry count and declared sizes are checked
+    /// against the limits before a body is read. Writing goes to a
+    /// `.partial-*` sibling of the destination that is removed on any
+    /// failure, which keeps the old "a bad archive writes nothing" guarantee.
     private static let tarReaderSource = #"""
         require 'zlib'
         require 'stringio'
         require 'base64'
         require 'fileutils'
+        require 'securerandom'
 
         module RubyCutsGemArchive
           class UnsafeArchiveError < StandardError; end
@@ -115,8 +151,13 @@ enum GemArchive {
             end
           end
 
-          def self.read_tar_entries(io)
-            entries = []
+          # Yields each entry's header ({name:, typeflag:, size:}) and a body
+          # reader. Calling the reader with a block hands it the entry's
+          # content in chunks; an entry whose body the block didn't read is
+          # skipped afterwards. Either way the whole body, padding included,
+          # must be there: a checksum over the download only proves the bytes
+          # match what was advertised, not that the tar inside is complete.
+          def self.each_tar_entry(io)
             loop do
               header = io.read(512)
               # A clean end of data at a block boundary ends the archive (the
@@ -130,30 +171,31 @@ enum GemArchive {
 
               fields = header.unpack(TAR_HEADER_FORMAT)
               name = fields[0].to_s.delete("\0")
-              typeflag = fields[7].to_s
               prefix = fields[15].to_s.delete("\0")
               full_name = prefix.empty? ? name : "#{prefix}/#{name}"
               verify_checksum(header, full_name)
               size = octal_field(fields[4].to_s, "size", full_name)
               padded_size = ((size + 511) / 512) * 512
 
-              # The whole body, padding included, must be there: a checksum
-              # over the download only proves the bytes match what was
-              # advertised, not that the tar inside is complete.
-              body = size.positive? ? io.read(padded_size).to_s : ""
-              if body.bytesize < padded_size
-                raise UnsafeArchiveError,
-                  "truncated archive entry #{full_name.inspect} " \
-                  "(#{body.bytesize} of #{padded_size} bytes)"
+              consumed = false
+              body = lambda do |&sink|
+                consumed = true
+                read = 0
+                while read < padded_size
+                  chunk = io.read([padded_size - read, 65_536].min)
+                  if chunk.nil? || chunk.empty?
+                    raise UnsafeArchiveError,
+                      "truncated archive entry #{full_name.inspect} (#{read} of #{padded_size} bytes)"
+                  end
+                  content_left = size - read
+                  sink&.call(content_left >= chunk.bytesize ? chunk : chunk.byteslice(0, content_left)) if content_left.positive?
+                  read += chunk.bytesize
+                end
               end
-              content = body.byteslice(0, size)
 
-              next if full_name.empty?
-              next if %w[x g].include?(typeflag)  # pax extended headers, unsupported and skipped
-
-              entries << { name: full_name, typeflag: typeflag, content: content }
+              yield({ name: full_name, typeflag: fields[7].to_s, size: size }, body)
+              body.call unless consumed
             end
-            entries
           end
 
           # Rejects an absolute path or one containing "..", and strips "."
@@ -173,31 +215,66 @@ enum GemArchive {
             File.join(base, *parts)
           end
 
-          def self.extract(gem_path, dest_dir)
-            outer = File.open(gem_path, "rb") { |f| read_tar_entries(f) }
-            data_entry = outer.find { |e| e[:name] == "data.tar.gz" }
-            raise UnsafeArchiveError, "data.tar.gz not found in gem" unless data_entry
-
-            inner_tar = Zlib::GzipReader.new(StringIO.new(data_entry[:content])).read
-            inner_entries = read_tar_entries(StringIO.new(inner_tar))
-
-            extconf = inner_entries.find { |e| e[:name] =~ %r{(^|/)ext/.*extconf\.rb\z} }
-            if extconf
-              raise UnsafeArchiveError,
-                "gem contains a C extension (#{extconf[:name]}), not supported"
-            end
-
-            FileUtils.mkdir_p(dest_dir)
-            inner_entries.each do |entry|
-              next if entry[:typeflag] == "5" || entry[:name].end_with?("/")
-
-              if %w[1 2].include?(entry[:typeflag])
-                raise UnsafeArchiveError, "unsafe entry type in archive: #{entry[:name]}"
+          # The compressed payload. Held in memory, but it's at most the size
+          # of the downloaded .gem, which the installer already caps.
+          def self.read_data_entry(gem_path)
+            data = nil
+            File.open(gem_path, "rb") do |file|
+              each_tar_entry(file) do |entry, body|
+                next unless entry[:name] == "data.tar.gz"
+                # No capacity hint from entry[:size]: it's whatever the
+                # header claims, and the body reader fails on a short body
+                # anyway.
+                buffer = String.new
+                body.call { |chunk| buffer << chunk }
+                data = buffer
               end
+            end
+            raise UnsafeArchiveError, "data.tar.gz not found in gem" unless data
+            data
+          end
 
-              target = safe_join(dest_dir, entry[:name])
-              FileUtils.mkdir_p(File.dirname(target))
-              File.open(target, "wb") { |f| f.write(entry[:content]) }
+          def self.extract(gem_path, dest_dir, max_bytes, max_entries)
+            data = read_data_entry(gem_path)
+            partial = "#{dest_dir}.partial-#{SecureRandom.hex(8)}"
+            FileUtils.mkdir_p(partial)
+            begin
+              entry_count = 0
+              declared_bytes = 0
+              gzip = Zlib::GzipReader.new(StringIO.new(data))
+              each_tar_entry(gzip) do |entry, body|
+                name = entry[:name]
+                typeflag = entry[:typeflag]
+                next if name.empty?
+                next if %w[x g].include?(typeflag)  # pax extended headers, unsupported and skipped
+
+                entry_count += 1
+                if entry_count > max_entries
+                  raise UnsafeArchiveError, "archive has more than #{max_entries} entries, too large to install"
+                end
+                declared_bytes += entry[:size]
+                if declared_bytes > max_bytes
+                  raise UnsafeArchiveError,
+                    "archive unpacks to more than #{max_bytes / 1_048_576} MB, too large to install"
+                end
+
+                if name =~ %r{(^|/)ext/.*extconf\.rb\z}
+                  raise UnsafeArchiveError, "gem contains a C extension (#{name}), not supported"
+                end
+                next if typeflag == "5" || name.end_with?("/")
+                if %w[1 2].include?(typeflag)
+                  raise UnsafeArchiveError, "unsafe entry type in archive: #{name}"
+                end
+
+                target = safe_join(partial, name)
+                FileUtils.mkdir_p(File.dirname(target))
+                File.open(target, "wb") { |file| body.call { |chunk| file.write(chunk) } }
+              end
+              gzip.close
+              File.rename(partial, dest_dir)
+            rescue Exception
+              FileUtils.rm_rf(partial)
+              raise
             end
 
             "ok"

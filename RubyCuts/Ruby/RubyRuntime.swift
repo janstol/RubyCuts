@@ -133,13 +133,15 @@ actor RubyRuntime {
             )
         }
 
-        // Redirect $stdout/$stderr to StringIO. Fixed string, no user code,
-        // so no escaping concerns. Best-effort: if `require 'stringio'` fails
-        // (stringio should be a statically-linked extension), the run still
-        // proceeds, just with empty captured streams.
+        // Redirect $stdout/$stderr to capped StringIOs (see
+        // ``captureClassSource``). Fixed string, no user code, so no escaping
+        // concerns. Best-effort: if `require 'stringio'` fails (stringio
+        // should be a statically-linked extension), the run still proceeds,
+        // just with empty captured streams.
         _ = try? evalRaw(
-            "require 'stringio'; "
-                + "$cap_out = StringIO.new; $cap_err = StringIO.new; "
+            Self.captureClassSource
+                + "$cap_out = RubyCutsCapture.new(\(Self.capturedOutputByteLimit)); "
+                + "$cap_err = RubyCutsCapture.new(\(Self.capturedOutputByteLimit)); "
                 + "$stdout = $cap_out; $stderr = $cap_err"
         )
 
@@ -212,8 +214,72 @@ actor RubyRuntime {
         // Read back whatever was printed before the run ended (or raised).
         result.stdout = (try? evalRaw("$cap_out.string")) ?? ""
         result.stderr = (try? evalRaw("$cap_err.string")) ?? ""
+        result.stdoutTruncated = (try? evalRaw("$cap_out.truncated")) == "true"
+        result.stderrTruncated = (try? evalRaw("$cap_err.truncated")) == "true"
         return result
     }
+
+    /// How many bytes of `$stdout`, and separately of `$stderr`, a run keeps:
+    /// 1 MiB. Without a cap, a script printing in a loop grows the capture
+    /// buffer until the app runs out of memory. Past the cap the script keeps
+    /// running, its further output is dropped, and
+    /// ``RunResult/stdoutTruncated`` or ``RunResult/stderrTruncated`` is set.
+    nonisolated static let capturedOutputByteLimit = 1_048_576
+
+    /// The capture stream ``run(_:input:cancellation:)`` installs as
+    /// `$stdout` and `$stderr`: a `StringIO` that stores at most `limit` bytes
+    /// and remembers whether it dropped any.
+    ///
+    /// `print`, `puts`, `printf`, `<<` and `syswrite` all reach the overridden
+    /// `write`; `putc` writes directly in `StringIO`, so it's overridden too.
+    /// A character split by the cut is dropped (read as UTF-8, then
+    /// `scrub`bed), so the captured text stays valid UTF-8 and within the
+    /// limit. Defined once per VM (`unless defined?`), so a
+    /// later run doesn't redefine it.
+    private nonisolated static let captureClassSource = """
+        require 'stringio'
+        unless defined?(RubyCutsCapture)
+          class RubyCutsCapture < StringIO
+            def initialize(limit)
+              super()
+              @limit = limit
+              @truncated = false
+            end
+
+            def truncated
+              @truncated
+            end
+
+            def write(*objects)
+              objects.sum do |object|
+                text = object.to_s
+                unless @truncated
+                  room = @limit - pos
+                  if text.bytesize <= room
+                    super(text)
+                  else
+                    # Read the cut piece as UTF-8 (strings from eval'd source
+                    # are often binary, where `scrub` does nothing), so a
+                    # half character is dropped rather than becoming a
+                    # replacement character on the Swift side.
+                    if room.positive?
+                      super(text.byteslice(0, room).force_encoding(Encoding::UTF_8).scrub(""))
+                    end
+                    @truncated = true
+                  end
+                end
+                text.bytesize
+              end
+            end
+
+            def putc(character)
+              write(character.is_a?(Integer) ? (character & 0xff).chr : character.to_s[0].to_s)
+              character
+            end
+          end
+        end
+
+        """
 
     /// Runs `code` the same as ``run(_:input:)``, but cancels it if the
     /// calling `Task` is cancelled. The entry point both the console

@@ -40,6 +40,14 @@ nonisolated struct RunResult: Sendable {
     /// while still queued, which never evaluated anything.
     var wasCancelled: Bool = false
 
+    /// `true` when the script printed more than
+    /// ``RubyRuntime/capturedOutputByteLimit`` bytes to `$stdout`, so
+    /// ``stdout`` holds only the first part.
+    var stdoutTruncated: Bool = false
+
+    /// The `$stderr` counterpart of ``stdoutTruncated``.
+    var stderrTruncated: Bool = false
+
     /// `true` when the script raised. Convenience for the view layer.
     var hasError: Bool { errorMessage != nil }
 

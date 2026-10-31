@@ -174,21 +174,28 @@ extension EmbeddedRubyTests {
 
         /// Asserts that a gem wrapping `innerTar` fails extraction with an
         /// ``GemArchiveError/unsafeArchive(_:)`` whose message mentions
-        /// `keyword`, and that nothing was written to the destination.
+        /// `keyword`, and that nothing was written to the destination, nor
+        /// left behind in the temporary `.partial-*` folder next to it.
         private static func expectRejected(
-            innerTar: Data, mentioning keyword: String
+            innerTar: Data, mentioning keyword: String,
+            limits: GemArchive.Limits = .standard
         ) async throws {
             let gemURL = try await makeGem(innerTar: innerTar)
             let destination = tempDirectory()
             defer { try? FileManager.default.removeItem(at: destination) }
 
             do {
-                try await GemArchive.extract(gemFileURL: gemURL, destination: destination)
+                try await GemArchive.extract(
+                    gemFileURL: gemURL, destination: destination, limits: limits)
                 Issue.record("expected extraction to fail")
             } catch GemArchiveError.unsafeArchive(let message) {
                 #expect(message.contains(keyword), "\(message)")
             }
             #expect(!FileManager.default.fileExists(atPath: destination.path))
+            let siblings = try FileManager.default.contentsOfDirectory(
+                atPath: destination.deletingLastPathComponent().path)
+            let partialPrefix = destination.lastPathComponent + ".partial-"
+            #expect(!siblings.contains { $0.hasPrefix(partialPrefix) })
         }
 
         // MARK: - Fixture helpers
@@ -331,6 +338,44 @@ extension EmbeddedRubyTests {
         private enum TestFixtureError: Error {
             case fixtureNotFound(String)
             case gzipFailed
+        }
+
+        // MARK: - Size limits
+        //
+        // A tiny, highly compressible archive must be refused from its tar
+        // headers, before the payload is inflated, and leave nothing behind.
+
+        @Test func rejectsAnArchiveThatUnpacksPastTheByteLimit() async throws {
+            // 2 MB of zeros gzips to a few KB.
+            let bomb = Self.tarEntry(name: "lib/zeros.rb", content: Data(count: 2 * 1_048_576))
+            try await Self.expectRejected(
+                innerTar: bomb, mentioning: "too large",
+                limits: GemArchive.Limits(maxUnpackedBytes: 1_048_576, maxEntries: 100))
+        }
+
+        @Test func rejectsAnArchiveWithTooManyEntries() async throws {
+            let entries = (1...4).reduce(Data()) { tar, index in
+                tar + Self.tarEntry(name: "lib/f\(index).rb", content: Data("x".utf8))
+            }
+            try await Self.expectRejected(
+                innerTar: entries, mentioning: "more than 3 entries",
+                limits: GemArchive.Limits(maxUnpackedBytes: 1_048_576, maxEntries: 3))
+        }
+
+        @Test func anArchiveRightAtTheLimitsExtracts() async throws {
+            let entries =
+                Self.tarEntry(name: "lib/a.rb", content: Data(repeating: 0x61, count: 600))
+                + Self.tarEntry(name: "lib/b.rb", content: Data(repeating: 0x62, count: 400))
+            let gemURL = try await Self.makeGem(innerTar: entries)
+            let destination = Self.tempDirectory()
+            defer { try? FileManager.default.removeItem(at: destination) }
+
+            try await GemArchive.extract(
+                gemFileURL: gemURL, destination: destination,
+                limits: GemArchive.Limits(maxUnpackedBytes: 1_000, maxEntries: 2))
+
+            let a = try Data(contentsOf: destination.appending(component: "lib/a.rb"))
+            #expect(a == Data(repeating: 0x61, count: 600))
         }
     }
 }

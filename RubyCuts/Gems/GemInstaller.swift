@@ -30,7 +30,16 @@ enum GemInstallerError: Error, Sendable {
     /// rather than dropping the constraint and installing whatever version
     /// is newest.
     case invalidRequirement(String)
+
+    /// The `.gem` file is larger than ``GemInstaller/maxDownloadBytes``.
+    /// Checked while the bytes arrive, so an oversized download is cut off
+    /// rather than held in memory.
+    case downloadTooLarge(gem: String)
 }
+
+/// Thrown by ``GemInstaller/boundedDownload(_:limit:)``; mapped to
+/// ``GemInstallerError/downloadTooLarge(gem:)`` once the gem's name is known.
+nonisolated struct GemDownloadTooLargeError: Error {}
 
 /// One step of an in-flight install, reported to the caller as it begins.
 ///
@@ -83,21 +92,60 @@ struct GemInstaller {
     /// Fetches a `.gem` file's bytes.
     typealias Download = @Sendable (URL) async throws -> Data
 
+    /// The largest `.gem` file an install accepts: 25 MiB. Real pure-Ruby
+    /// gems are a few megabytes at most; the cap keeps a bad or hostile
+    /// download from being held in memory whole.
+    static let maxDownloadBytes = 25 * 1_048_576
+
     let api: RubyGemsAPI
     let store: GemStore
     private let download: Download
+    private let maxDownloadBytes: Int
+    private let archiveLimits: GemArchive.Limits
 
-    /// - Parameter download: How `.gem` files are fetched. The default goes
-    ///   to the network through `URLSession.shared`; tests pass a stub to
-    ///   serve fixture bytes or inject a failure.
+    /// - Parameters:
+    ///   - download: How `.gem` files are fetched. The default streams from
+    ///     the network through `URLSession.shared` and stops at
+    ///     `maxDownloadBytes`; tests pass a stub to serve fixture bytes or
+    ///     inject a failure.
+    ///   - maxDownloadBytes: The size cap, also checked on whatever
+    ///     `download` returns. Tests lower it.
+    ///   - archiveLimits: Passed to ``GemArchive/extract(gemFileURL:destination:limits:)``.
     init(
         api: RubyGemsAPI = LiveRubyGemsAPI(),
         store: GemStore = .installedGems,
-        download: @escaping Download = { try await URLSession.shared.data(from: $0).0 }
+        download: Download? = nil,
+        maxDownloadBytes: Int = GemInstaller.maxDownloadBytes,
+        archiveLimits: GemArchive.Limits = .standard
     ) {
         self.api = api
         self.store = store
-        self.download = download
+        self.download =
+            download ?? { url in
+                try await GemInstaller.boundedDownload(url, limit: maxDownloadBytes)
+            }
+        self.maxDownloadBytes = maxDownloadBytes
+        self.archiveLimits = archiveLimits
+    }
+
+    /// Downloads `url` into memory, throwing ``GemDownloadTooLargeError``
+    /// as soon as the server announces, or the bytes received pass, `limit`.
+    nonisolated static func boundedDownload(_ url: URL, limit: Int) async throws -> Data {
+        let (bytes, response) = try await URLSession.shared.bytes(from: url)
+        if response.expectedContentLength > Int64(limit) {
+            throw GemDownloadTooLargeError()
+        }
+        var data = Data()
+        if response.expectedContentLength > 0 {
+            data.reserveCapacity(Int(response.expectedContentLength))
+        }
+        for try await byte in bytes {
+            data.append(byte)
+            if data.count > limit {
+                throw GemDownloadTooLargeError()
+            }
+        }
+        return data
     }
 
     /// Resolves `name` (optionally pinned by `requirement`, e.g. `"~> 1.0"`)
@@ -207,7 +255,15 @@ struct GemInstaller {
         onPhase: (GemInstallPhase) -> Void
     ) async throws -> URL {
         onPhase(.downloading(gem: target.name, index: index, total: total))
-        let data = try await download(target.downloadURL)
+        let data: Data
+        do {
+            data = try await download(target.downloadURL)
+        } catch is GemDownloadTooLargeError {
+            throw GemInstallerError.downloadTooLarge(gem: target.name)
+        }
+        guard data.count <= maxDownloadBytes else {
+            throw GemInstallerError.downloadTooLarge(gem: target.name)
+        }
         try Self.verifyChecksum(data, expectedHex: target.sha256, gemName: target.name)
 
         let gemFileURL = stagingRoot.appending(component: "\(index)-\(target.name).gem")
@@ -216,7 +272,8 @@ struct GemInstaller {
         let extractedURL = stagingRoot.appending(component: "\(index)-\(target.name)")
         onPhase(.extracting(gem: target.name, index: index, total: total))
         do {
-            try await GemArchive.extract(gemFileURL: gemFileURL, destination: extractedURL)
+            try await GemArchive.extract(
+                gemFileURL: gemFileURL, destination: extractedURL, limits: archiveLimits)
         } catch GemArchiveError.containsCExtension(let detail) {
             throw GemInstallerError.cExtension(gem: target.name, detail: detail)
         } catch GemArchiveError.unsafeArchive(let detail) {

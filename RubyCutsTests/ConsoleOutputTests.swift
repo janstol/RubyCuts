@@ -102,4 +102,53 @@ struct ConsoleOutputTests {
 
         #expect(label.contains("1 minute 5 seconds"))
     }
+
+    @Test func truncatedStreamsCarryANoteInTheTranscript() {
+        var result = RunResult(stdout: "out", stderr: "err\n", result: "", errorMessage: nil)
+        result.stdoutTruncated = true
+        result.stderrTruncated = true
+
+        let transcript = ConsoleOutputView.transcript(for: result)
+
+        #expect(transcript.contains("Output:\nout\n[Cut off here:"))
+        #expect(transcript.contains("Errors:\nerr\n[Cut off here:"))
+    }
+
+    @Test func anUntruncatedStreamIsShownUnchanged() {
+        #expect(ConsoleOutputView.text("out", truncated: false) == "out")
+    }
+
+    // MARK: - What the console draws for large output
+
+    @Test func outputThatFitsIsDrawnUnchanged() {
+        let text = "one\ntwo\n"
+        #expect(ConsoleOutputView.displayed(text) == text)
+    }
+
+    @Test func manyLinesAreDrawnAsTheTailWithANote() {
+        let lines = (1...1_000).map { "line \($0)" }
+        let drawn = ConsoleOutputView.displayed(lines.joined(separator: "\n"))
+        let drawnLines = drawn.split(separator: "\n", omittingEmptySubsequences: false)
+
+        #expect(drawnLines.first == "[Showing the last 300 lines. Copy All copies everything.]")
+        #expect(drawnLines.count == ConsoleOutputView.maxDisplayedLines + 1)
+        #expect(drawnLines[1] == "line 701")
+        #expect(drawnLines.last == "line 1000")
+    }
+
+    @Test func aVeryLongLineIsShortened() {
+        let drawn = ConsoleOutputView.displayed(String(repeating: "x", count: 2_000_000))
+        let drawnLines = drawn.split(separator: "\n")
+
+        #expect(drawnLines.first == "[Long lines are shortened. Copy All copies everything.]")
+        #expect(drawnLines.last?.count == ConsoleOutputView.maxDisplayedLineLength + 1)
+        #expect(drawnLines.last?.hasSuffix("…") == true)
+    }
+
+    @Test func theCutOffNoteSurvivesBecauseItIsTheLastLine() {
+        let captured = String(repeating: "x\n", count: 5_000)
+        let drawn = ConsoleOutputView.displayed(ConsoleOutputView.text(captured, truncated: true))
+
+        #expect(drawn.hasSuffix("[Cut off here: the output is larger than 1 MB.]"))
+    }
 }
