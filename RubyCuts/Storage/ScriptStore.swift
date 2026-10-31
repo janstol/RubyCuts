@@ -114,9 +114,14 @@ struct ScriptStore: Sendable {
             at: directoryURL, includingPropertiesForKeys: Array(keys)
         )
         var scriptsByURL: [URL: Script] = [:]
-        for url in urls {
-            let values = try? url.resourceValues(forKeys: keys)
+        for listedURL in urls {
+            let values = try? listedURL.resourceValues(forKeys: keys)
             guard values?.isRegularFile == true else { continue }
+            // Rebuilt from `directoryURL`, the same way `create` and `rename`
+            // build theirs, instead of using the URL the listing returns: that
+            // one can spell the same folder differently (`/private/var/...`
+            // for `/var/...`), and a ``Script`` is identified by URL equality.
+            let url = directoryURL.appending(component: listedURL.lastPathComponent)
             if url.pathExtension == "rb" {
                 scriptsByURL[url] = Script(url: url, modifiedAt: values?.contentModificationDate)
             } else if let realURL = Self.realURL(forPlaceholder: url), scriptsByURL[realURL] == nil

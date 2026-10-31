@@ -45,8 +45,15 @@ struct GemStore: Sendable {
         let urls = try FileManager.default.contentsOfDirectory(
             at: directoryURL, includingPropertiesForKeys: nil
         )
-        let directories = urls.filter(Self.isDirectory)
-        let gems = directories.map(InstalledGem.init)
+        // Rebuilt from `directoryURL` like ``destinationURL(name:version:)``,
+        // not taken from the listing, which can spell the same folder
+        // differently (`/private/var/...` for `/var/...`) and would then
+        // compare unequal to the gem ``install(from:name:version:)`` returned.
+        let gems = urls.filter(Self.isDirectory).map { listed in
+            InstalledGem(
+                directoryURL: directoryURL.appending(
+                    component: listed.lastPathComponent, directoryHint: .isDirectory))
+        }
         return gems.sorted(by: Self.byNameThenVersion)
     }
 

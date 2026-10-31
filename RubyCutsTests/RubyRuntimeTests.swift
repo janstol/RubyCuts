@@ -688,58 +688,64 @@ extension EmbeddedRubyTests {
         // test instead of crashing the whole suite. The child exits nonzero
         // through `precondition` when an expectation doesn't hold, and each
         // case also checks that a normal run still works afterwards.
+        //
+        // macOS only: Swift Testing has no exit tests on iOS, where the suite
+        // wouldn't compile with them. The shim code they guard is the same C
+        // on every platform, so macOS coverage is enough.
 
-        @Test func aResultWhoseToSRaisesIsReportedAsAnError() async {
-            await #expect(processExitsWith: .success) {
-                let result = await RubyRuntime.shared.run(
-                    "Object.new.tap { |o| def o.to_s; raise 'conversion failed'; end }"
-                )
-                precondition(result.errorMessage == "conversion failed", "\(result)")
-                let next = await RubyRuntime.shared.run("1 + 1")
-                precondition(next.result == "2" && !next.hasError, "\(next)")
+        #if os(macOS)
+            @Test func aResultWhoseToSRaisesIsReportedAsAnError() async {
+                await #expect(processExitsWith: .success) {
+                    let result = await RubyRuntime.shared.run(
+                        "Object.new.tap { |o| def o.to_s; raise 'conversion failed'; end }"
+                    )
+                    precondition(result.errorMessage == "conversion failed", "\(result)")
+                    let next = await RubyRuntime.shared.run("1 + 1")
+                    precondition(next.result == "2" && !next.hasError, "\(next)")
+                }
             }
-        }
 
-        @Test func aResultWithAnEmbeddedNulArrivesWhole() async {
-            await #expect(processExitsWith: .success) {
-                let result = try await RubyRuntime.shared.evaluate(#""a\0b""#)
-                precondition(result == "a\u{0}b", result.debugDescription)
-                let next = await RubyRuntime.shared.run("1 + 1")
-                precondition(next.result == "2" && !next.hasError, "\(next)")
+            @Test func aResultWithAnEmbeddedNulArrivesWhole() async {
+                await #expect(processExitsWith: .success) {
+                    let result = try await RubyRuntime.shared.evaluate(#""a\0b""#)
+                    precondition(result == "a\u{0}b", result.debugDescription)
+                    let next = await RubyRuntime.shared.run("1 + 1")
+                    precondition(next.result == "2" && !next.hasError, "\(next)")
+                }
             }
-        }
 
-        @Test func printedOutputWithAnEmbeddedNulArrivesWhole() async {
-            await #expect(processExitsWith: .success) {
-                let result = await RubyRuntime.shared.run(#"print "a\0b"; nil"#)
-                precondition(!result.hasError, "\(result)")
-                precondition(result.stdout == "a\u{0}b", result.stdout.debugDescription)
-                let next = await RubyRuntime.shared.run("1 + 1")
-                precondition(next.result == "2" && !next.hasError, "\(next)")
+            @Test func printedOutputWithAnEmbeddedNulArrivesWhole() async {
+                await #expect(processExitsWith: .success) {
+                    let result = await RubyRuntime.shared.run(#"print "a\0b"; nil"#)
+                    precondition(!result.hasError, "\(result)")
+                    precondition(result.stdout == "a\u{0}b", result.stdout.debugDescription)
+                    let next = await RubyRuntime.shared.run("1 + 1")
+                    precondition(next.result == "2" && !next.hasError, "\(next)")
+                }
             }
-        }
 
-        @Test func anExceptionWhoseToSRaisesFallsBackToItsClassName() async {
-            await #expect(processExitsWith: .success) {
-                let result = await RubyRuntime.shared.run(
-                    "class RCUnprintableError < StandardError; def to_s; raise 'nope'; end; end; "
-                        + "raise RCUnprintableError"
-                )
-                precondition(
-                    result.errorMessage?.hasPrefix("RCUnprintableError") == true, "\(result)")
-                let next = await RubyRuntime.shared.run("1 + 1")
-                precondition(next.result == "2" && !next.hasError, "\(next)")
+            @Test func anExceptionWhoseToSRaisesFallsBackToItsClassName() async {
+                await #expect(processExitsWith: .success) {
+                    let result = await RubyRuntime.shared.run(
+                        "class RCUnprintableError < StandardError; def to_s; raise 'nope'; end; end; "
+                            + "raise RCUnprintableError"
+                    )
+                    precondition(
+                        result.errorMessage?.hasPrefix("RCUnprintableError") == true, "\(result)")
+                    let next = await RubyRuntime.shared.run("1 + 1")
+                    precondition(next.result == "2" && !next.hasError, "\(next)")
+                }
             }
-        }
 
-        @Test func anExceptionMessageWithAnEmbeddedNulArrivesWhole() async {
-            await #expect(processExitsWith: .success) {
-                let result = await RubyRuntime.shared.run(#"raise "a\0b""#)
-                precondition(result.errorMessage == "a\u{0}b", "\(result)")
-                let next = await RubyRuntime.shared.run("1 + 1")
-                precondition(next.result == "2" && !next.hasError, "\(next)")
+            @Test func anExceptionMessageWithAnEmbeddedNulArrivesWhole() async {
+                await #expect(processExitsWith: .success) {
+                    let result = await RubyRuntime.shared.run(#"raise "a\0b""#)
+                    precondition(result.errorMessage == "a\u{0}b", "\(result)")
+                    let next = await RubyRuntime.shared.run("1 + 1")
+                    precondition(next.result == "2" && !next.hasError, "\(next)")
+                }
             }
-        }
+        #endif
 
         // MARK: - Script run cancellation
         //
@@ -762,10 +768,23 @@ extension EmbeddedRubyTests {
         }
 
         @Test func cancelKeepsOutputPrintedBeforeTheStop() async throws {
+            // Cancels only once the script has printed, signalled through a
+            // file like `cancellingAQueuedRunLeavesTheActiveRunAlone` does. A
+            // fixed sleep could cancel the run while it was still queued, and
+            // a queued run that's cancelled never starts, so there would be
+            // no "before" to keep: correct behavior, failing test.
+            let started = FileManager.default.temporaryDirectory
+                .appending(component: "rubycuts-printed-\(UUID().uuidString)").path
+            defer { try? FileManager.default.removeItem(atPath: started) }
             let runTask = Task {
-                await RubyRuntime.shared.runCancellable("puts 'before'; loop { }")
+                await RubyRuntime.shared.runCancellable(
+                    "puts 'before'; File.write('\(started)', ''); loop { }")
             }
-            try await Task.sleep(for: .milliseconds(200))
+            let deadline = ContinuousClock.now + .seconds(10)
+            while !FileManager.default.fileExists(atPath: started) {
+                try #require(ContinuousClock.now < deadline, "the script never printed")
+                try await Task.sleep(for: .milliseconds(10))
+            }
             runTask.cancel()
             let result = await runTask.value
             #expect(result.wasCancelled)
