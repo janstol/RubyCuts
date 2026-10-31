@@ -1,7 +1,6 @@
 import Foundation
-import Testing
-
 @testable import RubyCuts
+import Testing
 
 // Tests for `ScriptRow`'s date-label formatting. `now` is a fixed reference
 // point rather than `Date()`, so these don't depend on when the test happens

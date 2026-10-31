@@ -1,7 +1,6 @@
 import Foundation
-import Testing
-
 @testable import RubyCuts
+import Testing
 
 /// Decoding coverage for the DTOs in `RubyGemsAPI.swift`. Only
 /// ``GemSearchResult`` has a dedicated test here; the others are exercised

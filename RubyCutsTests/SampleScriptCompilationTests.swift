@@ -1,6 +1,5 @@
-import Testing
-
 @testable import RubyCuts
+import Testing
 
 // Compiles every seeded sample's source inside the real VM and expects no
 // `SyntaxError`, catching a typo in shipped sample code without *executing*

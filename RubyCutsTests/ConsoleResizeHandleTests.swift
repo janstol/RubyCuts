@@ -1,7 +1,6 @@
 import Foundation
-import Testing
-
 @testable import RubyCuts
+import Testing
 
 // Tests for `ConsoleResizeHandle.adjusted(_:by:in:)`, the step-and-clamp
 // logic behind its VoiceOver adjustable action. No view rendered, no

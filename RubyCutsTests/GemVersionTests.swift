@@ -1,7 +1,6 @@
 import Foundation
-import Testing
-
 @testable import RubyCuts
+import Testing
 
 // Pure value types, no I/O, no `.serialized` needed, unlike the VM-driving
 // suites. Runs concurrently with everything else.

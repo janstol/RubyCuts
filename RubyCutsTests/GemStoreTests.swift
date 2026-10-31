@@ -1,7 +1,6 @@
 import Foundation
-import Testing
-
 @testable import RubyCuts
+import Testing
 
 // Tests for the installed-gem store, mirroring `ScriptStoreTests`. Each test
 // builds its own store on a unique temp directory and defers its removal:

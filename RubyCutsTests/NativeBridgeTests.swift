@@ -1,8 +1,7 @@
 import Foundation
+@testable import RubyCuts
 import Testing
 import UserNotifications
-
-@testable import RubyCuts
 
 // Same single-threaded VM contract as ``RubyRuntimeTests``: `.serialized`
 // because every test drives the one non-thread-safe embedded CRuby VM through

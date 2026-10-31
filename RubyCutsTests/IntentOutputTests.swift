@@ -1,6 +1,5 @@
-import Testing
-
 @testable import RubyCuts
+import Testing
 
 // Pure tests of the PRD 3.1 output/error contract (``output(from:)``): the
 // decision a "Run ..." Ruby intent makes over a captured ``RunResult``, with no

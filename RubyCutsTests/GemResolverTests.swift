@@ -1,7 +1,6 @@
 import Foundation
-import Testing
-
 @testable import RubyCuts
+import Testing
 
 // `StubRubyGemsAPI` lives in `StubRubyGemsAPI.swift`, shared with
 // `GemLibraryTests`.

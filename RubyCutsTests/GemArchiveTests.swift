@@ -1,7 +1,6 @@
 import Foundation
-import Testing
-
 @testable import RubyCuts
+import Testing
 
 /// A marker type with no other purpose than locating the test bundle:
 /// `RubyCutsTests` is app-hosted (see `RubyRuntime.bundledStdlibURL`'s

@@ -1,6 +1,5 @@
-import Testing
-
 @testable import RubyCuts
+import Testing
 
 // Pure tests over `SampleScripts.all`'s static content: no VM, no I/O. The
 // suite is not `@MainActor`: `SampleScripts` opts out of the app target's

@@ -1,7 +1,6 @@
 import Foundation
-import Testing
-
 @testable import RubyCuts
+import Testing
 
 /// Pure-value tests for ``ConsoleOutputView``'s static helpers: no VM, no
 /// rendered view. `transcript(for:)` mirrors the view's own section order and

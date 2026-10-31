@@ -1,7 +1,6 @@
 import Foundation
-import Testing
-
 @testable import RubyCuts
+import Testing
 
 /// A `RubyGemsAPI` stub that always fails to find any gem, enough to drive
 /// `GemLibrary.prepareInstall(name:requirement:)` down its failure path

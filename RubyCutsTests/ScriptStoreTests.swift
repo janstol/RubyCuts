@@ -1,7 +1,6 @@
 import Foundation
-import Testing
-
 @testable import RubyCuts
+import Testing
 
 // Tests for the local-first script store. Each test builds its own store on a
 // unique temp directory and defers its removal, so the tests are isolated and

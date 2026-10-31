@@ -1,7 +1,6 @@
 import Foundation
-import Testing
-
 @testable import RubyCuts
+import Testing
 
 // Every test drives the same embedded CRuby VM through `RubyRuntime.shared`,
 // which is a single non-thread-safe interpreter. Swift Testing runs tests

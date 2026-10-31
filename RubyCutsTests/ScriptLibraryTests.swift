@@ -1,7 +1,6 @@
 import Foundation
-import Testing
-
 @testable import RubyCuts
+import Testing
 
 // Tests for the script list view model. Each test builds its own library on a
 // unique temp-dir `ScriptStore` and defers its removal, so the tests are
