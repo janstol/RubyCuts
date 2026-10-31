@@ -7,6 +7,7 @@ import Testing
 /// rendered view. `transcript(for:)` mirrors the view's own section order and
 /// suppression rules; `durationLabel(for:)` is hand-rolled formatting with no
 /// locale dependence to worry about.
+@MainActor
 struct ConsoleOutputTests {
 
     // MARK: - transcript(for:)

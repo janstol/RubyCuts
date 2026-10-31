@@ -292,26 +292,26 @@ struct ScriptEditorView: View {
     /// solve it together with the rest of that chain. See
     /// ``editorToolbar``'s doc comment for the same issue elsewhere in this
     /// view. Mirrors the Run button's `.disabled(!didLoad)`.
-    private var runAction: (() -> Void)? {
+    private var runAction: ScriptCommandAction? {
         guard didLoad && !isRunning else { return nil }
-        return run
+        return ScriptCommandAction(target: script, perform: run)
     }
 
     /// The `stopScriptAction` published via `.focusedSceneValue` in
     /// ``body``. See ``runAction``'s doc comment for why this is a typed
     /// property rather than an inline ternary.
-    private var stopAction: (() -> Void)? {
+    private var stopAction: ScriptCommandAction? {
         guard isRunning else { return nil }
-        return { runTask?.cancel() }
+        return ScriptCommandAction(target: script) { runTask?.cancel() }
     }
 
     /// The `saveScriptAction` published via `.focusedSceneValue` in
     /// ``body``. See ``runAction``'s doc comment for why this is a typed
     /// property rather than an inline ternary. Mirrors the Save button's
     /// `.disabled(!didLoad || isRunning)`.
-    private var saveAction: (() -> Void)? {
+    private var saveAction: ScriptCommandAction? {
         guard didLoad && !isRunning else { return nil }
-        return { save() }
+        return ScriptCommandAction(target: script) { save() }
     }
 
     /// The toolbar's contents: Run (or a spinner plus Stop while a run is in

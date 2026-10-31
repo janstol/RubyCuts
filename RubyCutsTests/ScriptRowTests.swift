@@ -6,6 +6,7 @@ import Testing
 // Tests for `ScriptRow`'s date-label formatting. `now` is a fixed reference
 // point rather than `Date()`, so these don't depend on when the test happens
 // to run.
+@MainActor
 struct ScriptRowTests {
     private let now = Date(timeIntervalSince1970: 1_700_000_000)
 

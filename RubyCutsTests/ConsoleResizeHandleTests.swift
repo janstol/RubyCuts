@@ -6,6 +6,7 @@ import Testing
 // Tests for `ConsoleResizeHandle.adjusted(_:by:in:)`, the step-and-clamp
 // logic behind its VoiceOver adjustable action. No view rendered, no
 // accessibility action driven, just the arithmetic.
+@MainActor
 struct ConsoleResizeHandleTests {
     private let bounds: ClosedRange<Double> = 100...500
 

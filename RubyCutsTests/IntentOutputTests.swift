@@ -16,7 +16,7 @@ struct IntentOutputTests {
     @Test func cleanRunReturnsStdout() throws {
         let result = RunResult(stdout: "hello\n", stderr: "", result: "nil", errorMessage: nil)
 
-        let output = try #require(try Self.output(from: result).get())
+        let output = try Self.output(from: result).get()
 
         #expect(output == "hello\n")
     }
@@ -27,7 +27,7 @@ struct IntentOutputTests {
         // and Shortcuts should get `hi\n`, not `42`.
         let result = RunResult(stdout: "hi\n", stderr: "", result: "42", errorMessage: nil)
 
-        let output = try #require(try Self.output(from: result).get())
+        let output = try Self.output(from: result).get()
 
         #expect(output == "hi\n")
     }
@@ -101,7 +101,7 @@ struct IntentOutputTests {
         // clean run whose stdout happens to be empty (e.g. `42` with no `puts`).
         let result = RunResult(stdout: "", stderr: "", result: "42", errorMessage: nil)
 
-        let output = try #require(try Self.output(from: result).get())
+        let output = try Self.output(from: result).get()
 
         #expect(output.isEmpty)
     }

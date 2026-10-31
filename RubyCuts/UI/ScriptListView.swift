@@ -108,7 +108,7 @@ struct ScriptListView: View {
                         }
                     }
                 #endif
-                .focusedSceneValue(\.newScriptAction, presentNewScriptAlert)
+                .focusedSceneValue(\.newScriptAction, newScriptCommand)
                 .alert("New Script", isPresented: $isPresentingNewAlert) {
                     TextField("Name", text: $newName)
                     Button("Create") {
@@ -290,6 +290,12 @@ struct ScriptListView: View {
     private func presentNewScriptAlert() {
         newName = "Untitled"
         isPresentingNewAlert = true
+    }
+
+    /// The `newScriptAction` published via `.focusedSceneValue` in ``body``.
+    /// It always does the same thing, so its target is a fixed label.
+    private var newScriptCommand: ScriptCommandAction {
+        ScriptCommandAction(target: "newScript", perform: presentNewScriptAlert)
     }
 
     /// Opens the reference: the dedicated `Window` scene on macOS (see

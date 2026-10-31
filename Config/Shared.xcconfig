@@ -11,7 +11,8 @@ ARCHS = arm64
 //
 // scripts/build-cruby.rb installs one complete header tree and one static lib per SDK, under Vendor/CRuby/{include,lib}/<platform>/, where <platform> is exactly Xcode's PLATFORM_NAME (macosx, iphoneos, iphonesimulator), so both paths below key off $(PLATFORM_NAME) instead of enumerating SDKs.
 CRUBY_DIR = $(SRCROOT)/Vendor/CRuby
-HEADER_SEARCH_PATHS = $(inherited) $(CRUBY_DIR)/include/$(PLATFORM_NAME)
+// SYSTEM_ rather than plain HEADER_SEARCH_PATHS: -isystem marks CRuby's headers as third-party, so clang stops reporting their doc-comment and prototype warnings in our build. Warnings in our own rubycuts_shim.c still show.
+SYSTEM_HEADER_SEARCH_PATHS = $(inherited) $(CRUBY_DIR)/include/$(PLATFORM_NAME)
 SWIFT_OBJC_BRIDGING_HEADER = $(SRCROOT)/RubyCuts/RubyCuts-Bridging-Header.h
 
 // -force_load pulls in the whole static archive: its symbols are otherwise reached only through rubycuts_shim.c, so the linker would drop them as unused. -lz is needed by the statically linked zlib ext.
