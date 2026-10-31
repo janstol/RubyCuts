@@ -39,7 +39,11 @@ struct ConsoleResizeHandle: View {
     var body: some View {
         ZStack {
             Color.clear
+            // Runs under the horizontal safe area like the console's
+            // material below it, instead of stopping short of the side
+            // toolbar column iOS 27.1+ puts beside the content.
             Divider()
+                .ignoresSafeArea(.container, edges: .horizontal)
         }
         .frame(height: 8)
         #if os(macOS)

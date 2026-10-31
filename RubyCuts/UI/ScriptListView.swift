@@ -73,25 +73,10 @@ struct ScriptListView: View {
                             Label("New Script", systemImage: "plus")
                         }
                     }
-                    sortMenuToolbarItem
-                    #if !os(macOS)
-                        // macOS reaches these through the app menu (⌘, and
-                        // ⌘?); this gear and info button are their
-                        // iOS/iPadOS equivalents.
-                        ToolbarItem(placement: .automatic) {
-                            Button {
-                                isPresentingReference = true
-                            } label: {
-                                Label("Reference", systemImage: "info.circle")
-                            }
-                        }
-                        ToolbarItem(placement: .automatic) {
-                            Button {
-                                isPresentingSettings = true
-                            } label: {
-                                Label("Settings", systemImage: "gearshape")
-                            }
-                        }
+                    #if os(macOS)
+                        sortMenuToolbarItem
+                    #else
+                        moreMenuToolbarItem
                     #endif
                 }
                 #if !os(macOS)
@@ -282,16 +267,56 @@ struct ScriptListView: View {
     private var sortMenuToolbarItem: some ToolbarContent {
         ToolbarItem(placement: .automatic) {
             Menu {
-                Picker("Sort By", selection: sortOrderBinding) {
-                    ForEach(ScriptSortOrder.allCases) { order in
-                        Text(order.displayName).tag(order)
-                    }
-                }
+                sortPicker
             } label: {
                 Label("Sort", systemImage: "arrow.up.arrow.down")
             }
         }
     }
+
+    /// The sort order choices, shown in ``sortMenuToolbarItem`` on macOS and
+    /// as a submenu of ``moreMenuToolbarItem`` on iOS/iPadOS.
+    private var sortPicker: some View {
+        Picker("Sort By", selection: sortOrderBinding) {
+            ForEach(ScriptSortOrder.allCases) { order in
+                Text(order.displayName).tag(order)
+            }
+        }
+    }
+
+    #if !os(macOS)
+        /// The iOS/iPadOS "…" menu: sort order, Reference and Settings. macOS
+        /// reaches Reference and Settings through the app menu (⌘? and ⌘,)
+        /// and keeps a separate sort button. One menu rather than separate
+        /// buttons because the regular-width sidebar (iPad, unfolded iPhone
+        /// Duo) has room for only two items beside the "Scripts" title and
+        /// the sidebar toggle. With four, the system overflow swallowed New
+        /// Script and Settings; with three, the title truncated to "Scr…".
+        private var moreMenuToolbarItem: some ToolbarContent {
+            ToolbarItem(placement: .automatic) {
+                Menu {
+                    Menu {
+                        sortPicker
+                    } label: {
+                        Label("Sort By", systemImage: "arrow.up.arrow.down")
+                    }
+                    Divider()
+                    Button {
+                        isPresentingReference = true
+                    } label: {
+                        Label("Reference", systemImage: "info.circle")
+                    }
+                    Button {
+                        isPresentingSettings = true
+                    } label: {
+                        Label("Settings", systemImage: "gearshape")
+                    }
+                } label: {
+                    Label("More", systemImage: "ellipsis")
+                }
+            }
+        }
+    #endif
 
     /// A hand-rolled `Binding` into ``ScriptLibrary/sortOrder``, matching the
     /// rest of this view's bindings into VM/optional state (e.g. the rename
