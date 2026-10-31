@@ -92,8 +92,12 @@ SQLITE3_GEM_SOURCE_DIR = File.join(SRC_DIR, "sqlite3-gem")
 # that shared default store at boot. curl rotates cacert.pem as CAs change; the
 # SHA256 pin keeps builds reproducible and forces a conscious refresh (re-fetch
 # the file, update the pin) when CAs roll. SHA256 cross-checked against the
-# cacert.pem.sha256 curl publishes alongside the file.
-CACERT_PEM_URL = "https://curl.se/ca/cacert.pem"
+# cacert.pem.sha256 curl publishes alongside the file. The URL is curl's dated
+# copy, not the rolling https://curl.se/ca/cacert.pem: that one changes as CAs
+# change, so a fresh checkout (CI) would fail the pin while a machine with the
+# file already downloaded wouldn't notice. To refresh, pick a newer date from
+# https://curl.se/docs/caextract.html and update both lines.
+CACERT_PEM_URL = "https://curl.se/ca/cacert-2026-08-13.pem"
 CACERT_PEM_PATH = File.join(SRC_DIR, "cacert.pem")
 CACERT_SHA256 = "f66dff1bdf8f96060b8177976f8b7d9254bc89bc4db933d769f7384d28480bc9"
 
