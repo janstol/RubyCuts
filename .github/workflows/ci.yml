@@ -4,28 +4,93 @@ on:
   push:
   pull_request:
 
+# A newer push to the same branch makes the running workflow pointless.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The `xcode-27` image (macOS 27, public preview) ships Xcode 27.0, 27.1 and
+  # 27.2; the standard images stop at Xcode 26. Keep this in step with the
+  # Xcode the project is developed with.
+  XCODE_APP: /Applications/Xcode_27.2.app
+
 jobs:
-  test:
-    runs-on: macos-latest
-    strategy:
-      matrix:
-        destination:
-          - "platform=macOS"
-          - "platform=iOS Simulator,name=iPhone 16"
+  # The embedded CRuby (Vendor/CRuby) is git-ignored and takes a long time to
+  # build, so it's built once here and cached. The key is the build script's
+  # hash: every version pin and checksum lives in that file, so changing one
+  # rebuilds, and anything else restores the cache in seconds.
+  cruby:
+    runs-on: xcode-27
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
 
-      # TODO: macos-latest currently ships Xcode 15.x, well short of the
-      # Xcode 26 / Swift 6 toolchain this project needs. This path is
-      # unverified until we have a remote to actually run CI against —
-      # confirm the available version on the runner and adjust once the
-      # first real run happens.
       - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode.app
+        run: sudo xcode-select -s "$XCODE_APP"
 
+      - name: Restore CRuby
+        id: cache
+        uses: actions/cache/restore@v4
+        with:
+          path: Vendor/CRuby
+          key: cruby-xcode27.2-${{ hashFiles('scripts/build-cruby.rb') }}
+
+      - name: Build CRuby
+        if: steps.cache.outputs.cache-hit != 'true'
+        # The runner's own Ruby 3.4 runs the build script (stdlib only), and
+        # also serves as the cross-compile baseruby.
+        run: |
+          ruby -v
+          ruby scripts/build-cruby.rb
+
+      - name: Save CRuby
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: Vendor/CRuby
+          key: ${{ steps.cache.outputs.cache-primary-key }}
+
+  test:
+    needs: cruby
+    runs-on: xcode-27
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # macOS UI tests need a GUI authorization prompt answered, so the
+          # macOS job runs the unit tests only.
+          - name: macOS
+            destination: platform=macOS
+            only-testing: -only-testing:RubyCutsTests
+          - name: iOS Simulator
+            destination: platform=iOS Simulator,name=iPhone 17,OS=27.0
+            only-testing: ""
+    name: test (${{ matrix.name }})
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s "$XCODE_APP"
+
+      - name: Restore CRuby
+        uses: actions/cache/restore@v4
+        with:
+          path: Vendor/CRuby
+          key: cruby-xcode27.2-${{ hashFiles('scripts/build-cruby.rb') }}
+          fail-on-cache-miss: true
+
+      # Signing stays off: the iCloud entitlement needs a provisioning
+      # profile, which CI doesn't have. Unsigned, the app runs unsandboxed
+      # with iCloud unavailable, which the tests don't depend on.
       - name: Build and test
         run: |
           xcodebuild -project RubyCuts.xcodeproj -scheme RubyCuts \
             -destination '${{ matrix.destination }}' \
             CODE_SIGNING_ALLOWED=NO \
-            test
+            test ${{ matrix.only-testing }}
+
+      - name: List simulators
+        if: failure() && matrix.name == 'iOS Simulator'
+        run: xcrun simctl list devices available
