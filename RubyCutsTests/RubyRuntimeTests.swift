@@ -667,28 +667,29 @@ extension EmbeddedRubyTests {
         // MARK: - Script run cancellation (Phase 8, Wave B)
         //
         // These work *because* `RubyRuntime` runs on its own dedicated
-        // thread: the test's own task isn't blocked while a `run` occupies
-        // the VM thread, so a second task can reach in and cancel it. Guards
-        // `rubycuts_shim.c`'s cancellation hook (RUBY_EVENT_LINE | CALL |
-        // B_CALL) and `RubyRuntime.requestCancel()`/`runCancellable(_:input:)`.
+        // thread: the test's own task isn't blocked while a run occupies the
+        // VM thread, so cancelling that task reaches in out of band. Guards
+        // `rubycuts_shim.c`'s per-run cancellation state and event hook
+        // (RUBY_EVENT_LINE | CALL | B_CALL) and
+        // `RubyRuntime.runCancellable(_:input:)`.
 
         @Test func cancelsALongRunningLoop() async throws {
             // The load-bearing test: if rb_raise from inside an event hook
             // were unsafe against rb_eval_string_protect's longjmp, this is
             // where it would fail or crash rather than returning cleanly.
-            let runTask = Task { await RubyRuntime.shared.run("i = 0; loop { i += 1 }") }
+            let runTask = Task { await RubyRuntime.shared.runCancellable("i = 0; loop { i += 1 }") }
             try await Task.sleep(for: .milliseconds(200))
-            RubyRuntime.shared.requestCancel()
+            runTask.cancel()
             let result = await runTask.value
             #expect(result.wasCancelled)
         }
 
         @Test func cancelKeepsOutputPrintedBeforeTheStop() async throws {
             let runTask = Task {
-                await RubyRuntime.shared.run("puts 'before'; loop { }")
+                await RubyRuntime.shared.runCancellable("puts 'before'; loop { }")
             }
             try await Task.sleep(for: .milliseconds(200))
-            RubyRuntime.shared.requestCancel()
+            runTask.cancel()
             let result = await runTask.value
             #expect(result.wasCancelled)
             #expect(result.stdout.contains("before"))
@@ -700,44 +701,94 @@ extension EmbeddedRubyTests {
             // entry) is what the hook catches instead, so this is the case
             // that justifies including it alongside LINE/CALL.
             let runTask = Task {
-                await RubyRuntime.shared.run("10_000_000_000.times { }")
-            }
-            try await Task.sleep(for: .milliseconds(200))
-            RubyRuntime.shared.requestCancel()
-            let result = await runTask.value
-            #expect(result.wasCancelled)
-        }
-
-        @Test func aCleanRunIsNotReportedAsCancelled() async {
-            let result = await RubyRuntime.shared.run("1 + 1")
-            #expect(!result.wasCancelled)
-        }
-
-        @Test func cancellationDoesNotLeakIntoTheNextRun() async throws {
-            // Guards the clear-on-disable ordering: the flag must not outlive
-            // the run it was requested for, or a later, unrelated run would
-            // be reported as cancelled too.
-            let runTask = Task { await RubyRuntime.shared.run("loop { }") }
-            try await Task.sleep(for: .milliseconds(200))
-            RubyRuntime.shared.requestCancel()
-            _ = await runTask.value
-
-            let result = await RubyRuntime.shared.run("2 + 2")
-            #expect(result.result == "4")
-            #expect(!result.wasCancelled)
-        }
-
-        @Test func taskCancellationCancelsTheRun() async throws {
-            // Exercises `runCancellable(_:input:)`'s `onCancel` handler
-            // directly, the Shortcuts/Stop-button path, rather than
-            // calling `requestCancel()` by hand.
-            let runTask = Task {
-                await RubyRuntime.shared.runCancellable("loop { }")
+                await RubyRuntime.shared.runCancellable("10_000_000_000.times { }")
             }
             try await Task.sleep(for: .milliseconds(200))
             runTask.cancel()
             let result = await runTask.value
             #expect(result.wasCancelled)
+        }
+
+        @Test func aCleanRunIsNotReportedAsCancelled() async {
+            let result = await RubyRuntime.shared.runCancellable("1 + 1")
+            #expect(!result.wasCancelled)
+        }
+
+        @Test func cancellationDoesNotLeakIntoTheNextRun() async throws {
+            // A cancellation belongs to the run it was requested for, so a
+            // later, unrelated run must not be reported as cancelled too.
+            let runTask = Task { await RubyRuntime.shared.runCancellable("loop { }") }
+            try await Task.sleep(for: .milliseconds(200))
+            runTask.cancel()
+            _ = await runTask.value
+
+            let result = await RubyRuntime.shared.runCancellable("2 + 2")
+            #expect(result.result == "4")
+            #expect(!result.wasCancelled)
+        }
+
+        @Test func aLateCancellationDoesNotAffectTheNextRun() async {
+            // Cancelling a task whose run already finished must be a no-op.
+            // With the old single global flag, this request would sit there
+            // and interrupt whichever run came next.
+            let finishedTask = Task { await RubyRuntime.shared.runCancellable("1 + 1") }
+            let finished = await finishedTask.value
+            #expect(!finished.wasCancelled)
+            finishedTask.cancel()
+
+            let next = await RubyRuntime.shared.runCancellable("i = 0; 10_000.times { i += 1 }; i")
+            #expect(next.result == "10000")
+            #expect(!next.wasCancelled)
+        }
+
+        @Test func cancellingAQueuedRunLeavesTheActiveRunAlone() async throws {
+            // Run A holds the VM thread until the test releases it, through a
+            // file barrier (nothing else can eval while A runs, so a Ruby
+            // global couldn't release it). Run B queues behind A and gets
+            // cancelled. A must finish normally, and B must report cancelled
+            // without ever having evaluated its script.
+            let barrier = FileManager.default.temporaryDirectory
+                .appending(component: "rubycuts-cancel-\(UUID().uuidString)")
+            try FileManager.default.createDirectory(at: barrier, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: barrier) }
+            let started = barrier.appending(component: "started").path
+            let release = barrier.appending(component: "release").path
+
+            _ = try await RubyRuntime.shared.evaluate("$rc_queued_b_ran = nil")
+
+            let runA = Task {
+                await RubyRuntime.shared.runCancellable(
+                    "File.write('\(started)', ''); "
+                        + "sleep 0.01 until File.exist?('\(release)'); 'a-finished'"
+                )
+            }
+            let deadline = ContinuousClock.now + .seconds(10)
+            while !FileManager.default.fileExists(atPath: started) {
+                try #require(ContinuousClock.now < deadline, "run A never started")
+                try await Task.sleep(for: .milliseconds(10))
+            }
+
+            let runB = Task {
+                await RubyRuntime.shared.runCancellable("$rc_queued_b_ran = true; 'b-finished'")
+            }
+            try await Task.sleep(for: .milliseconds(50))
+            runB.cancel()
+            // Give a misrouted cancellation time to hit A's polling loop before
+            // A is released, so the test fails if B's request reaches A.
+            try await Task.sleep(for: .milliseconds(100))
+            FileManager.default.createFile(atPath: release, contents: nil)
+
+            let resultA = await runA.value
+            #expect(resultA.result == "a-finished")
+            #expect(!resultA.hasError)
+            #expect(!resultA.wasCancelled)
+
+            let resultB = await runB.value
+            #expect(resultB.wasCancelled)
+            #expect(resultB.result.isEmpty)
+
+            let bRan = try await RubyRuntime.shared.evaluate("$rc_queued_b_ran.inspect")
+            #expect(bRan == "nil")
         }
 
     }

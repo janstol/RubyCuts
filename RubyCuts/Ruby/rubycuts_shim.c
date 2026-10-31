@@ -262,11 +262,40 @@ void rubycuts_install_native_bridge(rubycuts_native_handler handler) {
     }
 }
 
-// Set from any thread via rubycuts_request_cancel(), polled on the VM thread
-// by rc_cancel_hook(). Atomic because it crosses threads without a lock:
-// the VM thread must never block on anything the requesting thread might be
-// holding.
-static _Atomic int g_cancel_requested = 0;
+// One run's cancellation request. Written from whichever thread cancels the
+// run (atomic, no lock: the VM thread must never block on anything the
+// cancelling thread might hold), read by rc_cancel_hook on the VM thread.
+// Each run gets its own, so cancelling one run can never reach another: a
+// queued run's request waits in its own struct until that run starts, and a
+// late request for a finished run lands in a struct nothing reads any more.
+struct rubycuts_run {
+    _Atomic int cancel_requested;
+};
+
+rubycuts_run *rubycuts_run_create(void) {
+    rubycuts_run *run = malloc(sizeof(rubycuts_run));
+    if (run == NULL) return NULL;
+    atomic_init(&run->cancel_requested, 0);
+    return run;
+}
+
+void rubycuts_run_destroy(rubycuts_run *run) {
+    free(run);
+}
+
+void rubycuts_run_cancel(rubycuts_run *run) {
+    atomic_store(&run->cancel_requested, 1);
+}
+
+int rubycuts_run_is_cancelled(rubycuts_run *run) {
+    return atomic_load(&run->cancel_requested);
+}
+
+// The run whose user code is executing right now, or NULL outside the hook
+// window. VM-thread-only (set by enable/disable, read by the hook, all on the
+// VM thread), so a plain pointer: other threads never look at it, they only
+// write to their own run's flag.
+static rubycuts_run *g_active_run = NULL;
 
 // VM-thread-only, so a plain int: records whether the hook actually fired
 // (raised) during the window it was installed. Read by
@@ -274,27 +303,25 @@ static _Atomic int g_cancel_requested = 0;
 static int g_cancel_delivered = 0;
 
 // Checked on every RUBY_EVENT_LINE/CALL/B_CALL event while installed. The
-// fast path (flag not set) is a single atomic load and return, so a
-// non-cancelled run pays only a predicted-not-taken branch per event.
+// fast path (not cancelled) is a pointer check plus one atomic load, so a
+// non-cancelled run pays only predicted-not-taken branches per event.
 //
-// Clearing the flag *inside* the hook, before raising, is what makes this
+// Raising at most once per window, via g_cancel_delivered, is what makes this
 // one-shot: rb_raise unwinds back through this same event loop as it pops
 // frames (running any `ensure` blocks along the way), and each of those is
-// itself a LINE/CALL event. Without clearing first, the hook would re-fire
-// on every one of them.
+// itself a LINE/CALL event. Without that guard, the hook would re-fire on
+// every one of them.
 static void rc_cancel_hook(
     rb_event_flag_t evflag, VALUE data, VALUE self, ID mid, VALUE klass) {
-    if (!atomic_load(&g_cancel_requested)) return;
-    atomic_store(&g_cancel_requested, 0);
+    rubycuts_run *run = g_active_run;
+    if (run == NULL || g_cancel_delivered) return;
+    if (!atomic_load(&run->cancel_requested)) return;
     g_cancel_delivered = 1;
     rb_raise(g_cancelled_class, "run cancelled");
 }
 
-void rubycuts_request_cancel(void) {
-    atomic_store(&g_cancel_requested, 1);
-}
-
-void rubycuts_cancel_hook_enable(void) {
+void rubycuts_cancel_hook_enable(rubycuts_run *run) {
+    g_active_run = run;
     g_cancel_delivered = 0;
     rb_add_event_hook(
         rc_cancel_hook,
@@ -304,6 +331,6 @@ void rubycuts_cancel_hook_enable(void) {
 
 int rubycuts_cancel_hook_disable(void) {
     rb_remove_event_hook(rc_cancel_hook);
-    atomic_store(&g_cancel_requested, 0);
+    g_active_run = NULL;
     return g_cancel_delivered;
 }

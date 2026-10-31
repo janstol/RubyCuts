@@ -26,16 +26,25 @@ typedef char *(*rubycuts_native_handler)(const char *name, const char *args_json
 /// Installs `handler` as the native bridge and defines `RubyCuts::Native.call(name, args_json)` (which dispatches to it) and `RubyCuts::NativeError < StandardError`. Safe to call more than once; a later call replaces the handler and reuses the already-defined module/class.
 void rubycuts_install_native_bridge(rubycuts_native_handler handler);
 
-/// Requests cancellation of the in-flight eval. Thread-safe and non-blocking:
-/// callable from any thread, including while the VM thread is inside an eval.
-void rubycuts_request_cancel(void);
+/// One run's cancellation state. Opaque: created and destroyed by the owner of the run, cancelled from any thread, and read by the VM thread's event hook only while that run is the active one.
+typedef struct rubycuts_run rubycuts_run;
 
-/// Installs the cancellation event hook. VM thread only.
-void rubycuts_cancel_hook_enable(void);
+/// Allocates cancellation state for one run, not yet cancelled. Returns NULL if allocation failed. Free with `rubycuts_run_destroy` once the run has finished and nothing can cancel it any more.
+rubycuts_run *rubycuts_run_create(void);
 
-/// Removes the hook, clears the request flag, and returns 1 if the hook
-/// actually raised during the window it was installed, 0 otherwise. VM
-/// thread only.
+/// Frees state from `rubycuts_run_create`.
+void rubycuts_run_destroy(rubycuts_run *run);
+
+/// Marks `run` as cancelled. Thread-safe and non-blocking: callable from any thread, before the run starts, while it executes, or after it ends. Only ever affects `run` itself, never another run.
+void rubycuts_run_cancel(rubycuts_run *run);
+
+/// Returns 1 if `run` has been cancelled, 0 otherwise. Thread-safe.
+int rubycuts_run_is_cancelled(rubycuts_run *run);
+
+/// Installs the cancellation event hook for `run`, which is the active run until `rubycuts_cancel_hook_disable`. VM thread only.
+void rubycuts_cancel_hook_enable(rubycuts_run *run);
+
+/// Removes the hook, clears the active run, and returns 1 if the hook actually raised during the window it was installed, 0 otherwise. VM thread only.
 int rubycuts_cancel_hook_disable(void);
 
 #ifdef __cplusplus

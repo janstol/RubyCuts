@@ -34,9 +34,10 @@ nonisolated struct RunResult: Sendable {
     /// doc comment.
     var backtrace: [String] = []
 
-    /// `true` when the run was stopped by ``RubyRuntime/requestCancel()`` (or
-    /// the ``RubyRuntime/runCancellable(_:input:)`` task being cancelled)
-    /// rather than raising or completing on its own.
+    /// `true` when the run was stopped by its
+    /// ``RubyRuntime/runCancellable(_:input:)`` task being cancelled, rather
+    /// than raising or completing on its own. Also `true` for a run cancelled
+    /// while still queued, which never evaluated anything.
     var wasCancelled: Bool = false
 
     /// `true` when the script raised. Convenience for the view layer.
