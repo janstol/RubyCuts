@@ -636,6 +636,48 @@ extension EmbeddedRubyTests {
             _ = try? await RubyRuntime.shared.evaluate("ENV.delete('RC_DUP')")
         }
 
+        // Invalid input: rejected before any channel is touched, so the
+        // script never runs and nothing from the input is left behind.
+
+        @Test func validArgvWithAnInvalidEnvValueFailsWithoutRunningOrLeaking() async throws {
+            let argvBefore = try await RubyRuntime.shared.evaluate("ARGV.inspect")
+            _ = try await RubyRuntime.shared.evaluate(
+                "$rc_bad_input_ran = nil; ENV.delete('RC_OK'); nil")
+
+            let result = await RubyRuntime.shared.run(
+                "$rc_bad_input_ran = true; ARGV.first",
+                input: RunInput(argv: ["hello"], env: [("RC_OK", "fine"), ("RC_BAD", "a\0b")])
+            )
+
+            #expect(result.errorMessage?.contains("RC_BAD") == true)
+            #expect(result.result.isEmpty)
+            #expect(try await RubyRuntime.shared.evaluate("$rc_bad_input_ran.inspect") == "nil")
+            #expect(try await RubyRuntime.shared.evaluate("ARGV.inspect") == argvBefore)
+            #expect(try await RubyRuntime.shared.evaluate("ENV['RC_OK'].inspect") == "nil")
+            #expect(try await RubyRuntime.shared.evaluate("ENV['RC_BAD'].inspect") == "nil")
+
+            // And the VM is fine for the next run.
+            let next = await RubyRuntime.shared.run("ARGV.first", input: RunInput(argv: ["x"]))
+            #expect(next.result == "x")
+            #expect(!next.hasError)
+        }
+
+        @Test(arguments: [
+            ("", "v"),
+            ("A=B", "v"),
+            ("A\0B", "v"),
+        ])
+        func envKeysRubyCannotSetAreRejectedUpFront(key: String, value: String) {
+            let input = RunInput(env: [(key, value)])
+            #expect(input.validationError != nil)
+        }
+
+        @Test func ordinaryInputPassesValidation() {
+            let input = RunInput(
+                argv: ["a\0b"], stdin: "line\n\0", env: [("KEY", "value with = sign")])
+            #expect(input.validationError == nil)
+        }
+
         // MARK: - Conversions at the C boundary
         //
         // Guards rubycuts_shim.c's rubycuts_eval and rc_error_message_for_state:

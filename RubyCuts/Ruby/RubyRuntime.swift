@@ -120,6 +120,10 @@ actor RubyRuntime {
             return result
         }
 
+        if let problem = input.validationError {
+            return RunResult(stdout: "", stderr: "", result: "", errorMessage: problem)
+        }
+
         do {
             try bootIfNeeded()
         } catch {
@@ -144,18 +148,31 @@ actor RubyRuntime {
         // no-input path is exactly today's five-eval capture; the base64
         // transport never runs.
         let hasInput = !input.isEmpty
-        if hasInput {
-            _ = try? evalRaw(Self.inputSetup(for: input))
-        }
-        // Always restore, even if `code` raises (evalRaw throws on raise). Input
-        // teardown fires before the stdout/stderr restore; it touches ARGV/
-        // $stdin/ENV only, so it doesn't affect the captured buffers already
-        // read above the restore.
+        // Always restore, even if `code` raises (evalRaw throws on raise) or
+        // input setup fails partway. Registered before setup runs for that
+        // reason; the teardown restores only the channels setup actually got
+        // to. Input teardown fires before the stdout/stderr restore; it touches
+        // ARGV/$stdin/ENV only, so it doesn't affect the captured buffers
+        // already read above the restore.
         defer {
             if hasInput {
-                _ = try? evalRaw(Self.inputTeardown(for: input))
+                _ = try? evalRaw(Self.inputTeardown)
             }
             _ = try? evalRaw("$stdout = STDOUT; $stderr = STDERR")
+        }
+        if hasInput {
+            do {
+                _ = try evalRaw(Self.inputSetup(for: input))
+            } catch {
+                // `validationError` should have caught anything the setup can
+                // reject; this is the backstop. Never run the script on
+                // partially installed input.
+                return RunResult(
+                    stdout: "", stderr: "", result: "",
+                    errorMessage:
+                        "Couldn't pass the input to the script: \(Self.describe(error))"
+                )
+            }
         }
 
         var result = RunResult(stdout: "", stderr: "", result: "", errorMessage: nil)
@@ -521,36 +538,34 @@ actor RubyRuntime {
         return parts.joined(separator: "; ")
     }
 
-    /// Builds the teardown Ruby that restores the channels ``inputSetup(for:)``
-    /// mutated, in the same order setup touched them. Restores ARGV and
-    /// `$stdin` from their saved backups, and restores each ENV key to its prior
-    /// value (deleting it if it was absent before setup set it), then clears the
-    /// backup globals. Runs in `run`'s `defer`, so it fires even when the user's
-    /// code raised. The point is a Shortcut run's env never bleeds into a
-    /// later console evaluation or the next run.
+    /// The teardown Ruby that restores the channels ``inputSetup(for:)``
+    /// mutated. Restores ARGV and `$stdin` from their saved backups, and
+    /// restores each ENV key to its prior value (deleting it if it was absent
+    /// before setup set it), then clears the backup globals. Runs in `run`'s
+    /// `defer`, so it fires even when the user's code raised. The point is a
+    /// Shortcut run's env never bleeds into a later console evaluation or the
+    /// next run.
     ///
-    /// `nonisolated`, matching ``inputSetup(for:)``: called synchronously
-    /// from `run`'s VM-thread-isolated `defer`.
-    private nonisolated static func inputTeardown(for input: RunInput) -> String {
-        var parts: [String] = []
-
-        if !input.argv.isEmpty {
-            parts.append("ARGV.replace($rc_argv_backup); $rc_argv_backup = nil")
-        }
-        if !input.stdin.isEmpty {
-            parts.append("$stdin = $rc_stdin_backup; $rc_stdin_backup = nil")
-        }
-        if !input.env.isEmpty {
-            // Parenthesize the assignment: Ruby's ternary binds tighter than
-            // `=`, so `v.nil? ? ENV.delete(k) : ENV[k] = v` would mis-parse.
-            parts.append(
-                "$rc_env_backup.each { |k, v| v.nil? ? ENV.delete(k) : (ENV[k] = v) }; "
-                    + "$rc_env_backup = nil"
-            )
-        }
-
-        return parts.joined(separator: "; ")
-    }
+    /// `nonisolated`, matching ``inputSetup(for:)``: read synchronously from
+    /// `run`'s VM-thread-isolated `defer`.
+    ///
+    /// Each channel is restored only if its backup global is set, which is
+    /// what makes this safe after a setup that failed partway: a channel
+    /// setup never reached has no backup and is left alone. Setup records
+    /// each backup before mutating that channel, and the env backup per key
+    /// before setting that key, so whatever did change is always restorable.
+    private nonisolated static let inputTeardown = """
+        unless $rc_argv_backup.nil?
+          ARGV.replace($rc_argv_backup); $rc_argv_backup = nil
+        end
+        unless $rc_stdin_backup.nil?
+          $stdin = $rc_stdin_backup; $rc_stdin_backup = nil
+        end
+        unless $rc_env_backup.nil?
+          $rc_env_backup.each { |k, v| v.nil? ? ENV.delete(k) : (ENV[k] = v) }
+          $rc_env_backup = nil
+        end
+        """
 
     /// Base64-encodes `string` for embedding in a Ruby double-quoted literal.
     /// Standard base64 (with `+`/`/`/`=`) is safe in such a literal: its

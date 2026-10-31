@@ -36,6 +36,28 @@ struct RunInput: Sendable {
     /// path verbatim, a non-empty input runs the ARGV/STDIN/ENV setup/teardown.
     nonisolated var isEmpty: Bool { argv.isEmpty && stdin.isEmpty && env.isEmpty }
 
+    /// Why this input can't be installed into the VM, or `nil` if it can.
+    /// ``RubyRuntime/run(_:input:)`` checks this before touching any channel,
+    /// so a bad value fails the run up front instead of leaving ARGV set and
+    /// ENV half-applied. ARGV and STDIN accept any bytes. ENV is stricter
+    /// because it's the process environment: Ruby's `ENV[]=` rejects a key or
+    /// value containing NUL, and an empty key or one containing `=`.
+    nonisolated var validationError: String? {
+        for (key, value) in env {
+            if key.isEmpty {
+                return "An environment variable has an empty name."
+            }
+            if key.contains("\0") || key.contains("=") {
+                return "The environment variable name \(key.debugDescription) "
+                    + "can't contain '=' or a NUL character."
+            }
+            if value.contains("\0") {
+                return "The value of environment variable \(key) can't contain a NUL character."
+            }
+        }
+        return nil
+    }
+
     /// Memberwise init, spelled `nonisolated` so callers off the main actor (the
     /// nonisolated test target) can build a ``RunInput`` without a hop.
     nonisolated init(
