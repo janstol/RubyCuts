@@ -187,15 +187,16 @@ struct RunInlineRubyIntent: AppIntent {
 }
 
 /// "Run Ruby Script": runs a script chosen from the stored scripts in
-/// ``ScriptStore/userScripts`` and returns its `$stdout`. Fails (throws
+/// ``ScriptStorage/current()`` and returns its `$stdout`. Fails (throws
 /// ``RubyRunError``) when the script can't be read, raises, or writes to
 /// `$stderr`.
 ///
 /// The script is picked through ``ScriptEntity``'s picker, so the user selects
 /// a saved script by name rather than typing a path. A stored Shortcut holds the
-/// script's file-URL id; if that script has since been moved or deleted the
-/// read throws and the intent fails with "script not found", acceptable for
-/// V1 (noted in the PRD).
+/// script's file name as its id, resolved against the current store at run
+/// time, so the same Shortcut works on every device. If that script has since
+/// been renamed or deleted the read throws and the intent fails, acceptable
+/// for V1 (noted in the PRD).
 struct RunRubyScriptIntent: AppIntent {
     @Parameter(
         title: "Script",
@@ -246,10 +247,11 @@ struct RunRubyScriptIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult & ReturnsValue<String> {
-        guard let resolved = script.script else {
+        let store = await ScriptStorage.current()
+        guard let resolved = script.script(in: store) else {
             throw RubyRunError(message: "script not found")
         }
-        let source = try ScriptStore.userScripts.source(of: resolved)
+        let source = try await store.loadSource(of: resolved)
         let input = RunInput(argv: argv, stdin: stdin, env: parseEnv(env))
         return .result(value: try await runToOutput(source, input: input))
     }

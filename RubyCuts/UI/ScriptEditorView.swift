@@ -140,12 +140,13 @@ struct ScriptEditorView: View {
             .focusedSceneValue(\.saveScriptAction, saveAction)
             .task {
                 // Read on demand: source isn't held on the model, only
-                // loaded here when the editor appears. A read failure shows
-                // an alert rather than crashing the view; the editor opens
+                // loaded here when the editor appears. `loadSource` downloads
+                // an iCloud script first if needed. A read failure shows an
+                // alert rather than crashing the view; the editor opens
                 // empty.
                 editableName = script.name
                 do {
-                    let text = try store.source(of: script)
+                    let text = try await store.loadSource(of: script)
                     source = RubySyntaxHighlighting.highlighted(text)
                     savedSource = text
                     lastHighlightedText = text

@@ -232,4 +232,78 @@ struct ScriptStoreTests {
 
         #expect(try store.list().isEmpty)
     }
+
+    // MARK: - iCloud-aware I/O
+
+    @Test func anEvictedICloudPlaceholderListsUnderItsRealName() throws {
+        let store = try makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directoryURL) }
+        let placeholder = store.directoryURL.appending(component: ".hello.rb.icloud")
+        try Data().write(to: placeholder)
+
+        let listed = try store.list()
+
+        #expect(listed.map(\.name) == ["hello"])
+        #expect(listed.first?.url == store.directoryURL.appending(component: "hello.rb"))
+        #expect(listed.first?.modifiedAt == nil)
+    }
+
+    @Test func aPlaceholderNextToItsDownloadedFileListsOnce() throws {
+        let store = try makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directoryURL) }
+        _ = try store.create(name: "hello", source: "puts 1")
+        try Data().write(to: store.directoryURL.appending(component: ".hello.rb.icloud"))
+
+        let listed = try store.list()
+
+        #expect(listed.map(\.name) == ["hello"])
+        #expect(listed.first?.modifiedAt != nil)
+    }
+
+    @Test func otherHiddenFilesAreNotPlaceholders() throws {
+        let store = try makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directoryURL) }
+        try Data().write(to: store.directoryURL.appending(component: ".notes.txt.icloud"))
+        try Data().write(to: store.directoryURL.appending(component: ".rb.icloud"))
+        try Data().write(to: store.directoryURL.appending(component: ".DS_Store"))
+
+        #expect(try store.list().isEmpty)
+    }
+
+    @Test func createSkipsANameTakenByAPlaceholder() throws {
+        let store = try makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directoryURL) }
+        try Data().write(to: store.directoryURL.appending(component: ".hello.rb.icloud"))
+
+        let created = try store.create(name: "hello", source: "")
+
+        #expect(created.name == "hello-2")
+    }
+
+    @Test func loadSourceReadsALocalFile() async throws {
+        let store = try makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directoryURL) }
+        let script = try store.create(name: "hello", source: "puts 'hi'")
+
+        #expect(try await store.loadSource(of: script) == "puts 'hi'")
+    }
+
+    @Test func loadSourceOfAMissingFileThrows() async throws {
+        let store = try makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directoryURL) }
+        let missing = Script(url: store.directoryURL.appending(component: "gone.rb"))
+
+        await #expect(throws: (any Error).self) {
+            _ = try await store.loadSource(of: missing)
+        }
+    }
+
+    @Test func aLocalFileHasNoConflictsToPreserve() throws {
+        let store = try makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directoryURL) }
+        let script = try store.create(name: "hello", source: "puts 1")
+
+        #expect(try store.preserveConflicts(of: script).isEmpty)
+        #expect(try store.list().count == 1)
+    }
 }

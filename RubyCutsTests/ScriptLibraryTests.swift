@@ -407,4 +407,37 @@ struct ScriptLibraryTests {
 
         #expect(second.sortOrder == .dateModified)
     }
+
+    // MARK: - iCloud seeding
+
+    @Test func seedingSkipsWhenICloudAlreadyHasScripts() throws {
+        let store = try makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directoryURL) }
+        let (defaults, suiteName) = makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let library = ScriptLibrary(store: store, defaults: defaults)
+        // The store is empty on this device, but the metadata query knows of
+        // scripts another device put in iCloud.
+        library.seedSamplesIfNeeded(gatheredScriptCount: 3)
+
+        #expect(library.scripts.isEmpty)
+        // The flag is set, so a later launch doesn't seed either.
+        library.seedSamplesIfNeeded()
+        #expect(library.scripts.isEmpty)
+    }
+
+    @Test func prepareStorageOnAnInjectedStoreSeedsAndLists() async throws {
+        let store = try makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directoryURL) }
+        let (defaults, suiteName) = makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let library = ScriptLibrary(store: store, defaults: defaults)
+        await library.prepareStorage()
+
+        #expect(library.store.directoryURL == store.directoryURL)
+        #expect(library.storageLocation == .local)
+        #expect(Set(library.scripts.map(\.name)) == Set(SampleScripts.all.map(\.name)))
+    }
 }

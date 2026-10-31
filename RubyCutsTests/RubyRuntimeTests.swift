@@ -474,7 +474,7 @@ extension EmbeddedRubyTests {
         //
         // The one VM-driving contract for the App Intents slice: seed a temp-dir
         // store, resolve a stored script through the ``ScriptEntity`` picker path
-        // (entity -> ``Script`` -> ``ScriptStore/source(of:)``), run it via
+        // (entity -> ``Script`` -> ``ScriptStore/loadSource(of:timeout:)``), run it via
         // ``runToOutput(_:)``, and confirm the captured `$stdout` flows out to the
         // intent's return value. Kept in this `.serialized` suite, not a second
         // one, so all VM-driving tests share one serial execution contract (the
@@ -491,10 +491,10 @@ extension EmbeddedRubyTests {
             let script = try store.create(name: "intent-smoke", source: "puts 'from-script'")
             let entity = ScriptEntity(script)
 
-            // The intent's resolve path: ``ScriptEntity/script`` ->
-            // ``ScriptStore/source(of:)`` -> ``runToOutput(_:)``.
-            let resolved = try #require(entity.script)
-            let source = try store.source(of: resolved)
+            // The intent's resolve path: ``ScriptEntity/script(in:)`` ->
+            // ``ScriptStore/loadSource(of:timeout:)`` -> ``runToOutput(_:)``.
+            let resolved = try #require(entity.script(in: store))
+            let source = try await store.loadSource(of: resolved)
             let output = try await runToOutput(source)
 
             #expect(output == "from-script\n")
@@ -513,8 +513,8 @@ extension EmbeddedRubyTests {
             let script = try store.create(name: "intent-fail", source: "raise 'boom'")
             let entity = ScriptEntity(script)
 
-            let resolved = try #require(entity.script)
-            let source = try store.source(of: resolved)
+            let resolved = try #require(entity.script(in: store))
+            let source = try await store.loadSource(of: resolved)
 
             let error = try await #require(throws: RubyRunError.self) {
                 try await runToOutput(source)

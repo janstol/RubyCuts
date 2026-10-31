@@ -50,8 +50,32 @@ final class ScriptLibrary {
     var errorMessage: String?
 
     /// The backing store. Injectable so previews and tests can point at a temp
-    /// directory instead of the real sandbox Documents dir.
-    private let store: ScriptStore
+    /// directory. Without an injected store the library starts on
+    /// ``ScriptStore/local`` and ``prepareStorage()`` swaps in whatever
+    /// ``ScriptStorage`` resolves (the iCloud container when available).
+    private(set) var store: ScriptStore
+
+    /// Where ``store`` lives. `.local` until ``prepareStorage()`` resolves
+    /// iCloud, and always `.local` for an injected store.
+    private(set) var storageLocation: ScriptStorageLocation = .local
+
+    /// Whether ``prepareStorage()`` resolves the store through
+    /// ``ScriptStorage``. `false` when a store was injected, so tests and
+    /// previews never touch the real Documents folder or iCloud.
+    private let resolvesStorage: Bool
+
+    /// Watches iCloud for changes while ``storageLocation`` is `.iCloud`.
+    private var syncMonitor: ScriptSyncMonitor?
+
+    /// The `NSUbiquityIdentityDidChange` observer that re-runs
+    /// ``prepareStorage()``. Only registered when ``resolvesStorage``.
+    private var identityObserver: NSObjectProtocol?
+
+    /// How long ``prepareStorage()`` waits for iCloud's first metadata
+    /// gathering before deciding about seeding. On a timeout it skips
+    /// seeding for this launch rather than risk seeding on top of scripts
+    /// that haven't shown up yet.
+    private static let initialGatheringTimeout: Duration = .seconds(15)
 
     /// Where ``seedSamplesIfNeeded()`` records that seeding already happened.
     /// Injectable so tests can point at a throwaway suite instead of
@@ -86,8 +110,11 @@ final class ScriptLibrary {
         }
     }
 
-    init(store: ScriptStore = .userScripts, defaults: UserDefaults = .standard) {
-        self.store = store
+    /// Creates a library over `store`, or, when `store` is `nil`, over the
+    /// app's real storage as resolved by ``prepareStorage()``.
+    init(store: ScriptStore? = nil, defaults: UserDefaults = .standard) {
+        self.store = store ?? .local
+        self.resolvesStorage = store == nil
         self.defaults = defaults
         if let raw = defaults.string(forKey: Self.sortOrderKey),
             let restored = ScriptSortOrder(rawValue: raw)
@@ -95,6 +122,74 @@ final class ScriptLibrary {
             sortOrder = restored
         } else {
             sortOrder = .name
+        }
+    }
+
+    /// Gets the library ready to show: resolves where scripts live, moves any
+    /// local scripts into iCloud, starts watching iCloud for changes, seeds
+    /// the samples if this is a fresh library, and lists. Called from the
+    /// list view's `.task`, and again whenever the iCloud account changes.
+    ///
+    /// For an injected store it only seeds and lists, as the app did before
+    /// iCloud.
+    ///
+    /// In iCloud mode, seeding waits for the metadata query's first
+    /// gathering and is skipped if that found any `.rb` items, so a new
+    /// device doesn't add a second set of samples to a folder another device
+    /// already filled. A device whose metadata hasn't arrived yet can still
+    /// seed; the `-2` naming keeps that harmless.
+    func prepareStorage() async {
+        guard resolvesStorage else {
+            seedSamplesIfNeeded()
+            refresh()
+            return
+        }
+        observeIdentityChanges()
+        let resolved = await ScriptStorage.resolved()
+        syncMonitor?.stop()
+        syncMonitor = nil
+        store = resolved.store
+        storageLocation = resolved.location
+
+        guard resolved.location == .iCloud else {
+            seedSamplesIfNeeded()
+            refresh()
+            return
+        }
+
+        var moveError: Error?
+        do {
+            try await ScriptStorage.moveScripts(from: .local, into: resolved.store)
+        } catch {
+            moveError = error
+        }
+        let monitor = ScriptSyncMonitor { [weak self] in self?.refresh() }
+        syncMonitor = monitor
+        monitor.start()
+        refresh()
+        if let moveError {
+            errorMessage = "Some scripts couldn't be moved to iCloud: \(Self.describe(moveError))"
+        }
+
+        if let gatheredCount = await monitor.waitForInitialGathering(
+            timeout: Self.initialGatheringTimeout),
+            syncMonitor === monitor
+        {
+            seedSamplesIfNeeded(gatheredScriptCount: gatheredCount)
+        }
+    }
+
+    /// Re-runs ``prepareStorage()`` when the iCloud account changes
+    /// (sign-out, or iCloud Drive switched off for the app). Idempotent.
+    private func observeIdentityChanges() {
+        guard identityObserver == nil else { return }
+        identityObserver = NotificationCenter.default.addObserver(
+            forName: .NSUbiquityIdentityDidChange, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                ScriptStorage.invalidate()
+                Task { await self?.prepareStorage() }
+            }
         }
     }
 
@@ -189,16 +284,25 @@ final class ScriptLibrary {
     ///
     /// If the store already has scripts in it the first time this runs, it
     /// leaves them alone: seeding into a non-empty library would drop
-    /// samples on top of scripts the user (or, once Phase 10 ships, iCloud)
-    /// already put there. But it still sets the flag, since "already has
-    /// scripts" and "already seeded" both mean don't seed again.
+    /// samples on top of scripts the user (or iCloud) already put there. But
+    /// it still sets the flag, since "already has scripts" and "already
+    /// seeded" both mean don't seed again.
+    ///
+    /// `gatheredScriptCount` is how many `.rb` items iCloud's metadata query
+    /// knows about. Anything above zero counts as "already has scripts" even
+    /// if none of them are on this device yet. Local mode passes nothing.
     ///
     /// The flag is also what makes a deleted sample stay deleted: without
     /// it, every launch would recreate whatever the user just removed.
     /// ``restoreSamples()`` is the explicit, user-initiated way back.
-    func seedSamplesIfNeeded() {
+    func seedSamplesIfNeeded(gatheredScriptCount: Int = 0) {
         guard !defaults.bool(forKey: Self.hasSeededSampleScriptsKey) else { return }
         errorMessage = nil
+        if gatheredScriptCount > 0 {
+            defaults.set(true, forKey: Self.hasSeededSampleScriptsKey)
+            refresh()
+            return
+        }
         let existing: [Script]
         do {
             existing = try store.list()
@@ -266,14 +370,8 @@ final class ScriptLibrary {
 
     /// Maps an opaque `Error` to a short human-readable string for the alert.
     private static func describe(_ error: Error) -> String {
-        if let storeError = error as? ScriptStoreError {
-            switch storeError {
-            case .invalidName: return "The script name can't be empty."
-            case .notAScript:
-                return "That item isn't a script file (it may be a folder or a link), "
-                    + "so it was left alone."
-            }
-        }
-        return error.localizedDescription
+        // ``ScriptStoreError`` is a `LocalizedError`, so its own messages come
+        // through here too.
+        error.localizedDescription
     }
 }

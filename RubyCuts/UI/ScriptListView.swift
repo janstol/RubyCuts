@@ -50,7 +50,8 @@ struct ScriptListView: View {
     init(library: ScriptLibrary = ScriptLibrary()) {
         // `_library = State(initialValue:)` lets previews and tests inject a
         // VM seeded against a temp-dir store; the default still works for the
-        // real app, which uses `.userScripts`.
+        // real app, whose library resolves local or iCloud storage in
+        // `prepareStorage()`.
         _library = State(initialValue: library)
     }
 
@@ -61,8 +62,7 @@ struct ScriptListView: View {
                 .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 320)
                 .searchable(text: $searchText, prompt: "Search Scripts")
                 .task {
-                    library.seedSamplesIfNeeded()
-                    library.refresh()
+                    await library.prepareStorage()
                 }
                 .toolbar {
                     ToolbarItem(placement: .primaryAction) {

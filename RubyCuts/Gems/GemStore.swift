@@ -13,9 +13,9 @@ enum GemStoreError: Error, Sendable, Equatable {
 /// subdirectory per gem, named `<name>-<version>`.
 ///
 /// Gems live in **Application Support**, not Documents: Documents is the
-/// user's script folder and the designed iCloud swap point
-/// (``ScriptStore/userScripts``), and gem payloads do not belong there and
-/// must not sync.
+/// user's local script folder (``ScriptStore/local``), the iCloud container's
+/// Documents folder holds synced scripts, and gem payloads belong in neither
+/// and must not sync.
 ///
 /// `Sendable`, and every member `nonisolated`, matching ``ScriptStore``: the
 /// only stored state is a `let directoryURL`, so there's no in-process state

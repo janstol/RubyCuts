@@ -1,5 +1,28 @@
 import SwiftUI
 
+/// The "Storage" section shared by the macOS Scripts pane and the iOS
+/// settings form: where scripts live right now, and in local mode, how to get
+/// them syncing.
+private struct ScriptStorageSection: View {
+    let location: ScriptStorageLocation
+
+    var body: some View {
+        Section("Storage") {
+            switch location {
+            case .iCloud:
+                LabeledContent("Scripts are stored in", value: "iCloud Drive")
+            case .local:
+                LabeledContent("Scripts are stored", value: "On this device only")
+                Text(
+                    "To sync scripts across your devices, sign in to iCloud and turn on iCloud Drive for RubyCuts."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
 #if os(macOS)
     /// The macOS ⌘, Settings window's content: a "Scripts" tab (sample
     /// restore) and a "Gems" tab. Was a single ungrouped pane until this
@@ -38,6 +61,7 @@ import SwiftUI
 
         var body: some View {
             Form {
+                ScriptStorageSection(location: library.storageLocation)
                 Section("Sample Scripts") {
                     Button("Restore Sample Scripts") {
                         library.restoreSamples()
@@ -125,6 +149,7 @@ import SwiftUI
         var body: some View {
             NavigationStack {
                 Form {
+                    ScriptStorageSection(location: scriptLibrary.storageLocation)
                     Section("Sample Scripts") {
                         Button("Restore Sample Scripts") {
                             scriptLibrary.restoreSamples()
