@@ -164,4 +164,72 @@ struct ScriptStoreTests {
         // that would couple the test to filesystem timestamp precision.
         #expect(abs(modifiedAt.timeIntervalSinceNow) < 60)
     }
+
+    // MARK: - Only regular files are scripts
+
+    /// A directory named `archive.rb`, holding one file, inside `store`.
+    private func makeRubyNamedDirectory(in store: ScriptStore) throws -> URL {
+        let directory = store.directoryURL.appending(
+            component: "archive.rb", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try "keep me".write(
+            to: directory.appending(component: "child.txt"), atomically: true, encoding: .utf8)
+        return directory
+    }
+
+    @Test func listSkipsADirectoryNamedLikeAScript() throws {
+        let store = try makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directoryURL) }
+        _ = try makeRubyNamedDirectory(in: store)
+        _ = try store.create(name: "real", source: "puts 1")
+
+        #expect(try store.list().map(\.name) == ["real"])
+    }
+
+    @Test func deleteRefusesADirectoryAndLeavesItsContents() throws {
+        let store = try makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directoryURL) }
+        let directory = try makeRubyNamedDirectory(in: store)
+
+        #expect(throws: ScriptStoreError.self) {
+            try store.delete(Script(url: directory))
+        }
+        let child = directory.appending(component: "child.txt")
+        #expect(FileManager.default.fileExists(atPath: child.path))
+    }
+
+    @Test func renameRefusesADirectory() throws {
+        let store = try makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directoryURL) }
+        let directory = try makeRubyNamedDirectory(in: store)
+
+        #expect(throws: ScriptStoreError.self) {
+            _ = try store.rename(Script(url: directory), to: "moved")
+        }
+        #expect(FileManager.default.fileExists(atPath: directory.path))
+    }
+
+    @Test func listSkipsASymlinkEvenToARealScript() throws {
+        let store = try makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directoryURL) }
+        let real = try store.create(name: "real", source: "puts 1")
+        let link = store.directoryURL.appending(component: "alias.rb")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: real.url)
+
+        #expect(try store.list().map(\.name) == ["real"])
+        #expect(throws: ScriptStoreError.self) {
+            try store.delete(Script(url: link))
+        }
+        #expect(FileManager.default.fileExists(atPath: real.url.path))
+    }
+
+    @Test func deleteStillRemovesARegularScript() throws {
+        let store = try makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directoryURL) }
+        let script = try store.create(name: "gone", source: "puts 1")
+
+        try store.delete(script)
+
+        #expect(try store.list().isEmpty)
+    }
 }

@@ -4,6 +4,12 @@ import Foundation
 enum ScriptStoreError: Error {
     /// The name passed to ``ScriptStore/create(name:source:)`` or ``ScriptStore/rename(_:to:)`` was empty or only whitespace after sanitization.
     case invalidName
+
+    /// The URL doesn't point at a regular file: a directory that happens to
+    /// end in `.rb`, a symlink, or something that's gone. ``ScriptStore``
+    /// refuses to delete or rename it as a script, so the ordinary delete
+    /// path can never remove a whole directory.
+    case notAScript
 }
 
 /// A value-type store over a directory of `.rb` files, the backing layer for
@@ -54,7 +60,13 @@ struct ScriptStore: Sendable {
     }
 
     /// Lists every `.rb` file directly in the backing directory as a ``Script``,
-    /// sorted by display name. Non-`.rb` files and subdirectories are skipped.
+    /// sorted by display name. Only regular files count: non-`.rb` files,
+    /// subdirectories (even one named `archive.rb`), and symlinks are skipped.
+    /// Symlinks are skipped on purpose, not just because they're rare: one
+    /// could point outside this directory, or at a directory, and saving
+    /// through it would write wherever it points. URL resource values
+    /// describe the link itself, not its target, so `isRegularFile` is
+    /// `false` for every symlink.
     /// This is the file-discovery deliverable; iCloud's `NSMetadataQuery`
     /// replaces only this method later (same output shape, different discovery
     /// primitive). Uses `contentsOfDirectory` (not a recursive enumerator)
@@ -73,16 +85,17 @@ struct ScriptStore: Sendable {
     /// `[Script]`) doesn't change for iCloud's replacement to match.
     nonisolated func list() throws -> [Script] {
         try ensureDirectory()
+        let keys: Set<URLResourceKey> = [.contentModificationDateKey, .isRegularFileKey]
         let urls = try FileManager.default.contentsOfDirectory(
-            at: directoryURL, includingPropertiesForKeys: [.contentModificationDateKey]
+            at: directoryURL, includingPropertiesForKeys: Array(keys)
         )
         return
             urls
             .filter { $0.pathExtension == "rb" }
-            .map { url in
-                let modifiedAt = try? url.resourceValues(forKeys: [.contentModificationDateKey])
-                    .contentModificationDate
-                return Script(url: url, modifiedAt: modifiedAt)
+            .compactMap { url in
+                let values = try? url.resourceValues(forKeys: keys)
+                guard values?.isRegularFile == true else { return nil }
+                return Script(url: url, modifiedAt: values?.contentModificationDate)
             }
             .sorted { $0.name < $1.name }
     }
@@ -125,7 +138,10 @@ struct ScriptStore: Sendable {
     /// ``create(name:source:)`` sanitizes. A no-op (the sanitized name resolves
     /// to the same file) returns the original script. If the target file exists
     /// and is a *different* file, the move throws rather than clobber it.
+    /// Throws ``ScriptStoreError/notAScript`` if `script` isn't a regular file
+    /// (see ``delete(_:)``).
     nonisolated func rename(_ script: Script, to newName: String) throws -> Script {
+        try Self.requireRegularFile(script.url)
         let base = try Self.sanitizedBaseName(newName)
         let target = directoryURL.appending(component: base).appendingPathExtension("rb")
         if target == script.url {
@@ -135,12 +151,29 @@ struct ScriptStore: Sendable {
         return Script(url: target)
     }
 
-    /// Deletes the script's file from disk.
+    /// Deletes the script's file from disk. Throws
+    /// ``ScriptStoreError/notAScript`` instead if the URL isn't a regular
+    /// file: `removeItem` deletes a directory recursively, and a symlink
+    /// isn't something this store created. Checked at delete time rather than
+    /// trusting ``list()``, since the file can change in between (the Files
+    /// app, or iCloud later).
     nonisolated func delete(_ script: Script) throws {
+        try Self.requireRegularFile(script.url)
         try FileManager.default.removeItem(at: script.url)
     }
 
     // MARK: - Name helpers
+
+    /// Throws ``ScriptStoreError/notAScript`` unless `url` is a regular file
+    /// right now. Reads through a fresh URL so cached resource values from an
+    /// earlier listing can't vouch for what's there now.
+    nonisolated private static func requireRegularFile(_ url: URL) throws {
+        let fresh = URL(filePath: url.path(percentEncoded: false))
+        let values = try? fresh.resourceValues(forKeys: [.isRegularFileKey])
+        guard values?.isRegularFile == true else {
+            throw ScriptStoreError.notAScript
+        }
+    }
 
     /// Sanitizes a caller-supplied name into a bare base name (no extension):
     /// trims whitespace, drops any path components so the caller can't escape

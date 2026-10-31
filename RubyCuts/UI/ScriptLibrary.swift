@@ -269,6 +269,9 @@ final class ScriptLibrary {
         if let storeError = error as? ScriptStoreError {
             switch storeError {
             case .invalidName: return "The script name can't be empty."
+            case .notAScript:
+                return "That item isn't a script file (it may be a folder or a link), "
+                    + "so it was left alone."
             }
         }
         return error.localizedDescription
