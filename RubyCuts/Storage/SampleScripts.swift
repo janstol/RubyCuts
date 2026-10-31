@@ -96,10 +96,7 @@ nonisolated enum SampleScripts {
     private static let fetchJSON = """
         # Fetch JSON
         #
-        # A live HTTPS request through the stdlib Net::HTTP, plus
-        # JSON.parse. This also proves the bundled CA certificate store
-        # verifies a real TLS handshake, no gem install needed for this
-        # one.
+        # A live HTTPS request through the stdlib Net::HTTP, plus JSON.parse.
 
         require "net/http"
         require "json"
