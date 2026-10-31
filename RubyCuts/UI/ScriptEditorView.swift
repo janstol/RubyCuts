@@ -92,8 +92,9 @@ struct ScriptEditorView: View {
     @State private var showError = false
     @State private var isRunning = false
 
-    /// The in-flight run's `Task`, held only so the Stop button can cancel
-    /// it. `nil` whenever no run is in progress.
+    /// The in-flight run's `Task`, held so the Stop button, and leaving the
+    /// editor (`.onDisappear`), can cancel it. `nil` whenever no run is in
+    /// progress.
     @State private var runTask: Task<Void, Never>?
 
     @Environment(\.scenePhase) private var scenePhase
@@ -168,6 +169,13 @@ struct ScriptEditorView: View {
                 if isDirty {
                     save(silent: true)
                 }
+                // Stop an in-flight run: once the editor is gone so is its
+                // Stop button, and the one shared VM would stay busy (and
+                // block other scripts, Shortcuts runs and gem installs) until
+                // the script ended on its own. Same cancellation Stop uses,
+                // so a script blocked in a single C call still finishes that
+                // call first.
+                runTask?.cancel()
             }
             .onChange(of: scenePhase) { _, newPhase in
                 // `onDisappear` doesn't fire when the app is backgrounded
@@ -524,7 +532,9 @@ struct ScriptEditorView: View {
     /// actor. The window stays draggable, the list stays scrollable, and
     /// the spinner keeps animating for the whole run.
     ///
-    /// Cancellable via the Stop button that replaces Run while `isRunning`:
+    /// Cancelled when the editor disappears (selecting another script,
+    /// navigating back, closing the window), and via the Stop button that
+    /// replaces Run while `isRunning`:
     /// cancelling ``runTask`` trips ``RubyRuntime/runCancellable(_:input:)``'s
     /// `onCancel` handler, which is what actually stops the VM; this method
     /// itself only starts and tracks the task. Per ``RubyRuntime``'s doc
