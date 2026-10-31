@@ -1,2 +1,52 @@
 [tools]
 ruby = "3.4"
+
+# Shared xcodebuild arguments for the tasks below. macOS builds need
+# -allowProvisioningUpdates because the iCloud entitlement requires a real
+# provisioning profile. The iOS Simulator name can be overridden per machine
+# with IOS_SIM, e.g. `IOS_SIM="iPhone 18 Pro" mise run test:ios`.
+[vars]
+project = "-project RubyCuts.xcodeproj -scheme RubyCuts"
+macos = "-destination 'platform=macOS' -allowProvisioningUpdates"
+ios = "-destination \"platform=iOS Simulator,name=${IOS_SIM:-iPhone 17}\""
+
+[tasks.cruby]
+description = "Build the embedded CRuby into Vendor/CRuby (slow, run once)"
+run = "ruby scripts/build-cruby.rb"
+
+[tasks."cruby:clean"]
+description = "Wipe and rebuild the embedded CRuby from scratch"
+run = "ruby scripts/build-cruby.rb --clean"
+
+[tasks.build]
+description = "Build the app for macOS"
+run = "xcodebuild {{vars.project}} {{vars.macos}} build"
+
+[tasks."build:ios"]
+description = "Build the app for the iOS Simulator (IOS_SIM overrides the device)"
+run = "xcodebuild {{vars.project}} {{vars.ios}} build"
+
+[tasks.test]
+description = "Run unit tests on macOS; optional filter, e.g. RubyCutsTests/ScriptStoreTests or RubyCutsTests/RubyCutsTests/example()"
+usage = 'arg "[filter]" default="RubyCutsTests"'
+run = 'xcodebuild {{vars.project}} {{vars.macos}} test "-only-testing:${usage_filter}"'
+
+[tasks."test:ios"]
+description = "Run unit and UI tests on the iOS Simulator (macOS UI tests need GUI auth)"
+run = "xcodebuild {{vars.project}} {{vars.ios}} test"
+
+[tasks.lint]
+description = "swift-format lint on Swift files changed since HEAD, including untracked ones"
+run = '''
+files=$( { git diff --name-only --diff-filter=ACM HEAD -- '*.swift'; git ls-files --others --exclude-standard -- '*.swift'; } | sort -u )
+if [ -z "$files" ]; then echo "No changed Swift files."; exit 0; fi
+echo "$files" | xargs swift format lint --configuration .swift-format
+'''
+
+[tasks.format]
+description = "swift-format the given files in place (new files only)"
+run = "swift format format --configuration .swift-format -i"
+
+[tasks.hooks]
+description = "Enable the repo's git hooks (advisory swift-format lint on commit)"
+run = "git config core.hooksPath .githooks"

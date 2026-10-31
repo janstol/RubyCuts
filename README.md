@@ -21,16 +21,21 @@ RubyCuts embeds a statically-linked CRuby, built by a standalone script rather t
 
 ```sh
 mise install
-ruby scripts/build-cruby.rb
+mise run cruby
 ```
 
-See [`docs/embedding-cruby.md`](docs/embedding-cruby.md) for what it does and why. With that done, clone the repo and open `RubyCuts.xcodeproj` in Xcode, or build from the command line:
+See [`docs/embedding-cruby.md`](docs/embedding-cruby.md) for what it does and why. With that done, clone the repo and open `RubyCuts.xcodeproj` in Xcode, or build from the command line with the [mise](https://mise.jdx.dev) tasks in `mise.toml`:
 
 ```sh
-xcodebuild -project RubyCuts.xcodeproj -scheme RubyCuts -destination 'platform=macOS' build
+mise run build          # macOS
+mise run build:ios      # iOS Simulator (set IOS_SIM to pick another device)
+mise run test           # unit tests on macOS
+mise run test RubyCutsTests/ScriptStoreTests   # one suite
+mise run test:ios       # unit and UI tests on the iOS Simulator
+mise run lint           # swift-format lint on changed Swift files
 ```
 
-Swap the destination for an iOS Simulator to target iOS, e.g. `-destination 'platform=iOS Simulator,name=iPhone 17'`.
+`mise tasks` lists them all. Each is a thin wrapper around `xcodebuild` or `swift format`, so you can read the exact command in `mise.toml`.
 
 ### Signing
 
@@ -41,14 +46,14 @@ cp Config/Local.xcconfig.sample Config/Local.xcconfig
 # then edit Config/Local.xcconfig and set your team ID
 ```
 
-Simulator and macOS builds work without this, since they don't require a signing team.
+Simulator builds work without this. macOS builds need it too, because the iCloud entitlement requires a provisioning profile: the Mac has to be registered in your developer account, and command-line builds need `-allowProvisioningUpdates` (the mise tasks pass it).
 
 ### Git hooks
 
 There's an advisory `swift-format` lint that runs on staged files before each commit. It never blocks the commit, it just prints warnings. Enable it with:
 
 ```sh
-git config core.hooksPath .githooks
+mise run hooks
 ```
 
 ## License
