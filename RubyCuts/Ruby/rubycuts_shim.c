@@ -72,26 +72,79 @@ int rubycuts_init(const char *stdlib_path) {
 // what `ruby -e` would raise (LocalJumpError: unexpected return, ...).
 #define RC_TAG_RAISE 0x6
 
-/// Returns a malloc'd human-readable message for a nonzero protect `state`.
-/// The caller frees it with `rubycuts_free`. For TAG_RAISE the message comes from
-/// the raised exception's `to_s`; for any other tag it is synthesized. Always
-/// clears `ec->errinfo` (the throw data / exception) before returning.
-static char *rc_error_message_for_state(int state) {
+/// Copies `length` bytes into a fresh malloc'd, NUL-terminated buffer. Never
+/// raises: plain C, no Ruby calls. `bytes` is NULL only if malloc failed.
+static rubycuts_buffer rc_buffer_from_bytes(const char *bytes, long length) {
+    rubycuts_buffer buffer = {NULL, 0};
+    char *copy = malloc((size_t)length + 1);
+    if (copy == NULL) return buffer;
+    memcpy(copy, bytes, (size_t)length);
+    copy[length] = '\0';
+    buffer.bytes = copy;
+    buffer.length = length;
+    return buffer;
+}
+
+static rubycuts_buffer rc_buffer_from_cstr(const char *cstr) {
+    return rc_buffer_from_bytes(cstr, (long)strlen(cstr));
+}
+
+/// Copies a Ruby String's bytes out by length. RSTRING_PTR/RSTRING_LEN are
+/// plain field reads, so unlike StringValueCStr this can't raise, and an
+/// embedded NUL survives instead of being rejected with an ArgumentError.
+static rubycuts_buffer rc_buffer_from_string(VALUE string) {
+    return rc_buffer_from_bytes(RSTRING_PTR(string), RSTRING_LEN(string));
+}
+
+/// `rb_protect` callback: `obj.to_s`. Can run arbitrary user Ruby (a
+/// redefined `to_s`), so it must only ever be called under rb_protect.
+static VALUE rc_as_string(VALUE obj) {
+    return rb_obj_as_string(obj);
+}
+
+/// `rb_protect` callback: the fallback message for an exception whose own
+/// `to_s` raised, built from its class name instead. Also run under
+/// rb_protect, since even a class name lookup is a Ruby call.
+static VALUE rc_unformattable_error_message(VALUE error) {
+    VALUE message = rb_str_dup(rb_class_name(rb_obj_class(error)));
+    rb_str_cat_cstr(message, " (its message raised while being formatted)");
+    return message;
+}
+
+/// Returns the human-readable message for a nonzero protect `state`, as an
+/// owned buffer. For TAG_RAISE the message comes from the raised exception's
+/// `to_s`; for any other tag it is synthesized. Always clears `ec->errinfo`
+/// (the throw data / exception) before returning, and never raises: every
+/// Ruby call that could run user code goes through rb_protect, falling back
+/// to the class name and then to a fixed string.
+static rubycuts_buffer rc_error_message_for_state(int state) {
     if (state == RC_TAG_RAISE) {
         VALUE error = rb_errinfo();
         // Stash the exception in a Ruby global before clearing errinfo, so
         // Swift can still read its backtrace after this call returns. This
         // is a deliberate GC root holding exactly one exception, overwritten
-        // on the next failed eval; see rc_error_message_for_state's other
-        // branch, which sets it to Qnil so a non-raise failure can't leak a
-        // stale backtrace from an earlier raise.
+        // on the next failed eval; see the other branch below, which sets it
+        // to Qnil so a non-raise failure can't leak a stale backtrace from an
+        // earlier raise.
         rb_gv_set("$rc_last_error", error);
         rb_set_errinfo(Qnil);
-        if (error != Qnil) {
-            VALUE message = rb_obj_as_string(error);
-            return strdup(StringValueCStr(message));
+        if (error == Qnil) {
+            return rc_buffer_from_cstr("unknown Ruby error");
         }
-        return strdup("unknown Ruby error");
+
+        int format_state = 0;
+        VALUE message = rb_protect(rc_as_string, error, &format_state);
+        if (format_state == 0) {
+            return rc_buffer_from_string(message);
+        }
+        rb_set_errinfo(Qnil);
+
+        message = rb_protect(rc_unformattable_error_message, error, &format_state);
+        if (format_state == 0) {
+            return rc_buffer_from_string(message);
+        }
+        rb_set_errinfo(Qnil);
+        return rc_buffer_from_cstr("unknown Ruby error");
     }
 
     // A non-exception non-local exit. ec->errinfo is throw data, not an object;
@@ -103,35 +156,35 @@ static char *rc_error_message_for_state(int state) {
     rb_gv_set("$rc_last_error", Qnil);
     rb_set_errinfo(Qnil);
     switch (state) {
-        case 0x1: return strdup("unexpected return");
-        case 0x2: return strdup("unexpected break");
-        case 0x3: return strdup("unexpected next");
-        case 0x4: return strdup("unexpected retry");
-        case 0x5: return strdup("unexpected redo");
-        case 0x7: return strdup("unexpected throw");
-        case 0x8: return strdup("fatal error");
-        default: return strdup("unexpected control flow");
+        case 0x1: return rc_buffer_from_cstr("unexpected return");
+        case 0x2: return rc_buffer_from_cstr("unexpected break");
+        case 0x3: return rc_buffer_from_cstr("unexpected next");
+        case 0x4: return rc_buffer_from_cstr("unexpected retry");
+        case 0x5: return rc_buffer_from_cstr("unexpected redo");
+        case 0x7: return rc_buffer_from_cstr("unexpected throw");
+        case 0x8: return rc_buffer_from_cstr("fatal error");
+        default: return rc_buffer_from_cstr("unexpected control flow");
     }
 }
 
-char *rubycuts_eval_to_string(const char *code, char **error_out) {
+int rubycuts_eval(const char *code, rubycuts_buffer *output) {
     int state = 0;
     // rb_eval_string_protect, never rb_eval_string: a raised exception in rb_eval_string longjmps past this C frame (and the Swift frames above it), which is undefined behavior. The _protect variant reports failure through `state` instead, letting us return normally either way.
     VALUE result = rb_eval_string_protect(code, &state);
 
-    if (state != 0) {
-        if (error_out != NULL) {
-            *error_out = rc_error_message_for_state(state);
-        } else {
-            // No caller interest in the message, but still clear errinfo so the
-            // throw data / exception doesn't leak into the next eval.
-            rb_set_errinfo(Qnil);
+    // Converting the result runs user code too (a redefined `to_s`), so it
+    // gets the same protection. A raise there lands in `state` and is
+    // reported exactly like a raise from the eval itself.
+    if (state == 0) {
+        VALUE string = rb_protect(rc_as_string, result, &state);
+        if (state == 0) {
+            *output = rc_buffer_from_string(string);
+            return 1;
         }
-        return NULL;
     }
 
-    VALUE string = rb_obj_as_string(result);
-    return strdup(StringValueCStr(string));
+    *output = rc_error_message_for_state(state);
+    return 0;
 }
 
 void rubycuts_free(char *string) {

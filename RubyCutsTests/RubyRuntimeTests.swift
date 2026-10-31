@@ -600,6 +600,70 @@ extension EmbeddedRubyTests {
             _ = try? await RubyRuntime.shared.evaluate("ENV.delete('RC_Y')")
         }
 
+        // MARK: - Conversions at the C boundary
+        //
+        // Guards rubycuts_shim.c's rubycuts_eval and rc_error_message_for_state:
+        // turning a result or an exception into a string runs user Ruby (a
+        // redefined `to_s`) and used to happen outside rb_protect, so a raise
+        // there longjmp'd across the Swift frames and took down the process,
+        // and StringValueCStr raised on any embedded NUL. Each case runs as an
+        // exit test, in its own child process, so a regression fails that one
+        // test instead of crashing the whole suite. The child exits nonzero
+        // through `precondition` when an expectation doesn't hold, and each
+        // case also checks that a normal run still works afterwards.
+
+        @Test func aResultWhoseToSRaisesIsReportedAsAnError() async {
+            await #expect(processExitsWith: .success) {
+                let result = await RubyRuntime.shared.run(
+                    "Object.new.tap { |o| def o.to_s; raise 'conversion failed'; end }"
+                )
+                precondition(result.errorMessage == "conversion failed", "\(result)")
+                let next = await RubyRuntime.shared.run("1 + 1")
+                precondition(next.result == "2" && !next.hasError, "\(next)")
+            }
+        }
+
+        @Test func aResultWithAnEmbeddedNulArrivesWhole() async {
+            await #expect(processExitsWith: .success) {
+                let result = try await RubyRuntime.shared.evaluate(#""a\0b""#)
+                precondition(result == "a\u{0}b", result.debugDescription)
+                let next = await RubyRuntime.shared.run("1 + 1")
+                precondition(next.result == "2" && !next.hasError, "\(next)")
+            }
+        }
+
+        @Test func printedOutputWithAnEmbeddedNulArrivesWhole() async {
+            await #expect(processExitsWith: .success) {
+                let result = await RubyRuntime.shared.run(#"print "a\0b"; nil"#)
+                precondition(!result.hasError, "\(result)")
+                precondition(result.stdout == "a\u{0}b", result.stdout.debugDescription)
+                let next = await RubyRuntime.shared.run("1 + 1")
+                precondition(next.result == "2" && !next.hasError, "\(next)")
+            }
+        }
+
+        @Test func anExceptionWhoseToSRaisesFallsBackToItsClassName() async {
+            await #expect(processExitsWith: .success) {
+                let result = await RubyRuntime.shared.run(
+                    "class RCUnprintableError < StandardError; def to_s; raise 'nope'; end; end; "
+                        + "raise RCUnprintableError"
+                )
+                precondition(
+                    result.errorMessage?.hasPrefix("RCUnprintableError") == true, "\(result)")
+                let next = await RubyRuntime.shared.run("1 + 1")
+                precondition(next.result == "2" && !next.hasError, "\(next)")
+            }
+        }
+
+        @Test func anExceptionMessageWithAnEmbeddedNulArrivesWhole() async {
+            await #expect(processExitsWith: .success) {
+                let result = await RubyRuntime.shared.run(#"raise "a\0b""#)
+                precondition(result.errorMessage == "a\u{0}b", "\(result)")
+                let next = await RubyRuntime.shared.run("1 + 1")
+                precondition(next.result == "2" && !next.hasError, "\(next)")
+            }
+        }
+
         // MARK: - Script run cancellation (Phase 8, Wave B)
         //
         // These work *because* `RubyRuntime` runs on its own dedicated

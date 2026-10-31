@@ -219,20 +219,35 @@ actor RubyRuntime {
     /// first (via `bootIfNeeded`); this is the no-boot wrapper `evaluate` builds
     /// on, and the one boot itself uses for one-time setup that mustn't re-enter
     /// `bootIfNeeded` (which `evaluate` would do).
+    ///
+    /// The shim hands both the result and the error message back as a
+    /// length-delimited buffer, so a string with an embedded NUL (`"a\0b"`)
+    /// arrives whole instead of being cut off at the NUL.
     private func evalRaw(_ code: String) throws -> String {
-        var errorMessage: UnsafeMutablePointer<CChar>?
-        let result = code.withCString { codePointer in
-            rubycuts_eval_to_string(codePointer, &errorMessage)
+        var output = rubycuts_buffer()
+        let succeeded = code.withCString { codePointer in
+            rubycuts_eval(codePointer, &output)
         }
+        defer { rubycuts_free(output.bytes) }
 
-        if let result {
-            defer { rubycuts_free(result) }
-            return String(cString: result)
+        let text = Self.string(from: output)
+        guard succeeded == 1 else {
+            throw RubyError.evaluationFailed(text)
         }
+        return text
+    }
 
-        defer { if let errorMessage { rubycuts_free(errorMessage) } }
-        let message = errorMessage.map { String(cString: $0) } ?? "unknown Ruby error"
-        throw RubyError.evaluationFailed(message)
+    /// Decodes a shim buffer as UTF-8, reading exactly `length` bytes so
+    /// embedded NULs are kept. Invalid UTF-8 (a binary Ruby string) is
+    /// repaired with replacement characters rather than rejected, the same
+    /// leniency `String(cString:)` had before.
+    ///
+    /// `nonisolated`: a pure conversion called from ``evalRaw(_:)`` on the VM
+    /// thread.
+    private nonisolated static func string(from buffer: rubycuts_buffer) -> String {
+        guard let bytes = buffer.bytes, buffer.length > 0 else { return "" }
+        let raw = UnsafeRawBufferPointer(start: bytes, count: Int(buffer.length))
+        return String(decoding: raw, as: UTF8.self)
     }
 
     /// Boots the VM if it hasn't already. Safe to call on every evaluation: `rubycuts_init` no-ops after the first successful call.
