@@ -20,9 +20,11 @@ import SwiftUI
                 Tab("Scripts", systemImage: "doc.text") {
                     ScriptSettingsPane(library: scriptLibrary)
                 }
-                Tab("Gems", systemImage: "shippingbox") {
-                    GemListView()
-                }
+                #if RUBYCUTS_GEMS
+                    Tab("Gems", systemImage: "shippingbox") {
+                        GemListView()
+                    }
+                #endif
             }
             .frame(minWidth: 480, idealWidth: 480, minHeight: 460, idealHeight: 460)
         }
@@ -133,9 +135,11 @@ import SwiftUI
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     }
-                    NavigationLink("Gems") {
-                        GemListView(library: gemLibrary)
-                    }
+                    #if RUBYCUTS_GEMS
+                        NavigationLink("Gems") {
+                            GemListView(library: gemLibrary)
+                        }
+                    #endif
                 }
                 .navigationTitle("Settings")
                 .toolbar {

@@ -17,3 +17,6 @@ SWIFT_OBJC_BRIDGING_HEADER = $(SRCROOT)/RubyCuts/RubyCuts-Bridging-Header.h
 
 // -force_load pulls in the whole static archive: its symbols are otherwise reached only through rubycuts_shim.c, so the linker would drop them as unused. -lz is needed by the statically linked zlib ext.
 OTHER_LDFLAGS = $(inherited) -lz -Wl,-force_load,$(CRUBY_DIR)/lib/$(PLATFORM_NAME)/libruby-static.a
+
+// Gem installation UI (Settings > Gems, and the Reference line pointing to it). Delete this line to build without it, the fallback if App Review rejects downloadable gems under guideline 2.5.2. A build-time switch on purpose: guideline 2.3.1(a) requires every feature to be described in the review notes and reachable during review, so gems can't be switched on remotely after approval. Only the entry points are gated; the gem code itself stays compiled, so its tests run in both configurations.
+SWIFT_ACTIVE_COMPILATION_CONDITIONS = $(inherited) RUBYCUTS_GEMS

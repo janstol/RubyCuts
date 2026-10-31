@@ -114,10 +114,12 @@ struct ReferenceView: View {
                 .foregroundStyle(.secondary)
             Text("sqlite3 is bundled as a C extension.")
                 .foregroundStyle(.secondary)
-            Text(
-                "Pure-Ruby gems can be installed from Settings. Gems with a C extension can't be loaded: the App Store's W^X rules block dlopen-ing anything downloaded at runtime."
-            )
-            .foregroundStyle(.secondary)
+            #if RUBYCUTS_GEMS
+                Text(
+                    "Pure-Ruby gems can be installed from Settings. Gems with a C extension can't be loaded: the App Store's W^X rules block dlopen-ing anything downloaded at runtime."
+                )
+                .foregroundStyle(.secondary)
+            #endif
         }
     }
 }
