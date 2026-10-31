@@ -68,6 +68,12 @@ enum GemArchive {
     /// `Gem::Package::TarWriter` uses for paths over 100 bytes. GNU
     /// long-name extensions (typeflag `L`) aren't handled: real pure-Ruby
     /// gems don't need them, and the plan accepts that as a V1 scope limit.
+    ///
+    /// Strict about structure: every header's checksum is verified, size
+    /// fields must be plain octal, and a partial header or an entry body
+    /// (padding included) shorter than its header declares fails the whole
+    /// extraction. Entries are all read before anything is written, so a
+    /// malformed archive leaves the destination untouched.
     private static let tarReaderSource = #"""
         require 'zlib'
         require 'stringio'
@@ -83,28 +89,64 @@ enum GemArchive {
           # off since #unpack ignores trailing bytes it doesn't consume).
           TAR_HEADER_FORMAT = "a100a8a8a8a12a12a8aa100a6a2a32a32a8a8a155"
 
+          # A numeric header field: octal digits, optionally ended by NUL or
+          # space padding. Anything else (an empty field, a stray character,
+          # GNU's base-256 encoding for huge sizes) is malformed: `to_i(8)`
+          # would quietly read "12x" as 10, or garbage as 0.
+          def self.octal_field(raw, label, entry_name)
+            digits = raw.sub(/[\0 ]+\z/, "")
+            unless digits.match?(/\A[0-7]+\z/)
+              raise UnsafeArchiveError, "malformed #{label} field in archive entry #{entry_name.inspect}"
+            end
+            digits.to_i(8)
+          end
+
+          # The header checksum is the sum of all 512 header bytes with the
+          # 8-byte checksum field itself counted as spaces. POSIX says
+          # unsigned bytes; some old writers summed signed ones, so either
+          # is accepted.
+          def self.verify_checksum(header, entry_name)
+            stored = octal_field(header.byteslice(148, 8), "checksum", entry_name)
+            blanked = header.byteslice(0, 148) + (" " * 8) + header.byteslice(156, 356)
+            unsigned = blanked.unpack("C*").sum
+            signed = blanked.unpack("c*").sum
+            unless stored == unsigned || stored == signed
+              raise UnsafeArchiveError, "bad header checksum in archive entry #{entry_name.inspect}"
+            end
+          end
+
           def self.read_tar_entries(io)
             entries = []
             loop do
               header = io.read(512)
-              break if header.nil? || header.bytesize < 512
+              # A clean end of data at a block boundary ends the archive (the
+              # two zero blocks a writer appends are optional in practice).
+              # A partial header means the archive was cut short.
+              break if header.nil?
+              if header.bytesize < 512
+                raise UnsafeArchiveError, "truncated tar header (#{header.bytesize} of 512 bytes)"
+              end
               break if header.bytes.all?(&:zero?)
 
               fields = header.unpack(TAR_HEADER_FORMAT)
               name = fields[0].to_s.delete("\0")
               typeflag = fields[7].to_s
               prefix = fields[15].to_s.delete("\0")
-              size_field = fields[4].to_s.delete("\0").strip
-              size = size_field.empty? ? 0 : size_field.to_i(8)
               full_name = prefix.empty? ? name : "#{prefix}/#{name}"
+              verify_checksum(header, full_name)
+              size = octal_field(fields[4].to_s, "size", full_name)
               padded_size = ((size + 511) / 512) * 512
 
-              content =
-                if size.positive?
-                  (io.read(padded_size) || "")[0, size]
-                else
-                  ""
-                end
+              # The whole body, padding included, must be there: a checksum
+              # over the download only proves the bytes match what was
+              # advertised, not that the tar inside is complete.
+              body = size.positive? ? io.read(padded_size).to_s : ""
+              if body.bytesize < padded_size
+                raise UnsafeArchiveError,
+                  "truncated archive entry #{full_name.inspect} " \
+                  "(#{body.bytesize} of #{padded_size} bytes)"
+              end
+              content = body.byteslice(0, size)
 
               next if full_name.empty?
               next if %w[x g].include?(typeflag)  # pax extended headers, unsupported and skipped

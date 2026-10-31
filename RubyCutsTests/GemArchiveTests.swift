@@ -101,6 +101,97 @@ extension EmbeddedRubyTests {
             }
         }
 
+        // MARK: - Integrity: malformed tar structure
+        //
+        // The download checksum only proves the bytes match what rubygems.org
+        // advertised; it says nothing about whether the tar inside is whole.
+        // Each malformed case must fail extraction and write nothing.
+
+        @Test func aHandBuiltArchiveWithValidHeadersExtracts() async throws {
+            // Guards the fixture builder itself: if its checksums were wrong,
+            // every rejection test below would pass for the wrong reason.
+            let gemURL = try await Self.makeMaliciousGem(innerEntries: [
+                (name: "lib/ok.rb", content: Data("puts 1".utf8), typeflag: "0", linkname: "")
+            ])
+            let destination = Self.tempDirectory()
+            defer { try? FileManager.default.removeItem(at: destination) }
+
+            try await GemArchive.extract(gemFileURL: gemURL, destination: destination)
+
+            let file = destination.appending(component: "lib/ok.rb")
+            #expect(try String(contentsOf: file, encoding: .utf8) == "puts 1")
+        }
+
+        @Test func rejectsATruncatedInnerHeader() async throws {
+            let complete = Self.tarEntry(name: "lib/a.rb", content: Data("a".utf8))
+            let partialHeader = Data("lib/b.rb".utf8) + Data(count: 92)
+            try await Self.expectRejected(
+                innerTar: complete + partialHeader, mentioning: "truncated")
+        }
+
+        @Test func rejectsAShortFileBody() async throws {
+            let entry = Self.tarEntry(name: "lib/a.rb", content: Data(repeating: 0x61, count: 100))
+            try await Self.expectRejected(innerTar: entry.prefix(512 + 50), mentioning: "truncated")
+        }
+
+        @Test func rejectsAMissingBodyPadding() async throws {
+            // The 100 content bytes are all there, but the block padding
+            // after them isn't.
+            let entry = Self.tarEntry(name: "lib/a.rb", content: Data(repeating: 0x61, count: 100))
+            try await Self.expectRejected(
+                innerTar: entry.prefix(512 + 100), mentioning: "truncated")
+        }
+
+        @Test(arguments: ["0000000003x", "", "-0000000003"])
+        func rejectsAnInvalidSizeField(sizeField: String) async throws {
+            let entry = Self.tarEntry(
+                name: "lib/a.rb", content: Data("abc".utf8), sizeField: sizeField)
+            try await Self.expectRejected(innerTar: entry, mentioning: "size field")
+        }
+
+        @Test func rejectsABadHeaderChecksum() async throws {
+            var entry = Self.tarEntry(name: "lib/a.rb", content: Data("abc".utf8))
+            entry[0] = UInt8(ascii: "m")  // "mib/a.rb", after the checksum was computed
+            try await Self.expectRejected(innerTar: entry, mentioning: "checksum")
+        }
+
+        @Test func rejectsATruncatedGemFile() async throws {
+            // The outer .gem tar, cut off partway through data.tar.gz's body:
+            // what an interrupted download that somehow passed the size check
+            // would look like.
+            let gemURL = try await Self.makeMaliciousGem(innerEntries: [
+                (name: "lib/ok.rb", content: Data("puts 1".utf8), typeflag: "0", linkname: "")
+            ])
+            let bytes = try Data(contentsOf: gemURL)
+            try bytes.prefix(512 + 10).write(to: gemURL)
+            let destination = Self.tempDirectory()
+            defer { try? FileManager.default.removeItem(at: destination) }
+
+            await #expect(throws: GemArchiveError.self) {
+                try await GemArchive.extract(gemFileURL: gemURL, destination: destination)
+            }
+            #expect(!FileManager.default.fileExists(atPath: destination.path))
+        }
+
+        /// Asserts that a gem wrapping `innerTar` fails extraction with an
+        /// ``GemArchiveError/unsafeArchive(_:)`` whose message mentions
+        /// `keyword`, and that nothing was written to the destination.
+        private static func expectRejected(
+            innerTar: Data, mentioning keyword: String
+        ) async throws {
+            let gemURL = try await makeGem(innerTar: innerTar)
+            let destination = tempDirectory()
+            defer { try? FileManager.default.removeItem(at: destination) }
+
+            do {
+                try await GemArchive.extract(gemFileURL: gemURL, destination: destination)
+                Issue.record("expected extraction to fail")
+            } catch GemArchiveError.unsafeArchive(let message) {
+                #expect(message.contains(keyword), "\(message)")
+            }
+            #expect(!FileManager.default.fileExists(atPath: destination.path))
+        }
+
         // MARK: - Fixture helpers
 
         static func fixtureURL(_ name: String) throws -> URL {
@@ -131,7 +222,12 @@ extension EmbeddedRubyTests {
         private static func makeMaliciousGem(
             innerEntries: [(name: String, content: Data, typeflag: Character, linkname: String)]
         ) async throws -> URL {
-            let innerTar = tar(innerEntries)
+            try await makeGem(innerTar: tar(innerEntries))
+        }
+
+        /// Wraps raw inner tar bytes, well-formed or deliberately not, in a
+        /// `.gem` whose outer tar is valid.
+        private static func makeGem(innerTar: Data) async throws -> URL {
             let gzippedInner = try await gzip(innerTar)
             let outerTar = tar([
                 (name: "data.tar.gz", content: gzippedInner, typeflag: "0", linkname: "")
@@ -146,8 +242,8 @@ extension EmbeddedRubyTests {
         }
 
         /// A minimal ustar tar builder: real enough for
-        /// ``GemArchive/tarReaderSource``'s reader (which doesn't validate the
-        /// checksum field), but not a general-purpose tar writer.
+        /// ``GemArchive/tarReaderSource``'s reader, including a valid header
+        /// checksum, but not a general-purpose tar writer.
         private static func tar(
             _ entries: [(name: String, content: Data, typeflag: Character, linkname: String)]
         ) -> Data {
@@ -159,8 +255,12 @@ extension EmbeddedRubyTests {
             }
         }
 
-        private static func tarEntry(
-            name: String, content: Data, typeflag: Character, linkname: String
+        /// One tar entry. `sizeField` overrides the size header (to build a
+        /// malformed one); the checksum is computed over whatever ends up in
+        /// the header, so the header is otherwise well-formed.
+        static func tarEntry(
+            name: String, content: Data, typeflag: Character = "0", linkname: String = "",
+            sizeField: String? = nil
         ) -> Data {
             func field(_ string: String, length: Int) -> Data {
                 var bytes = Array(string.utf8.prefix(length))
@@ -178,9 +278,13 @@ extension EmbeddedRubyTests {
             header += field("0000644", length: 8)  // mode
             header += field("0000000", length: 8)  // uid
             header += field("0000000", length: 8)  // gid
-            header += octalSizeField(content.count, length: 12)  // size
+            if let sizeField {
+                header += field(sizeField, length: 12)  // size, deliberately malformed
+            } else {
+                header += octalSizeField(content.count, length: 12)  // size
+            }
             header += field("00000000000", length: 12)  // mtime
-            header += field("        ", length: 8)  // chksum (unvalidated by our reader)
+            header += field("        ", length: 8)  // chksum: spaces while summing, filled in below
             header += field(String(typeflag), length: 1)  // typeflag
             header += field(linkname, length: 100)  // linkname
             header += field("ustar", length: 6)  // magic
@@ -191,6 +295,10 @@ extension EmbeddedRubyTests {
             header += field("", length: 8)  // devminor
             header += field("", length: 155)  // prefix
             header += Data(count: 12)  // pad to 512
+
+            let checksum = header.reduce(0) { $0 + Int($1) }
+            let checksumField = String(format: "%06o", checksum) + "\0 "
+            header.replaceSubrange(148..<156, with: Data(checksumField.utf8))
 
             var body = content
             let remainder = body.count % 512
