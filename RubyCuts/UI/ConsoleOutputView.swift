@@ -112,8 +112,8 @@ struct ConsoleOutputView: View {
     /// The Cancelled/Failed indicator. A tinted capsule rather than bare
     /// coloured caption text, both so it's easier to see as a discrete
     /// status (not just tinted body text) and because a filled shape gives
-    /// more room to satisfy contrast than text colour alone over
-    /// `.regularMaterial` does.
+    /// more room to satisfy contrast than text colour alone over the
+    /// console background does.
     @ViewBuilder
     private var statusBadge: some View {
         if result.wasCancelled {
@@ -137,6 +137,7 @@ struct ConsoleOutputView: View {
             ClipboardCapability.setText(Self.transcript(for: result))
         } label: {
             Image(systemName: "doc.on.doc")
+                .modifier(MinimumTapTarget())
         }
         .buttonStyle(.borderless)
         .help("Copy the console output")
@@ -148,6 +149,7 @@ struct ConsoleOutputView: View {
             onClear()
         } label: {
             Image(systemName: "xmark.circle")
+                .modifier(MinimumTapTarget())
         }
         .buttonStyle(.borderless)
         .help("Clear the console")
@@ -301,6 +303,22 @@ struct ConsoleOutputView: View {
         let seconds = duration - Double(minutes * 60)
         let minuteWord = minutes == 1 ? "minute" : "minutes"
         return String(format: "%d %@ %.0f seconds", minutes, minuteWord, seconds)
+    }
+}
+
+/// Grows an icon-only button to the 44pt minimum touch target on iOS and
+/// iPadOS, the size the accessibility audit checks (it measures the
+/// element frame, so a wider `contentShape` alone doesn't count). macOS
+/// keeps the compact size its pointer doesn't need help with.
+private struct MinimumTapTarget: ViewModifier {
+    func body(content: Content) -> some View {
+        #if os(iOS)
+            content
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
+        #else
+            content
+        #endif
     }
 }
 

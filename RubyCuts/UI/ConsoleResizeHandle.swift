@@ -40,7 +40,7 @@ struct ConsoleResizeHandle: View {
         ZStack {
             Color.clear
             // Runs under the horizontal safe area like the console's
-            // material below it, instead of stopping short of the side
+            // background below it, instead of stopping short of the side
             // toolbar column iOS 27.1+ puts beside the content.
             Divider()
                 .ignoresSafeArea(.container, edges: .horizontal)

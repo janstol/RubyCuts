@@ -210,7 +210,9 @@ struct ScriptEditorView: View {
                     )
                     ConsoleOutputView(result: runResult, onClear: { self.runResult = nil })
                         .frame(height: clampedConsoleHeight(in: proxy.size.height))
-                        .background(.regularMaterial)
+                        // Opaque, not a material: text over a translucent
+                        // material fails the accessibility contrast audit.
+                        .background(.background.secondary)
                 }
             }
         }
