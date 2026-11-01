@@ -231,6 +231,10 @@ struct ScriptEditorView: View {
             // click/tap-to-rename affordance without needing
             // `.navigationDocument`.
             .navigationTitle($editableName)
+            // Always inline: the editor otherwise inherits the Scripts
+            // list's large title, which a pull-down expands (hiding the
+            // rename chevron) and a short script can't scroll to collapse.
+            .navigationBarTitleDisplayMode(.inline)
             .onChange(of: editableName) { _, newValue in commitRename(to: newValue) }
         #endif
     }
