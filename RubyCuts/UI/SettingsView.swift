@@ -208,23 +208,19 @@ private struct ScriptStorageSection: View {
 
     /// The last section of the settings sheet: version info, project links,
     /// and the open-source acknowledgements. macOS doesn't need this, since
-    /// it synthesises an About panel from the same `Info.plist` keys.
+    /// it synthesises an About panel from the same `Info.plist` keys and
+    /// carries the links in the Help menu (see ``ScriptCommands``).
     private struct AboutSection: View {
         let info: AppInfo
-
-        // Literal URLs known valid at compile time, so the force unwrap can't fail.
-        private static let sourceCodeURL = URL(string: "https://github.com/janstol/RubyCuts")!
-        private static let privacyPolicyURL = URL(
-            string: "https://janstol.github.io/RubyCuts/privacy.html")!
 
         var body: some View {
             Section {
                 LabeledContent("Version", value: info.versionAndBuild)
                 LabeledContent("Ruby", value: info.rubyVersion)
-                Link(destination: Self.sourceCodeURL) {
+                Link(destination: AppInfo.sourceCodeURL) {
                     Label("Source Code", systemImage: "chevron.left.forwardslash.chevron.right")
                 }
-                Link(destination: Self.privacyPolicyURL) {
+                Link(destination: AppInfo.privacyPolicyURL) {
                     Label("Privacy Policy", systemImage: "hand.raised")
                 }
                 NavigationLink {

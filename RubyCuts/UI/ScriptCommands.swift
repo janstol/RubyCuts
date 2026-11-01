@@ -84,10 +84,15 @@ struct ScriptCommands: Commands {
         }
         // Replaces the default Help menu ("RubyCuts Help") rather than
         // adding alongside it: the default item opens a help book this
-        // app doesn't ship, which is worse than no item at all.
+        // app doesn't ship, which is worse than no item at all. The links
+        // mirror the iOS About section; the privacy policy has to be
+        // reachable in-app on the Mac too (App Review guideline 5.1.1).
         CommandGroup(replacing: .help) {
             Button("RubyCuts Documentation") { openWindow(id: "reference") }
                 .keyboardShortcut("?", modifiers: .command)
+            Divider()
+            Link("Source Code", destination: AppInfo.sourceCodeURL)
+            Link("Privacy Policy", destination: AppInfo.privacyPolicyURL)
         }
     }
 }

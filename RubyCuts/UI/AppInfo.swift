@@ -28,6 +28,14 @@ nonisolated struct AppInfo: Equatable {
         self.rubyVersion = rubyVersion
     }
 
+    // Literal URLs known valid at compile time, so the force unwraps can't fail.
+
+    /// The public source repository, linked from the iOS About section and the macOS Help menu.
+    static let sourceCodeURL = URL(string: "https://github.com/janstol/RubyCuts")!
+
+    /// The privacy policy, linked from the iOS About section and the macOS Help menu. App Review requires it to be reachable inside the app on every platform.
+    static let privacyPolicyURL = URL(string: "https://janstol.github.io/RubyCuts/privacy.html")!
+
     /// Version and build in the form iOS apps conventionally show, e.g. `"1.0 (2)"`.
     var versionAndBuild: String {
         "\(version) (\(build))"
