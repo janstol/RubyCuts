@@ -36,16 +36,17 @@ struct RubyCutsApp: App {
         #endif
 
         #if os(macOS)
-            // A separate window rather than a sheet, so the reference can sit
-            // open beside the editor while you copy from it, reached from
-            // Help ▸ RubyCuts Reference (⌘?), see `ScriptCommands`. iOS/iPadOS
-            // instead present `ReferenceView` as a sheet from `ScriptListView`.
-            Window("RubyCuts Reference", id: "reference") {
+            // A separate window rather than a sheet, so the documentation can
+            // sit open beside the editor while you copy from it, reached from
+            // Help ▸ RubyCuts Documentation (⌘?), see `ScriptCommands`.
+            // iOS/iPadOS instead present `DocumentationView` as a sheet from
+            // `ScriptListView`. The id predates the rename and is internal only.
+            Window("RubyCuts Documentation", id: "reference") {
                 NavigationStack {
-                    ReferenceView()
+                    DocumentationView()
                 }
             }
-            .defaultSize(width: 480, height: 600)
+            .defaultSize(width: 560, height: 640)
         #endif
 
         #if os(macOS)

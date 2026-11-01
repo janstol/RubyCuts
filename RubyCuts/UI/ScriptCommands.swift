@@ -86,7 +86,7 @@ struct ScriptCommands: Commands {
         // adding alongside it: the default item opens a help book this
         // app doesn't ship, which is worse than no item at all.
         CommandGroup(replacing: .help) {
-            Button("RubyCuts Reference") { openWindow(id: "reference") }
+            Button("RubyCuts Documentation") { openWindow(id: "reference") }
                 .keyboardShortcut("?", modifiers: .command)
         }
     }

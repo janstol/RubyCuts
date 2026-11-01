@@ -24,11 +24,11 @@ struct ScriptListView: View {
     /// something a relaunch should remember.
     @State private var searchText = ""
 
-    /// Drives the iOS/iPadOS reference sheet, reached from the toolbar's info
-    /// button and the empty state's "What is RubyCuts?" action. macOS opens
-    /// the dedicated ``RubyCutsApp`` reference window instead (see
-    /// `openReference()`), so this only matters off macOS.
-    @State private var isPresentingReference = false
+    /// Drives the iOS/iPadOS documentation sheet, reached from the toolbar's
+    /// "…" menu and the empty state's "What is RubyCuts?" action. macOS opens
+    /// the dedicated ``RubyCutsApp`` documentation window instead (see
+    /// `openDocumentation()`), so this only matters off macOS.
+    @State private var isPresentingDocumentation = false
 
     #if os(macOS)
         @Environment(\.openWindow) private var openWindow
@@ -75,6 +75,7 @@ struct ScriptListView: View {
                     }
                     #if os(macOS)
                         sortMenuToolbarItem
+                        documentationToolbarItem
                     #else
                         moreMenuToolbarItem
                     #endif
@@ -83,12 +84,12 @@ struct ScriptListView: View {
                     .sheet(isPresented: $isPresentingSettings) {
                         SettingsView(scriptLibrary: library)
                     }
-                    .sheet(isPresented: $isPresentingReference) {
+                    .sheet(isPresented: $isPresentingDocumentation) {
                         NavigationStack {
-                            ReferenceView()
+                            DocumentationView()
                             .toolbar {
                                 ToolbarItem(placement: .cancellationAction) {
-                                    Button("Done") { isPresentingReference = false }
+                                    Button("Done") { isPresentingDocumentation = false }
                                 }
                             }
                         }
@@ -175,7 +176,7 @@ struct ScriptListView: View {
                     presentNewScriptAlert()
                 }
                 Button("What is RubyCuts?") {
-                    openReference()
+                    openDocumentation()
                 }
             }
         } else if filteredScripts.isEmpty {
@@ -274,6 +275,22 @@ struct ScriptListView: View {
         }
     }
 
+    #if os(macOS)
+        /// Opens the documentation window, so it's discoverable without
+        /// knowing ⌘? or looking in the Help menu. iOS/iPadOS reach it from
+        /// ``moreMenuToolbarItem`` instead.
+        private var documentationToolbarItem: some ToolbarContent {
+            ToolbarItem(placement: .automatic) {
+                Button {
+                    openDocumentation()
+                } label: {
+                    Label("Documentation", systemImage: "book")
+                }
+                .help("RubyCuts Documentation (⌘?)")
+            }
+        }
+    #endif
+
     /// The sort order choices, shown in ``sortMenuToolbarItem`` on macOS and
     /// as a submenu of ``moreMenuToolbarItem`` on iOS/iPadOS.
     private var sortPicker: some View {
@@ -285,8 +302,8 @@ struct ScriptListView: View {
     }
 
     #if !os(macOS)
-        /// The iOS/iPadOS "…" menu: sort order, Reference and Settings. macOS
-        /// reaches Reference and Settings through the app menu (⌘? and ⌘,)
+        /// The iOS/iPadOS "…" menu: sort order, Documentation and Settings.
+        /// macOS reaches Documentation and Settings through the app menu (⌘? and ⌘,)
         /// and keeps a separate sort button. One menu rather than separate
         /// buttons because the regular-width sidebar (iPad, unfolded iPhone
         /// Duo) has room for only two items beside the "Scripts" title and
@@ -302,9 +319,9 @@ struct ScriptListView: View {
                     }
                     Divider()
                     Button {
-                        isPresentingReference = true
+                        isPresentingDocumentation = true
                     } label: {
-                        Label("Reference", systemImage: "info.circle")
+                        Label("Documentation", systemImage: "book")
                     }
                     Button {
                         isPresentingSettings = true
@@ -343,14 +360,14 @@ struct ScriptListView: View {
         ScriptCommandAction(target: "newScript", perform: presentNewScriptAlert)
     }
 
-    /// Opens the reference: the dedicated `Window` scene on macOS (see
-    /// `RubyCutsApp`), a sheet everywhere else. Shared by the toolbar's info
+    /// Opens the documentation: the dedicated `Window` scene on macOS (see
+    /// `RubyCutsApp`), a sheet everywhere else. Shared by the macOS toolbar
     /// button and the empty state's "What is RubyCuts?" action.
-    private func openReference() {
+    private func openDocumentation() {
         #if os(macOS)
             openWindow(id: "reference")
         #else
-            isPresentingReference = true
+            isPresentingDocumentation = true
         #endif
     }
 
