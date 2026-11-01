@@ -59,6 +59,19 @@
             return library
         }
 
+        /// Sets a finished run's clock time to 9:41 today, matching the
+        /// simulator status bar the screenshot host overrides to 9:41, when
+        /// the app was launched with ``launchArgument``. Otherwise leaves the
+        /// result alone.
+        static func pinClock(of result: inout RunResult) {
+            guard ProcessInfo.processInfo.arguments.contains(launchArgument) else { return }
+            let today = Calendar.current.dateComponents([.year, .month, .day], from: .now)
+            var nineFortyOne = today
+            nineFortyOne.hour = 9
+            nineFortyOne.minute = 41
+            result.finishedAt = Calendar.current.date(from: nineFortyOne) ?? result.finishedAt
+        }
+
         /// Sets each script's modification date from ``minutesAgo``.
         private static func backdate(_ store: ScriptStore) {
             guard let scripts = try? store.list() else { return }

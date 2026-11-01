@@ -580,7 +580,11 @@ struct ScriptEditorView: View {
     private func run() {
         isRunning = true
         runTask = Task {
-            runResult = await RubyRuntime.shared.runCancellable(sourceText)
+            var result = await RubyRuntime.shared.runCancellable(sourceText)
+            #if DEBUG
+                ScreenshotFixture.pinClock(of: &result)
+            #endif
+            runResult = result
             isRunning = false
             runTask = nil
         }
