@@ -141,11 +141,9 @@ private struct ScriptStorageSection: View {
         }
     }
 #else
-    /// The iOS/iPadOS settings sheet, presented from ``ScriptListView``'s
-    /// gear button. macOS gets a `Settings` scene (``GemSettingsPane``)
+    /// The iOS/iPadOS Settings tab of ``RootTabView``. macOS gets a `Settings` scene (``GemSettingsPane``)
     /// instead, reached from the app menu; see `RubyCutsApp`.
     struct SettingsView: View {
-        @Environment(\.dismiss) private var dismiss
         private let scriptLibrary: ScriptLibrary
         private let gemLibrary: GemLibrary
 
@@ -194,23 +192,8 @@ private struct ScriptStorageSection: View {
                     AboutSection(info: AppInfo.current)
                 }
                 .navigationTitle("Settings")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button(role: .close) { dismiss() }
-                    }
-                }
-                .alert(
-                    "Error",
-                    isPresented: .init(
-                        get: { scriptLibrary.errorMessage != nil },
-                        set: { if !$0 { scriptLibrary.errorMessage = nil } }
-                    )
-                ) {
-                    Button("OK", role: .cancel) {}
-                } message: {
-                    Text(scriptLibrary.errorMessage ?? "")
-                }
+                // Errors from restoring samples are shown by
+                // ``RootTabView``'s alert, which covers every tab.
             }
         }
 

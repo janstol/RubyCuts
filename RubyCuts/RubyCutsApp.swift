@@ -14,7 +14,11 @@ struct RubyCutsApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ScriptListView(library: library)
+            #if os(macOS)
+                ScriptListView(library: library)
+            #else
+                RootTabView(library: library)
+            #endif
         }
         .onChange(of: scenePhase) { _, newPhase in
             // The user can flip notification permission in Settings while the

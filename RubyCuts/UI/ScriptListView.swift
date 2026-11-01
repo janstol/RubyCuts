@@ -16,7 +16,6 @@ struct ScriptListView: View {
     /// list state.
     @State private var newName = "Untitled"
     @State private var isPresentingNewAlert = false
-    @State private var isPresentingSettings = false
 
     /// The sidebar's search field text. Transient per-appearance UI state,
     /// same reasoning as `newName` above: ``ScriptLibrary/sortOrder`` is
@@ -24,14 +23,16 @@ struct ScriptListView: View {
     /// something a relaunch should remember.
     @State private var searchText = ""
 
-    /// Drives the iOS/iPadOS documentation sheet, reached from the toolbar's
-    /// "…" menu and the empty state's "What is RubyCuts?" action. macOS opens
-    /// the dedicated ``RubyCutsApp`` documentation window instead (see
-    /// `openDocumentation()`), so this only matters off macOS.
-    @State private var isPresentingDocumentation = false
+    /// Shows the documentation on iOS/iPadOS, where ``RootTabView`` passes a
+    /// closure that switches to its Documentation tab. `nil` on macOS, which
+    /// opens the dedicated documentation window instead (see
+    /// `openDocumentation()`).
+    private let showDocumentation: (() -> Void)?
 
     #if os(macOS)
         @Environment(\.openWindow) private var openWindow
+    #else
+        @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     #endif
 
     /// The script being renamed, driving a ``RenameSheet``. Non-`nil` drives
@@ -48,12 +49,13 @@ struct ScriptListView: View {
     /// the confirmation dialog on that script's row (see `row(for:)`).
     @State private var pendingDelete: Script?
 
-    init(library: ScriptLibrary = ScriptLibrary()) {
+    init(library: ScriptLibrary = ScriptLibrary(), showDocumentation: (() -> Void)? = nil) {
         // `_library = State(initialValue:)` lets previews and tests inject a
         // VM seeded against a temp-dir store; the default still works for the
         // real app, whose library resolves local or iCloud storage in
         // `prepareStorage()`.
         _library = State(initialValue: library)
+        self.showDocumentation = showDocumentation
     }
 
     var body: some View {
@@ -73,28 +75,11 @@ struct ScriptListView: View {
                             Label("New Script", systemImage: "plus")
                         }
                     }
+                    sortMenuToolbarItem
                     #if os(macOS)
-                        sortMenuToolbarItem
                         documentationToolbarItem
-                    #else
-                        moreMenuToolbarItem
                     #endif
                 }
-                #if !os(macOS)
-                    .sheet(isPresented: $isPresentingSettings) {
-                        SettingsView(scriptLibrary: library)
-                    }
-                    .sheet(isPresented: $isPresentingDocumentation) {
-                        NavigationStack {
-                            DocumentationView()
-                            .toolbar {
-                                ToolbarItem(placement: .cancellationAction) {
-                                    Button("Done") { isPresentingDocumentation = false }
-                                }
-                            }
-                        }
-                    }
-                #endif
                 .focusedSceneValue(\.newScriptAction, newScriptCommand)
                 .alert("New Script", isPresented: $isPresentingNewAlert) {
                     TextField("Name", text: $newName)
@@ -123,17 +108,21 @@ struct ScriptListView: View {
                         }
                     }
                 }
-                .alert(
-                    "Error",
-                    isPresented: .init(
-                        get: { library.errorMessage != nil },
-                        set: { if !$0 { library.errorMessage = nil } }
-                    )
-                ) {
-                    Button("OK", role: .cancel) {}
-                } message: {
-                    Text(library.errorMessage ?? "")
-                }
+                #if os(macOS)
+                    // On iOS/iPadOS, ``RootTabView`` shows this alert for
+                    // every tab instead.
+                    .alert(
+                        "Error",
+                        isPresented: .init(
+                            get: { library.errorMessage != nil },
+                            set: { if !$0 { library.errorMessage = nil } }
+                        )
+                    ) {
+                        Button("OK", role: .cancel) {}
+                    } message: {
+                        Text(library.errorMessage ?? "")
+                    }
+                #endif
         } detail: {
             if let script = selection {
                 ScriptEditorView(
@@ -157,6 +146,13 @@ struct ScriptListView: View {
                     }
                 )
                 .id(selection)
+                #if !os(macOS)
+                    // On iPhone the editor and console get the whole screen;
+                    // the tab bar comes back on returning to the list. Kept
+                    // in the regular-width split view, where the list
+                    // stays on screen beside the editor.
+                    .toolbar(horizontalSizeClass == .compact ? .hidden : .automatic, for: .tabBar)
+                #endif
             } else {
                 ContentUnavailableView(
                     "No Script Selected", systemImage: "doc.text")
@@ -278,7 +274,7 @@ struct ScriptListView: View {
     #if os(macOS)
         /// Opens the documentation window, so it's discoverable without
         /// knowing ⌘? or looking in the Help menu. iOS/iPadOS reach it from
-        /// ``moreMenuToolbarItem`` instead.
+        /// ``RootTabView``'s Documentation tab instead.
         private var documentationToolbarItem: some ToolbarContent {
             ToolbarItem(placement: .automatic) {
                 Button {
@@ -291,8 +287,7 @@ struct ScriptListView: View {
         }
     #endif
 
-    /// The sort order choices, shown in ``sortMenuToolbarItem`` on macOS and
-    /// as a submenu of ``moreMenuToolbarItem`` on iOS/iPadOS.
+    /// The sort order choices, shown in ``sortMenuToolbarItem``.
     private var sortPicker: some View {
         Picker("Sort By", selection: sortOrderBinding) {
             ForEach(ScriptSortOrder.allCases) { order in
@@ -300,40 +295,6 @@ struct ScriptListView: View {
             }
         }
     }
-
-    #if !os(macOS)
-        /// The iOS/iPadOS "…" menu: sort order, Documentation and Settings.
-        /// macOS reaches Documentation and Settings through the app menu (⌘? and ⌘,)
-        /// and keeps a separate sort button. One menu rather than separate
-        /// buttons because the regular-width sidebar (iPad, unfolded iPhone
-        /// Duo) has room for only two items beside the "Scripts" title and
-        /// the sidebar toggle. With four, the system overflow swallowed New
-        /// Script and Settings; with three, the title truncated to "Scr…".
-        private var moreMenuToolbarItem: some ToolbarContent {
-            ToolbarItem(placement: .automatic) {
-                Menu {
-                    Menu {
-                        sortPicker
-                    } label: {
-                        Label("Sort By", systemImage: "arrow.up.arrow.down")
-                    }
-                    Divider()
-                    Button {
-                        isPresentingDocumentation = true
-                    } label: {
-                        Label("Documentation", systemImage: "book")
-                    }
-                    Button {
-                        isPresentingSettings = true
-                    } label: {
-                        Label("Settings", systemImage: "gearshape")
-                    }
-                } label: {
-                    Label("More", systemImage: "ellipsis")
-                }
-            }
-        }
-    #endif
 
     /// A hand-rolled `Binding` into ``ScriptLibrary/sortOrder``, matching the
     /// rest of this view's bindings into VM/optional state (e.g. the rename
@@ -361,13 +322,14 @@ struct ScriptListView: View {
     }
 
     /// Opens the documentation: the dedicated `Window` scene on macOS (see
-    /// `RubyCutsApp`), a sheet everywhere else. Shared by the macOS toolbar
-    /// button and the empty state's "What is RubyCuts?" action.
+    /// `RubyCutsApp`), ``RootTabView``'s Documentation tab on iOS/iPadOS.
+    /// Shared by the macOS toolbar button and the empty state's "What is
+    /// RubyCuts?" action.
     private func openDocumentation() {
         #if os(macOS)
             openWindow(id: "reference")
         #else
-            isPresentingDocumentation = true
+            showDocumentation?()
         #endif
     }
 
