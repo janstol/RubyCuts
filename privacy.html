@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Privacy Policy - RubyCuts</title>
+  <meta name="description" content="RubyCuts does not collect, store or share any personal data.">
+  <link rel="icon" href="assets/icon.png">
+  <link rel="apple-touch-icon" href="assets/icon.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap">
+      <a class="brand" href="./"><img src="assets/icon.png" alt="">RubyCuts</a>
+      <nav>
+        <a href="./#features">Features</a>
+        <a href="privacy.html">Privacy</a>
+        <a href="https://github.com/janstol/RubyCuts">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <article class="prose">
+      <h1>Privacy Policy</h1>
+      <p class="updated">Last updated November 1, 2026</p>
+
+      <p class="summary"><strong>In short:</strong> RubyCuts does not collect any data about you. There are no accounts, no analytics, no ads and no tracking. Your scripts stay on your devices and in your own iCloud Drive.</p>
+
+      <p>This policy covers the RubyCuts app for iPhone, iPad and Mac, made by Jan Štol. "We" below means the developer.</p>
+
+      <h2>Data we collect</h2>
+      <p>None. RubyCuts has no servers of its own and sends nothing to the developer. It contains no analytics, crash reporting, advertising or tracking code, and it does not ask you to sign in.</p>
+
+      <h2>Your scripts</h2>
+      <p>Scripts you write are saved as files on your device. If iCloud Drive is turned on, they are kept in a "RubyCuts" folder in your iCloud Drive so they sync between your devices. That storage is provided by Apple under <a href="https://www.apple.com/legal/privacy/">Apple's Privacy Policy</a>; we can't see or access it.</p>
+
+      <h2>Shortcuts input and output</h2>
+      <p>Text, lists and settings that a shortcut passes to a script (ARGV, STDIN and ENV), and the output the script returns, are processed on your device only.</p>
+
+      <h2>Network access</h2>
+      <p>RubyCuts itself connects to one service: <a href="https://rubygems.org">rubygems.org</a>, and only when you search for or install a Ruby gem. It sends your search text or the name of the gem being installed. Like any web server, rubygems.org can see your IP address. Its handling of that data is covered by the <a href="https://rubygems.org/policies/privacy">RubyGems.org privacy policy</a>.</p>
+      <p>Scripts you write or run can make their own network requests (for example with <code>net/http</code>) to any server the script names. Those requests are made because of the code you chose to run, not by RubyCuts on its own, so review scripts from other people before running them.</p>
+
+      <h2>Clipboard and notifications</h2>
+      <p>RubyCuts reads or writes the clipboard only when a script you run asks it to. Notifications are created on your device when a script posts one. The system asks for permission the first time; you can change it at any time in Settings. Nothing from the clipboard or notifications leaves your device through RubyCuts.</p>
+
+      <h2>Children</h2>
+      <p>RubyCuts collects no data from anyone, including children.</p>
+
+      <h2>Changes to this policy</h2>
+      <p>If this policy changes, the new version will be posted on this page with a new date. Its full history is in the app's <a href="https://github.com/janstol/RubyCuts/commits/gh-pages/privacy.html">public repository</a>.</p>
+
+      <h2>Contact</h2>
+      <p>Questions about privacy? Open an issue on <a href="https://github.com/janstol/RubyCuts/issues">GitHub</a>.</p>
+    </article>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <span>&copy; 2026 Jan Štol</span>
+      <span><a href="privacy.html">Privacy Policy</a> &middot; <a href="https://github.com/janstol/RubyCuts">Source</a> &middot; <a href="https://github.com/janstol/RubyCuts/issues">Support</a></span>
+    </div>
+  </footer>
+</body>
+</html>

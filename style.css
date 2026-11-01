@@ -1,0 +1,284 @@
+:root {
+  --bg: #fbf8f8;
+  --surface: #ffffff;
+  --text: #1d1416;
+  --muted: #6b5a5e;
+  --border: #ecdfe2;
+  --accent: #b3123f;
+  --accent-soft: #fbe7ec;
+  --code-bg: #2a1118;
+  --code-text: #f6e9ec;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #140c0e;
+    --surface: #1e1316;
+    --text: #f3e9eb;
+    --muted: #b29fa4;
+    --border: #36252a;
+    --accent: #ff5c86;
+    --accent-soft: #3a1620;
+    --code-bg: #0c0607;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 17px/1.6 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--accent);
+}
+
+code,
+pre {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.9em;
+}
+
+.wrap {
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 0 20px;
+}
+
+/* Header */
+
+.site-header {
+  padding: 20px 0;
+}
+
+.site-header .wrap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.brand img {
+  width: 32px;
+  height: 32px;
+}
+
+.site-header nav {
+  display: flex;
+  gap: 20px;
+  font-size: 15px;
+}
+
+.site-header nav a {
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.site-header nav a:hover {
+  color: var(--text);
+}
+
+/* Hero */
+
+.hero {
+  padding: 48px 0 32px;
+  text-align: center;
+}
+
+.hero .icon {
+  width: 128px;
+  height: 128px;
+  filter: drop-shadow(0 12px 28px rgba(120, 10, 40, 0.3));
+}
+
+.hero h1 {
+  margin: 20px 0 8px;
+  font-size: clamp(36px, 7vw, 56px);
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+.hero .tagline {
+  max-width: 560px;
+  margin: 0 auto;
+  color: var(--muted);
+  font-size: 20px;
+}
+
+.buttons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 28px;
+}
+
+.button {
+  display: inline-block;
+  padding: 10px 20px;
+  border-radius: 999px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.button.primary {
+  background: var(--accent);
+  color: #fff;
+}
+
+.button.secondary {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.platforms {
+  margin-top: 14px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+/* Screenshots */
+
+.shots {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+  padding: 24px 0 8px;
+}
+
+.shots img {
+  width: 30%;
+  max-width: 240px;
+  border-radius: 28px;
+  border: 1px solid var(--border);
+  box-shadow: 0 18px 40px rgba(60, 10, 25, 0.15);
+}
+
+/* Sections */
+
+section {
+  padding: 72px 0 8px;
+}
+
+section h2 {
+  margin: 0 0 24px;
+  font-size: 28px;
+  letter-spacing: -0.01em;
+}
+
+.features {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+.feature {
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+}
+
+.feature h3 {
+  margin: 0 0 6px;
+  font-size: 17px;
+}
+
+.feature p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 15px;
+}
+
+pre.example {
+  overflow-x: auto;
+  margin: 0;
+  padding: 20px;
+  border-radius: 16px;
+  background: var(--code-bg);
+  color: var(--code-text);
+  line-height: 1.5;
+}
+
+.example .c { color: #a08a90; }
+.example .s { color: #ff7a93; }
+.example .k { color: #c792ea; }
+
+/* Long-form text (privacy policy) */
+
+.prose {
+  max-width: 680px;
+  padding: 24px 0 48px;
+}
+
+.prose h1 {
+  margin: 16px 0 4px;
+  font-size: 36px;
+  letter-spacing: -0.02em;
+}
+
+.prose h2 {
+  margin: 48px 0 8px;
+  font-size: 21px;
+}
+
+.prose .updated {
+  margin-top: 0;
+  color: var(--muted);
+}
+
+.prose .summary {
+  padding: 16px 20px;
+  border-radius: 12px;
+  background: var(--accent-soft);
+}
+
+/* Footer */
+
+.site-footer {
+  padding: 32px 0 48px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.site-footer .wrap {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.site-footer a {
+  color: var(--muted);
+}
+
+@media (max-width: 560px) {
+  .site-header nav {
+    gap: 14px;
+  }
+
+  .shots {
+    gap: 10px;
+  }
+
+  .shots img {
+    border-radius: 16px;
+  }
+}

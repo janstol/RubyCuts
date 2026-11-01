@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RubyCuts: Ruby scripts for Shortcuts</title>
+  <meta name="description" content="Write real Ruby and run it from Apple Shortcuts. RubyCuts brings the full Ruby interpreter and standard library to iPhone, iPad and Mac.">
+  <link rel="icon" href="assets/icon.png">
+  <link rel="apple-touch-icon" href="assets/icon.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap">
+      <a class="brand" href="./"><img src="assets/icon.png" alt="">RubyCuts</a>
+      <nav>
+        <a href="#features">Features</a>
+        <a href="privacy.html">Privacy</a>
+        <a href="https://github.com/janstol/RubyCuts">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <div class="hero wrap">
+      <img class="icon" src="assets/icon.png" alt="RubyCuts app icon">
+      <h1>RubyCuts</h1>
+      <p class="tagline">Write real Ruby, run it from Shortcuts. The full Ruby interpreter and standard library on your iPhone, iPad and Mac.</p>
+      <div class="buttons">
+        <a class="button primary" href="https://github.com/janstol/RubyCuts">View on GitHub</a>
+        <a class="button secondary" href="https://github.com/janstol/RubyCuts/issues">Get support</a>
+      </div>
+      <p class="platforms">iOS 26, iPadOS 26 and macOS 26 or later. Coming soon to the App Store.</p>
+    </div>
+
+    <div class="shots wrap">
+      <img src="assets/01-list-light.jpg" alt="The script list on iPhone" loading="lazy">
+      <img src="assets/02-editor-dark.jpg" alt="The script editor with Ruby syntax highlighting" loading="lazy">
+      <img src="assets/03-console-light.jpg" alt="The console showing a script's output" loading="lazy">
+    </div>
+
+    <section id="features" class="wrap">
+      <h2>What it does</h2>
+      <div class="features">
+        <div class="feature">
+          <h3>Real Ruby, not a subset</h3>
+          <p>CRuby, the standard Ruby interpreter, with its standard library: <code>json</code>, <code>csv</code>, <code>yaml</code>, <code>net/http</code> over HTTPS and more.</p>
+        </div>
+        <div class="feature">
+          <h3>Two Shortcuts actions</h3>
+          <p>Run Ruby Script picks a saved script, Run Inline Ruby takes code typed right into your shortcut.</p>
+        </div>
+        <div class="feature">
+          <h3>Talks like a CLI</h3>
+          <p>Inputs arrive in <code>ARGV</code>, <code>STDIN</code> and <code>ENV</code>. Whatever you print goes to the next action. Errors stop the shortcut with Ruby's message.</p>
+        </div>
+        <div class="feature">
+          <h3>An editor made for it</h3>
+          <p>Syntax highlighting, a console with output, errors and timing, a Stop button, and sample scripts to start from.</p>
+        </div>
+        <div class="feature">
+          <h3>Synced with iCloud Drive</h3>
+          <p>Scripts are plain <code>.rb</code> files in iCloud Drive, so they follow you between devices and open in any editor.</p>
+        </div>
+        <div class="feature">
+          <h3>Talks to the device</h3>
+          <p>The built-in <code>Device</code> module lets scripts read and write the clipboard and post notifications.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="wrap">
+      <h2>A taste</h2>
+<pre class="example"><code><span class="c"># Shortcuts passes text in on STDIN, the output goes to the next action.</span>
+<span class="k">require</span> <span class="s">"json"</span>
+
+lines = STDIN.read.lines.map(&amp;:strip).reject(&amp;:empty?)
+puts JSON.generate(count: lines.size, longest: lines.max_by(&amp;:length))</code></pre>
+    </section>
+
+    <section class="wrap">
+      <h2>Open source</h2>
+      <p>RubyCuts is free software under the MIT license. The source code, issue tracker and build instructions are on <a href="https://github.com/janstol/RubyCuts">GitHub</a>.</p>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <span>&copy; 2026 Jan Štol</span>
+      <span><a href="privacy.html">Privacy Policy</a> &middot; <a href="https://github.com/janstol/RubyCuts">Source</a> &middot; <a href="https://github.com/janstol/RubyCuts/issues">Support</a></span>
+    </div>
+  </footer>
+</body>
+</html>
