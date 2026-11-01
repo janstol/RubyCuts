@@ -232,7 +232,7 @@ private struct ScriptStorageSection: View {
         // Literal URLs known valid at compile time, so the force unwrap can't fail.
         private static let sourceCodeURL = URL(string: "https://github.com/janstol/RubyCuts")!
         private static let privacyPolicyURL = URL(
-            string: "https://github.com/janstol/RubyCuts/blob/main/PRIVACY.md")!
+            string: "https://janstol.github.io/RubyCuts/privacy.html")!
 
         var body: some View {
             Section {
