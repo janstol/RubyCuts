@@ -172,8 +172,10 @@ pre {
 
 /* Sections */
 
-section {
-  padding: 72px 0 8px;
+/* .wrap sets horizontal padding, so vertical padding needs the more specific selector. */
+section.wrap {
+  padding-top: 72px;
+  padding-bottom: 8px;
 }
 
 section h2 {
