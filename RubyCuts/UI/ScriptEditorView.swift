@@ -87,7 +87,17 @@ struct ScriptEditorView: View {
     /// ``isDirty``. Set alongside `source` when the script loads, and again
     /// on every successful save.
     @State private var savedSource: String = ""
+
+    /// Whether the script's source was read successfully. Only then does
+    /// `source` hold the real script, so saving, autosaving, running, and
+    /// the rename flush hook are all gated on this. A failed load (say, an
+    /// iCloud script that can't download while offline) must never let the
+    /// empty buffer be written over the file.
     @State private var didLoad = false
+
+    /// The reason the last load failed, shown in place of the editor with a
+    /// Retry button. `nil` while loading and after a successful load.
+    @State private var loadError: String?
     @State private var errorMessage: String?
     @State private var showError = false
     @State private var isRunning = false
@@ -140,26 +150,8 @@ struct ScriptEditorView: View {
             .focusedSceneValue(\.stopScriptAction, stopAction)
             .focusedSceneValue(\.saveScriptAction, saveAction)
             .task {
-                // Read on demand: source isn't held on the model, only
-                // loaded here when the editor appears. `loadSource` downloads
-                // an iCloud script first if needed. A read failure shows an
-                // alert rather than crashing the view; the editor opens
-                // empty.
                 editableName = script.name
-                do {
-                    let text = try await store.loadSource(of: script)
-                    source = RubySyntaxHighlighting.highlighted(text)
-                    savedSource = text
-                    lastHighlightedText = text
-                } catch {
-                    errorMessage = error.localizedDescription
-                    showError = true
-                }
-                didLoad = true
-                // Registered only after the load completes: handing out a
-                // hook over an empty `source` would let a rename that lands
-                // mid-load flush nothing and overwrite the real file.
-                onFlushHookChange(flushForRename)
+                await load()
             }
             .onDisappear {
                 // Deregister before the autosave below: once this view is
@@ -202,24 +194,14 @@ struct ScriptEditorView: View {
     private var editorContent: some View {
         GeometryReader { proxy in
             VStack(spacing: 0) {
-                TextEditor(text: $source)
-                    .font(.system(.body, design: .monospaced))
-                    .autocorrectionDisabled()
-                    #if os(iOS)
-                        .textInputAutocapitalization(.none)
-                    #endif
-                    // Breathing room between the code and the split divider
-                    // and the toolbar. Safe-area padding rather than plain
-                    // padding, so the scroll view itself still runs edge to
-                    // edge and the toolbar's scroll edge effect keeps
-                    // covering it. (`contentMargins(for: .scrollContent)` is
-                    // ignored by the attributed editor; the safe area is
-                    // what it turns into scroll insets, confirmed live.)
-                    .safeAreaPadding(.horizontal, 12)
-                    .safeAreaPadding(.top, 8)
-                    .frame(maxHeight: .infinity)
-                    .background(editorAppearanceFix)
-                    .accessibilityLabel("Script Source")
+                if let loadError {
+                    LoadFailedView(message: loadError) {
+                        Task { await load() }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    sourceEditor
+                }
 
                 if let runResult {
                     ConsoleResizeHandle(
@@ -251,6 +233,54 @@ struct ScriptEditorView: View {
             .navigationTitle($editableName)
             .onChange(of: editableName) { _, newValue in commitRename(to: newValue) }
         #endif
+    }
+
+    /// The source text view. Split out of ``editorContent`` so the
+    /// load-failed branch there stays a simple `if`/`else`, per this view's
+    /// type-checker history.
+    private var sourceEditor: some View {
+        TextEditor(text: $source)
+            .font(.system(.body, design: .monospaced))
+            .autocorrectionDisabled()
+            #if os(iOS)
+                .textInputAutocapitalization(.none)
+            #endif
+            // Breathing room between the code and the split divider
+            // and the toolbar. Safe-area padding rather than plain
+            // padding, so the scroll view itself still runs edge to
+            // edge and the toolbar's scroll edge effect keeps
+            // covering it. (`contentMargins(for: .scrollContent)` is
+            // ignored by the attributed editor; the safe area is
+            // what it turns into scroll insets, confirmed live.)
+            .safeAreaPadding(.horizontal, 12)
+            .safeAreaPadding(.top, 8)
+            .frame(maxHeight: .infinity)
+            .background(editorAppearanceFix)
+            .accessibilityLabel("Script Source")
+    }
+
+    /// Reads the script's source into the editor. Read on demand: source
+    /// isn't held on the model, only loaded when the editor appears (and
+    /// again from the Retry button after a failure). `loadSource` downloads
+    /// an iCloud script first if needed.
+    ///
+    /// On failure the editor is replaced by ``LoadFailedView`` and
+    /// ``didLoad`` stays `false`, so nothing can write the empty buffer back
+    /// over the file. The rename flush hook is registered only on success,
+    /// for the same reason: a hook over an empty `source` would let a rename
+    /// flush nothing and overwrite the real file.
+    private func load() async {
+        loadError = nil
+        do {
+            let text = try await store.loadSource(of: script)
+            source = RubySyntaxHighlighting.highlighted(text)
+            savedSource = text
+            lastHighlightedText = text
+            didLoad = true
+            onFlushHookChange(flushForRename)
+        } catch {
+            loadError = error.localizedDescription
+        }
     }
 
     /// The macOS-only workaround for the attributed `TextEditor` pinning its
@@ -551,8 +581,32 @@ struct ScriptEditorView: View {
     }
 }
 
+/// Shown in place of the source editor when the script couldn't be read, so
+/// there's no empty buffer to type into (and then autosave over the file).
+private struct LoadFailedView: View {
+    let message: String
+    let onRetry: () -> Void
+
+    var body: some View {
+        ContentUnavailableView {
+            Label("Couldn't Open Script", systemImage: "exclamationmark.triangle")
+        } description: {
+            Text(message)
+        } actions: {
+            Button("Try Again", action: onRetry)
+        }
+    }
+}
+
 #Preview {
     ScriptEditorPreview()
+}
+
+#Preview("Load failed") {
+    LoadFailedView(
+        message: "The file couldn't be downloaded from iCloud. Check your connection.",
+        onRetry: {}
+    )
 }
 
 /// Backing view for ``ScriptEditorView``'s `#Preview`. Extracted into its own
