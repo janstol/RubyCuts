@@ -41,6 +41,7 @@ mise run test           # unit tests on macOS
 mise run test RubyCutsTests/ScriptStoreTests   # one suite
 mise run test:ios       # unit and UI tests on the iOS Simulator
 mise run lint           # swift-format lint on changed Swift files
+mise run install:device # "RubyCuts Dev" on a connected iPhone, next to the App Store/TestFlight app
 ```
 
 `mise tasks` lists them all. Each is a thin wrapper around `xcodebuild` or `swift format`, so you can read the exact command in `mise.toml`.

@@ -26,6 +26,35 @@ run = "xcodebuild {{vars.project}} {{vars.macos}} build"
 description = "Build the app for the iOS Simulator (IOS_SIM overrides the device)"
 run = "xcodebuild {{vars.project}} {{vars.ios}} build"
 
+[tasks."install:device"]
+description = "Build a Debug \"RubyCuts Dev\" (dev.stol.RubyCuts.dev) and install it on a connected iPhone, alongside the TestFlight app; IOS_DEVICE=<UDID> picks the device"
+run = '''
+set -euo pipefail
+device="${IOS_DEVICE:-}"
+if [ -z "$device" ]; then
+  json=$(mktemp)
+  trap 'rm -f "$json"' EXIT
+  xcrun devicectl list devices --json-output "$json" >/dev/null
+  device=$(ruby -rjson -e '
+    devices = JSON.parse(File.read(ARGV[0])).dig("result", "devices") || []
+    phone = devices.find do |d|
+      d.dig("hardwareProperties", "platform") == "iOS" &&
+        d.dig("hardwareProperties", "reality") == "physical" &&
+        d.dig("connectionProperties", "tunnelState") == "connected"
+    end
+    puts phone.dig("hardwareProperties", "udid") if phone
+  ' "$json")
+fi
+if [ -z "$device" ]; then echo "No connected iPhone found; set IOS_DEVICE=<UDID> (see: xcrun devicectl list devices)." >&2; exit 1; fi
+echo "Installing RubyCuts Dev on $device"
+xcodebuild {{vars.project}} -configuration Debug -destination "id=$device" \
+  -derivedDataPath build/DevDevice -allowProvisioningUpdates \
+  PRODUCT_BUNDLE_IDENTIFIER=dev.stol.RubyCuts.dev \
+  INFOPLIST_KEY_CFBundleDisplayName="RubyCuts Dev" \
+  -quiet build
+xcrun devicectl device install app --device "$device" build/DevDevice/Build/Products/Debug-iphoneos/RubyCuts.app
+'''
+
 [tasks.test]
 description = "Run unit tests on macOS; optional filter, e.g. RubyCutsTests/ScriptStoreTests or RubyCutsTests/RubyCutsTests/example()"
 usage = 'arg "[filter]" default="RubyCutsTests"'
