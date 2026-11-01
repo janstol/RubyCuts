@@ -10,7 +10,13 @@ struct RubyCutsApp: App {
     /// window is a separate scene from the main window, and both need to
     /// share this same instance so a restore in Settings is reflected in the
     /// list without a relaunch.
-    @State private var library = ScriptLibrary()
+    #if DEBUG
+        // The screenshot UI test swaps in a throwaway library, see
+        // `ScreenshotFixture`.
+        @State private var library = ScreenshotFixture.libraryIfRequested() ?? ScriptLibrary()
+    #else
+        @State private var library = ScriptLibrary()
+    #endif
 
     var body: some Scene {
         WindowGroup {
