@@ -64,6 +64,10 @@ run = 'xcodebuild {{vars.project}} {{vars.macos}} test "-only-testing:${usage_fi
 description = "Run unit and UI tests on the iOS Simulator (macOS UI tests need GUI auth)"
 run = "xcodebuild {{vars.project}} {{vars.ios}} test"
 
+[tasks."test:a11y"]
+description = "Run the accessibility audit UI tests on the iOS Simulator; the issue list is in the failure message and the result bundle"
+run = "TEST_RUNNER_A11Y_AUDIT=1 xcodebuild {{vars.project}} {{vars.ios}} test -only-testing:RubyCutsUITests/AccessibilityAuditTests"
+
 [tasks.lint]
 description = "swift-format lint on Swift files changed since HEAD, including untracked ones"
 run = '''
