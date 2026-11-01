@@ -1,0 +1,114 @@
+name: Bug report
+description: Report something that isn't working correctly.
+labels: [bug]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing a bug, please check the [README](https://github.com/janstol/RubyCuts#readme) and search [existing issues](https://github.com/janstol/RubyCuts/issues) in case it's already been reported.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Step-by-step instructions to reliably reproduce the bug.
+      placeholder: |
+        1. Create a script with the code below
+        2. Run it from the "Run Ruby Script" Shortcuts action
+        3. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+      description: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: script
+    attributes:
+      label: Ruby code
+      description: The smallest script that reproduces the problem, if the bug is about running Ruby. Please remove any tokens, passwords or personal data first.
+      render: ruby
+
+  - type: dropdown
+    id: context
+    attributes:
+      label: Where does it happen?
+      multiple: true
+      options:
+        - In-app editor / console
+        - Shortcuts action (Run Inline Ruby)
+        - Shortcuts action (Run Ruby Script)
+        - Gem search / install
+        - iCloud Drive sync
+        - Somewhere else
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: App version
+      description: On the Mac, see RubyCuts > About RubyCuts. On iPhone/iPad, see the app's page in TestFlight or the App Store.
+      placeholder: "e.g. 1.0 (12)"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      multiple: true
+      options:
+        - iPhone
+        - iPad
+        - Mac
+    validations:
+      required: true
+
+  - type: input
+    id: os-version
+    attributes:
+      label: OS version
+      placeholder: "e.g. iOS 26.1, macOS 26.1"
+
+  - type: input
+    id: device
+    attributes:
+      label: Device
+      placeholder: "e.g. iPhone 16 Pro, MacBook Air M3"
+
+  - type: input
+    id: gems
+    attributes:
+      label: Installed gems involved
+      description: Names and versions of any gems the script requires, if relevant.
+      placeholder: "e.g. httparty 0.22.0"
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Console output / screenshots
+      description: Paste the error message and backtrace from the console or the Shortcuts error, or attach screenshots.
+      render: text
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues and this has not been reported before.
+          required: true

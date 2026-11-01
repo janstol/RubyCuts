@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: RubyCuts README
+    url: https://github.com/janstol/RubyCuts#readme
+    about: Features, requirements and build instructions.
+  - name: Embedding CRuby
+    url: https://github.com/janstol/RubyCuts/blob/main/docs/embedding-cruby.md
+    about: How the embedded Ruby is built, for build and toolchain questions.

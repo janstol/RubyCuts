@@ -1,0 +1,37 @@
+name: Question / support
+description: Ask a usage or setup question.
+labels: [question]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please check the [README](https://github.com/janstol/RubyCuts#readme) and the in-app reference for the Ruby-to-Shortcuts contract (`ARGV`, `STDIN`, `ENV`, `STDOUT`) first.
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question
+    validations:
+      required: true
+
+  - type: textarea
+    id: tried
+    attributes:
+      label: What you've already tried
+      description: Any steps you've taken to figure it out yourself. Code snippets are welcome, minus any secrets.
+
+  - type: input
+    id: version
+    attributes:
+      label: App version
+      description: Helps narrow down version-specific issues.
+      placeholder: "e.g. 1.0 (12)"
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I checked the README and searched existing issues before asking.
+          required: true
