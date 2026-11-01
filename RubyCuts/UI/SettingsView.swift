@@ -7,17 +7,28 @@ private struct ScriptStorageSection: View {
     let location: ScriptStorageLocation
 
     var body: some View {
-        Section("Storage") {
+        Section {
             switch location {
             case .iCloud:
-                LabeledContent("Scripts are stored in", value: "iCloud Drive")
+                LabeledContent {
+                    Text("iCloud Drive")
+                } label: {
+                    Label("Scripts", systemImage: "icloud")
+                }
             case .local:
-                LabeledContent("Scripts are stored", value: "On this device only")
+                LabeledContent {
+                    Text("On This Device")
+                } label: {
+                    Label("Scripts", systemImage: "iphone")
+                }
+            }
+        } header: {
+            Text("Storage")
+        } footer: {
+            if location == .local {
                 Text(
                     "To sync scripts across your devices, sign in to iCloud and turn on iCloud Drive for RubyCuts."
                 )
-                .font(.caption)
-                .foregroundStyle(.secondary)
             }
         }
     }
@@ -153,26 +164,40 @@ private struct ScriptStorageSection: View {
             NavigationStack {
                 Form {
                     ScriptStorageSection(location: scriptLibrary.storageLocation)
-                    Section("Sample Scripts") {
-                        Button("Restore Sample Scripts") {
+                    Section {
+                        Button {
                             scriptLibrary.restoreSamples()
+                        } label: {
+                            Label("Restore Sample Scripts", systemImage: "arrow.counterclockwise")
                         }
+                        .disabled(allSamplesPresent)
+                    } header: {
+                        Text("Sample Scripts")
+                    } footer: {
                         Text(
-                            "Recreates any of the four starter samples you've deleted, by name."
+                            allSamplesPresent
+                                ? "All starter samples are in your library."
+                                : "Recreates any of the starter samples you've deleted, by name."
                         )
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                     }
                     #if RUBYCUTS_GEMS
-                        NavigationLink("Gems") {
-                            GemListView(library: gemLibrary)
+                        Section {
+                            NavigationLink {
+                                GemListView(library: gemLibrary)
+                            } label: {
+                                Label("Gems", systemImage: "shippingbox")
+                            }
+                        } footer: {
+                            Text("Install gems from rubygems.org for your scripts to require.")
                         }
                     #endif
+                    AboutSection(info: AppInfo.current)
                 }
                 .navigationTitle("Settings")
+                .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
-                        Button("Done") { dismiss() }
+                        Button(role: .close) { dismiss() }
                     }
                 }
                 .alert(
@@ -186,6 +211,48 @@ private struct ScriptStorageSection: View {
                 } message: {
                     Text(scriptLibrary.errorMessage ?? "")
                 }
+            }
+        }
+
+        /// Whether every starter sample already exists by name, in which case
+        /// restoring would be a no-op, so the button is disabled instead of
+        /// silently doing nothing.
+        private var allSamplesPresent: Bool {
+            let names = Set(scriptLibrary.scripts.map(\.name))
+            return SampleScripts.all.allSatisfy { names.contains($0.name) }
+        }
+    }
+
+    /// The last section of the settings sheet: version info, project links,
+    /// and the open-source acknowledgements. macOS doesn't need this, since
+    /// it synthesises an About panel from the same `Info.plist` keys.
+    private struct AboutSection: View {
+        let info: AppInfo
+
+        // Literal URLs known valid at compile time, so the force unwrap can't fail.
+        private static let sourceCodeURL = URL(string: "https://github.com/janstol/RubyCuts")!
+        private static let privacyPolicyURL = URL(
+            string: "https://github.com/janstol/RubyCuts/blob/main/PRIVACY.md")!
+
+        var body: some View {
+            Section {
+                LabeledContent("Version", value: info.versionAndBuild)
+                LabeledContent("Ruby", value: info.rubyVersion)
+                Link(destination: Self.sourceCodeURL) {
+                    Label("Source Code", systemImage: "chevron.left.forwardslash.chevron.right")
+                }
+                Link(destination: Self.privacyPolicyURL) {
+                    Label("Privacy Policy", systemImage: "hand.raised")
+                }
+                NavigationLink {
+                    AcknowledgementsView()
+                } label: {
+                    Label("Acknowledgements", systemImage: "doc.text")
+                }
+            } header: {
+                Text("About")
+            } footer: {
+                Text("RubyCuts is open source under the MIT License.")
             }
         }
     }

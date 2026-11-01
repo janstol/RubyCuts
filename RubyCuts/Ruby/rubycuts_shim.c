@@ -1,12 +1,17 @@
 #include "rubycuts_shim.h"
 
 #include <ruby.h>
+#include <ruby/version.h>
 #include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
 
 // Tracks whether ruby_init() has already run. The Ruby VM cannot be re-initialized after ruby_cleanup(), and this shim never calls ruby_cleanup(), so this flag only guards against a redundant ruby_init().
 static int g_rubycuts_initialized = 0;
+
+const char *rubycuts_ruby_version(void) {
+    return ruby_version;
+}
 
 int rubycuts_init(const char *stdlib_path) {
     if (g_rubycuts_initialized) {

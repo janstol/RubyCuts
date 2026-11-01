@@ -17,6 +17,9 @@ typedef struct {
 /// Evaluates `code` and never lets a Ruby exception or jump escape into the caller. Returns 1 on success, with the result's `to_s` in `*output`. Returns 0 on failure (a parse error, a raise, a top-level jump, or a result whose `to_s` itself raised), with a human-readable error message in `*output`. Either way the caller frees `output->bytes` with `rubycuts_free`.
 int rubycuts_eval(const char *code, rubycuts_buffer *output);
 
+/// The embedded Ruby's version string (e.g. `"3.4.9"`). Static storage, never freed. Safe to call before `rubycuts_init`, since it reads a compile-time constant rather than asking the VM.
+const char *rubycuts_ruby_version(void);
+
 /// Frees a string returned by this shim.
 void rubycuts_free(char *string);
 
