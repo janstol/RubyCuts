@@ -124,9 +124,18 @@ pre {
 .buttons {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   justify-content: center;
   gap: 12px;
   margin-top: 28px;
+}
+
+/* Apple's badge artwork, used as supplied; only its size is set here. */
+.app-store-badge img {
+  display: block;
+  width: auto;
+  height: 50px;
+  cursor: pointer;
 }
 
 .button {
