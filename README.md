@@ -1,4 +1,29 @@
-# RubyCuts
+<p align="center">
+  <img src="docs/images/icon.png" alt="RubyCuts app icon" width="128" height="128">
+</p>
+
+<h1 align="center">RubyCuts</h1>
+
+<p align="center">Write real Ruby, run it from Shortcuts. On iPhone, iPad and Mac.</p>
+
+<p align="center">
+  <a href="https://apps.apple.com/app/id6829294399">
+    <picture>
+      <source srcset="docs/images/app-store-badge-white.svg" media="(prefers-color-scheme: dark)">
+      <img src="docs/images/app-store-badge-black.svg" alt="Download on the App Store" height="48">
+    </picture>
+  </a>
+</p>
+
+<p align="center">
+  <img src="docs/images/01-list-light.jpg" alt="The script list on iPhone" width="240">
+  <img src="docs/images/04-documentation-dark.jpg" alt="The built-in documentation on iPhone, showing the ARGV, STDIN and ENV guide" width="240">
+  <img src="docs/images/03-console-light.jpg" alt="The console on iPhone showing a script's output" width="240">
+</p>
+
+<p align="center">
+  <img src="docs/images/mac-shortcuts-docs-dark.jpg" alt="RubyCuts on the Mac: the script editor with the Running from Shortcuts guide open in a second window" width="760">
+</p>
 
 RubyCuts is an open-source, universal Apple app (iOS, iPadOS, macOS) that lets you write, manage, and run Ruby code natively from Apple Shortcuts.
 
@@ -14,56 +39,13 @@ It's inspired by [Rubyist](https://rubyist.app), but aims to be actively maintai
 - **Native bridge.** `Device::Clipboard` and `Device::Notification` let scripts read and write the clipboard and post notifications.
 - **iPhone, iPad and Mac.** One universal app, with a menu bar, keyboard shortcuts and a Settings window on the Mac, and a built-in reference for the Ruby-to-Shortcuts contract.
 
-## Status
-
-Everything above works and is in daily use on Mac and iPhone. RubyCuts isn't in the App Store yet: submission is next, with Apple's rules on interpreted code (guideline 2.5.2) in mind.
-
 ## Requirements
 
-- Xcode 27
-- iOS 26+ / iPadOS 26+, or macOS 26+
+iOS 26+ / iPadOS 26+, or macOS 26+.
 
-## Building
+## Building from source
 
-RubyCuts embeds a statically-linked CRuby, built by a standalone script rather than as part of the Xcode build (it takes 10-20 minutes, which would make every `⌘B` miserable). Run this once before opening the project:
-
-```sh
-mise install
-mise run cruby
-```
-
-See [`docs/embedding-cruby.md`](docs/embedding-cruby.md) for what it does and why. With that done, clone the repo and open `RubyCuts.xcodeproj` in Xcode, or build from the command line with the [mise](https://mise.jdx.dev) tasks in `mise.toml`:
-
-```sh
-mise run build          # macOS
-mise run build:ios      # iOS Simulator (set IOS_SIM to pick another device)
-mise run test           # unit tests on macOS
-mise run test RubyCutsTests/ScriptStoreTests   # one suite
-mise run test:ios       # unit and UI tests on the iOS Simulator
-mise run lint           # swift-format lint on changed Swift files
-mise run install:device # "RubyCuts Dev" on a connected iPhone, next to the App Store/TestFlight app
-```
-
-`mise tasks` lists them all. Each is a thin wrapper around `xcodebuild` or `swift format`, so you can read the exact command in `mise.toml`.
-
-### Signing
-
-Project-level settings pull `DEVELOPMENT_TEAM` from `Config/Local.xcconfig`, which is git-ignored so each contributor keeps their own. To build and run on a device:
-
-```sh
-cp Config/Local.xcconfig.sample Config/Local.xcconfig
-# then edit Config/Local.xcconfig and set your team ID
-```
-
-Simulator builds work without this. macOS builds need it too, because the iCloud entitlement requires a provisioning profile: the Mac has to be registered in your developer account, and command-line builds need `-allowProvisioningUpdates` (the mise tasks pass it).
-
-### Git hooks
-
-There's an advisory `swift-format` lint that runs on staged files before each commit. It never blocks the commit, it just prints warnings. Enable it with:
-
-```sh
-mise run hooks
-```
+See [`docs/building.md`](docs/building.md) for building CRuby, the Xcode project, signing and the mise tasks.
 
 ## License
 
