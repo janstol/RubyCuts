@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# Archives the iOS app and uploads it to App Store Connect (TestFlight).
+# Archives the app and uploads it to App Store Connect (TestFlight).
 #
-#   mise run release                  # archive + upload
-#   mise run release -- --no-upload   # archive + local export only, to check signing
+#   mise run release                          # iOS: archive + upload
+#   mise run release -- --macos               # macOS: archive + upload
+#   mise run release -- --no-upload           # archive + local export only, to check signing
+#   mise run release -- --macos --no-upload
 #
 # The build number is the commit count of HEAD, so it only goes up and needs no
 # commit of its own. Override it with BUILD_NUMBER=123 if needed. Uploading the
@@ -17,8 +19,6 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
-out="$root/build/release"
-archive="$out/RubyCuts.xcarchive"
 export_options="$root/Config/ExportOptions.plist"
 
 fail() {
@@ -27,7 +27,17 @@ fail() {
 }
 
 upload=true
-[[ "${1:-}" == "--no-upload" ]] && upload=false
+platform=iOS
+for arg in "$@"; do
+  case "$arg" in
+    --no-upload) upload=false ;;
+    --macos) platform=macOS ;;
+    *) fail "unknown option: $arg" ;;
+  esac
+done
+
+out="$root/build/release/$platform"
+archive="$out/RubyCuts.xcarchive"
 
 cd "$root"
 
@@ -45,12 +55,12 @@ if $upload; then
   auth=(-authenticationKeyPath "$key_path" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
 fi
 
-echo "Releasing RubyCuts build $build_number ($(git rev-parse --short HEAD))"
+echo "Releasing RubyCuts for $platform, build $build_number ($(git rev-parse --short HEAD))"
 rm -rf "$out"
 mkdir -p "$out"
 
 xcodebuild -project RubyCuts.xcodeproj -scheme RubyCuts -configuration Release \
-  -destination 'generic/platform=iOS' -archivePath "$archive" -allowProvisioningUpdates \
+  -destination "generic/platform=$platform" -archivePath "$archive" -allowProvisioningUpdates \
   ${auth[@]+"${auth[@]}"} "CURRENT_PROJECT_VERSION=$build_number" archive
 
 # The export options say "upload"; for a dry run, export locally instead.
