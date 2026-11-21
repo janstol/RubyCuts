@@ -25,7 +25,7 @@
   <img src="docs/images/mac-shortcuts-docs-dark.jpg" alt="RubyCuts on the Mac: the script editor with the Running from Shortcuts guide open in a second window" width="760">
 </p>
 
-RubyCuts is an open-source, universal Apple app (iOS, iPadOS, macOS) that lets you write, manage, and run Ruby code natively from Apple Shortcuts.
+RubyCuts is an open-source, universal Apple app (iOS, iPadOS, macOS) that lets you write, manage, and run Ruby code natively from Apple Shortcuts. More on the [website](https://janstol.github.io/RubyCuts/).
 
 It's inspired by [Rubyist](https://rubyist.app), but aims to be actively maintained and to embed the full CRuby (MRI) environment instead of the limited `mruby` VM, giving you real standard library access (`csv`, `json`, `net/http`, ...) and the ability to pull in pure Ruby gems at runtime.
 
@@ -43,10 +43,12 @@ It's inspired by [Rubyist](https://rubyist.app), but aims to be actively maintai
 
 iOS 26+ / iPadOS 26+, or macOS 26+.
 
-## Building from source
+## Development
 
-See [`docs/building.md`](docs/building.md) for building CRuby, the Xcode project, signing and the mise tasks.
+[![CI](https://github.com/janstol/RubyCuts/actions/workflows/ci.yml/badge.svg)](https://github.com/janstol/RubyCuts/actions/workflows/ci.yml)
+
+See [`docs/development.md`](docs/development.md) for building CRuby, the Xcode project, running tests, signing and the mise tasks.
 
 ## License
 
-MIT, see [LICENSE](LICENSE).
+[MIT](LICENSE)

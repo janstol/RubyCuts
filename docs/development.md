@@ -1,4 +1,4 @@
-# Building RubyCuts
+# Development
 
 ## Requirements
 
