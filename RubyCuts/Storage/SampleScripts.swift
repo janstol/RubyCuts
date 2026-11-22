@@ -32,6 +32,7 @@ nonisolated enum SampleScripts {
         Sample(name: "Fetch JSON", source: fetchJSON),
         Sample(name: "Hello Shortcuts", source: helloShortcuts),
         Sample(name: "JSON Output", source: jsonOutput),
+        Sample(name: "Widget", source: widget),
     ]
 
     private static let helloShortcuts = """
@@ -107,5 +108,48 @@ nonisolated enum SampleScripts {
 
         puts "Title: #{data["title"]}"
         puts "Completed: #{data["completed"]}"
+        """
+
+    private static let widget = """
+        # Widget
+        #
+        # Draws a Home Screen (or Mac desktop) widget with WidgetUI. Run it
+        # here first: the console shows a preview at small and medium size.
+        # Then add the RubyCuts widget, edit it and pick this script. The
+        # widget runs the script itself every so often and redraws, and
+        # tapping it opens the script here.
+        #
+        # Views: HStack, VStack, ZStack, Text, Image(system:), Spacer, Divider.
+        # Modifiers apply in the order you write them, like in SwiftUI. See
+        # Documentation > WidgetUI for the full list.
+
+        require "net/http"
+
+        # Widget scripts are stopped after 15 seconds, so keep network
+        # timeouts short, and show something useful when offline.
+        quote =
+          begin
+            Net::HTTP.start("api.github.com", 443, use_ssl: true, open_timeout: 5, read_timeout: 5) do |http|
+              http.get("/zen").body
+            end
+          rescue StandardError => e
+            "Offline (#{e.class})"
+          end
+
+        WidgetUI.new do
+          VStack(alignment: :leading, spacing: 4) {
+            HStack {
+              Image(system: "quote.bubble.fill").font(:title3)
+              Spacer()
+              Text(Time.now.strftime("%H:%M")).font(:caption).opacity(0.8)
+            }
+            Spacer()
+            Text(quote).font(:headline)
+          }
+          .padding
+          .frame(width: :infinity, height: :infinity)
+          .color(:white)
+          .background(["#E0115F", "#9B1B30"])
+        end.present
         """
 }

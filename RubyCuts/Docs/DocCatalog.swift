@@ -12,11 +12,11 @@ nonisolated enum DocCatalog {
 
     /// Topics listed under "Guides".
     static var guides: [DocTopic] {
-        [runningFromShortcuts, input, outputAndErrors, gems, rubyEnvironment]
+        [runningFromShortcuts, input, outputAndErrors, widgets, gems, rubyEnvironment]
     }
 
     /// Topics listed under "API".
-    static var api: [DocTopic] { [clipboard, notification] }
+    static var api: [DocTopic] { [clipboard, notification, widgetUI] }
 
     /// Every example in the catalog, across all topics.
     static var allExamples: [DocExample] { topics.flatMap(\.examples) }
@@ -160,6 +160,58 @@ nonisolated enum DocCatalog {
         ]
     )
 
+    static let widgets = DocTopic(
+        id: "widgets",
+        kind: .guide,
+        title: "Widgets",
+        summary: "Show a script's output on the Home Screen or desktop.",
+        overview: """
+            A script can draw a widget. Build the layout with WidgetUI and end with present, then run the script in the app: the console shows a preview at small and medium size.
+
+            To put it on the Home Screen or the Mac desktop, add the RubyCuts widget, edit it and choose the script. The widget runs the script itself, about every 15 minutes or as often as the system allows, so it can fetch fresh data each time. Running a widget script in the app refreshes the widget straight away, and tapping the widget opens its script.
+            """,
+        examples: [
+            DocExample(
+                title: "The smallest widget",
+                code: #"""
+                    WidgetUI.new do
+                      Text("Hello from Ruby").font(:headline).padding
+                    end.present
+                    """#,
+                verification: .runs()),
+            DocExample(
+                title: "Fresh data on every refresh",
+                code: #"""
+                    require 'net/http'
+
+                    quote = begin
+                      Net::HTTP.start("api.github.com", 443, use_ssl: true, open_timeout: 5, read_timeout: 5) do |http|
+                        http.get("/zen").body
+                      end
+                    rescue StandardError
+                      "Offline"
+                    end
+
+                    WidgetUI.new do
+                      VStack(alignment: :leading) {
+                        Text(Time.now.strftime("%H:%M")).font(:caption)
+                        Spacer()
+                        Text(quote).font(:headline)
+                      }
+                      .padding
+                      .frame(width: :infinity, height: :infinity)
+                    end.present
+                    """#,
+                verification: .compilesOnly),
+        ],
+        notes: [
+            "A widget script is stopped after 15 seconds. Stopping can't interrupt a network read that's already waiting, so give Net::HTTP short open_timeout and read_timeout values.",
+            "Widgets get little memory. Keep downloads small and avoid parsing very large JSON responses.",
+            "The widget runs the saved version of the script. If the script fails, the widget shows the error; tap it to open the script.",
+            "Installed gems aren't available to widget scripts yet. The bundled sqlite3 is.",
+        ]
+    )
+
     static let gems = DocTopic(
         id: "gems",
         kind: .guide,
@@ -271,6 +323,115 @@ nonisolated enum DocCatalog {
         ],
         notes: [
             "The first call after installing the app raises while the system shows its permission prompt. Allow notifications, then call notify again: the second call succeeds."
+        ]
+    )
+
+    static let widgetUI = DocTopic(
+        id: "widget-ui",
+        kind: .api,
+        title: "WidgetUI",
+        summary: "Lay out a widget with SwiftUI-style views.",
+        overview:
+            "Describes a widget's layout as a tree of views, in the style of SwiftUI. Views go inside the block given to WidgetUI.new, and modifiers chain onto them. Available in every script without a require. See the Widgets guide for putting the result on the Home Screen.",
+        members: [
+            DocMember(
+                signature: "WidgetUI.new { ... }",
+                explanation:
+                    "Builds a layout from the views called inside the block. Several top-level views are stacked vertically."
+            ),
+            DocMember(
+                signature: ".present",
+                explanation:
+                    "Makes this the layout the widget and the console preview show. Call it once, at the end; if it's called more than once, the last call wins."
+            ),
+            DocMember(
+                signature: "HStack(alignment: :center, spacing: nil) { ... }",
+                explanation: "Lays views out side by side. alignment is :top, :center or :bottom."),
+            DocMember(
+                signature: "VStack(alignment: :center, spacing: nil) { ... }",
+                explanation: "Lays views out top to bottom. alignment is :leading, :center or :trailing."),
+            DocMember(
+                signature: "ZStack(alignment: :center) { ... }",
+                explanation:
+                    "Layers views on top of each other. alignment is :center, :top, :bottom, :leading, :trailing or a corner such as :top_leading or :bottom_trailing."
+            ),
+            DocMember(signature: "Text(string)", explanation: "A line of text."),
+            DocMember(
+                signature: "Image(system: \"name\")",
+                explanation: "An SF Symbol, e.g. \"bolt.fill\". Size it with font or size."),
+            DocMember(
+                signature: "Spacer()",
+                explanation: "Fills the free space in a stack, pushing the other views apart."),
+            DocMember(signature: "Divider()", explanation: "A thin separator line."),
+            DocMember(
+                signature: ".padding(16)",
+                explanation:
+                    "Adds space around the view, 16 points by default. padding_top, padding_bottom, padding_leading and padding_trailing pad one edge; padding_left and padding_right are the same as leading and trailing."
+            ),
+            DocMember(
+                signature: ".frame(width: nil, height: nil)",
+                explanation: "Sets the size in points, or :infinity to fill the available space."),
+            DocMember(
+                signature: ".background(color)",
+                explanation: "Paints a color behind the view. An array of colors paints a top-to-bottom gradient."),
+            DocMember(
+                signature: ".color(color)",
+                explanation: "Sets the color of text and symbols. Also called foreground_color."),
+            DocMember(
+                signature: ".font(:headline)",
+                explanation:
+                    "A text style: :large_title, :title, :title2, :title3, :headline, :subheadline, :body, :callout, :footnote, :caption or :caption2."
+            ),
+            DocMember(signature: ".size(points)", explanation: "A font size in points."),
+            DocMember(signature: ".bold, .italic", explanation: "Bold or italic text."),
+            DocMember(signature: ".opacity(0.5)", explanation: "Makes the view partly transparent, from 0 to 1."),
+            DocMember(signature: ".corner_radius(12)", explanation: "Rounds the view's corners."),
+        ],
+        examples: [
+            DocExample(
+                title: "A gradient card",
+                code: #"""
+                    WidgetUI.new do
+                      VStack(alignment: :leading, spacing: 4) {
+                        Image(system: "bolt.fill").font(:title2)
+                        Spacer()
+                        Text("Battery").font(:caption).opacity(0.8)
+                        Text("82 %").font(:title).bold
+                      }
+                      .padding
+                      .frame(width: :infinity, height: :infinity)
+                      .color(:white)
+                      .background(["#34C759", "#248A3D"])
+                    end.present
+                    """#,
+                verification: .runs()),
+            DocExample(
+                title: "Rows from data",
+                code: #"""
+                    tasks = { "Water plants" => true, "Pay rent" => false, "Call mum" => false }
+
+                    WidgetUI.new do
+                      VStack(alignment: :leading, spacing: 6) {
+                        Text("Today").font(:headline)
+                        tasks.each do |name, done|
+                          HStack {
+                            Image(system: done ? "checkmark.circle.fill" : "circle")
+                            Text(name).opacity(done ? 0.5 : 1)
+                          }
+                        end
+                        Spacer()
+                      }
+                      .padding
+                      .frame(width: :infinity, height: :infinity)
+                    end.present
+                    """#,
+                verification: .runs()),
+        ],
+        notes: [
+            "Colors are a symbol (:white, :black, :gray, :red, :orange, :yellow, :green, :mint, :teal, :cyan, :blue, :indigo, :purple, :pink, :brown, :clear, :primary, :secondary) or a hex string such as \"#FF8800\", or \"#FF880080\" with transparency.",
+            "Modifiers apply in the order you write them, as in SwiftUI: .padding.background(:blue) puts the padding inside the blue area, .background(:blue).padding puts it outside.",
+            "The layout fills the whole widget, edge to edge, so add .padding to keep content away from the edges.",
+            "A wrong argument raises an error naming the allowed values, e.g. unknown color :chartreuse.",
         ]
     )
 }
