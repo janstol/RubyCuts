@@ -12,6 +12,8 @@ struct ScriptWidget: Widget {
         ) { entry in
             ScriptWidgetView(content: entry.content)
                 .containerBackground(.fill.tertiary, for: .widget)
+                // Tapping opens the script in the app, including when it shows an error.
+                .widgetURL(entry.scriptFileName.map(ScriptLink.url(forFileName:)))
         }
         .configurationDisplayName("Ruby Script")
         .description("Shows the layout a script builds with WidgetUI.")
@@ -36,6 +38,8 @@ struct SelectScriptIntent: WidgetConfigurationIntent {
 nonisolated struct ScriptEntry: TimelineEntry {
     var date: Date
     var content: ScriptWidgetContent
+    /// The configured script's file name, for the tap link. `nil` before a script is chosen and for the gallery sample.
+    var scriptFileName: String?
 }
 
 /// Runs the configured script for each timeline. Placeholders and the widget gallery get a static sample instead, so browsing the gallery doesn't run anything.
@@ -51,17 +55,21 @@ nonisolated struct ScriptTimelineProvider: AppIntentTimelineProvider {
         if context.isPreview {
             return ScriptEntry(date: .now, content: .layout(.sample))
         }
-        return ScriptEntry(
-            date: .now, content: await ScriptWidgetRunner.content(for: configuration.script))
+        return await entry(for: configuration)
     }
 
     func timeline(for configuration: SelectScriptIntent, in context: Context) async -> Timeline<
         ScriptEntry
     > {
-        let entry = ScriptEntry(
-            date: .now, content: await ScriptWidgetRunner.content(for: configuration.script))
         return Timeline(
-            entries: [entry], policy: .after(.now.addingTimeInterval(Self.refreshInterval)))
+            entries: [await entry(for: configuration)],
+            policy: .after(.now.addingTimeInterval(Self.refreshInterval)))
+    }
+
+    private func entry(for configuration: SelectScriptIntent) async -> ScriptEntry {
+        ScriptEntry(
+            date: .now, content: await ScriptWidgetRunner.content(for: configuration.script),
+            scriptFileName: configuration.script?.id)
     }
 }
 

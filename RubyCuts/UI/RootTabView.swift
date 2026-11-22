@@ -37,6 +37,12 @@
                     SettingsView(scriptLibrary: library)
                 }
             }
+            // A tapped widget opens its script, which lives in the Scripts tab.
+            .onChange(of: library.requestedScriptFileName) { _, fileName in
+                if fileName != nil {
+                    selectedTab = .scripts
+                }
+            }
             // One alert for the library's errors, here rather than in each
             // tab: the Scripts and Settings tabs both stay alive, and two
             // alerts bound to the same state would compete to present it.

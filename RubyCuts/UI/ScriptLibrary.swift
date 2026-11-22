@@ -48,6 +48,9 @@ final class ScriptLibrary {
     /// start of the next operation so a transient error doesn't linger.
     var errorMessage: String?
 
+    /// The file name of a script a ``ScriptLink`` asked to open (a tap on the widget), waiting until the list can select it. Kept here rather than selected straight away because on a cold launch the link arrives before storage is resolved and ``scripts`` is loaded. Cleared by ``takeRequestedScript()``.
+    private(set) var requestedScriptFileName: String?
+
     /// The backing store. Injectable so previews and tests can point at a temp
     /// directory. Without an injected store the library starts on
     /// ``ScriptStore/local`` and ``prepareStorage()`` swaps in whatever
@@ -202,6 +205,25 @@ final class ScriptLibrary {
             errorMessage = Self.describe(error)
             scripts = []
         }
+    }
+
+    /// Records the script `url` asks to open, if it's a ``ScriptLink``. Returns whether it was one, so the caller can ignore other URLs.
+    @discardableResult
+    func handleOpenURL(_ url: URL) -> Bool {
+        guard let fileName = ScriptLink.fileName(from: url) else { return false }
+        requestedScriptFileName = fileName
+        return true
+    }
+
+    /// The requested script once it's in ``scripts``, clearing the request. Returns `nil` while there's no request, and while ``scripts`` is still empty (a cold launch that hasn't loaded yet), so the list calls this again whenever ``scripts`` changes. Once scripts are loaded, a request for one that isn't there is dropped with an ``errorMessage``, rather than left to select a same-named script created later.
+    func takeRequestedScript() -> Script? {
+        guard let fileName = requestedScriptFileName, !scripts.isEmpty else { return nil }
+        requestedScriptFileName = nil
+        guard let script = scripts.first(where: { $0.url.lastPathComponent == fileName }) else {
+            errorMessage = "The script \((fileName as NSString).deletingPathExtension) isn't in your library any more."
+            return nil
+        }
+        return script
     }
 
     /// Creates a script with empty source and returns it so the list view can

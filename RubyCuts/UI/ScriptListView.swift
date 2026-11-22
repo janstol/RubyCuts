@@ -67,6 +67,9 @@ struct ScriptListView: View {
                 .task {
                     await library.prepareStorage()
                 }
+                // A tapped widget's ScriptLink: select its script, waiting for the list to load on a cold launch.
+                .onChange(of: library.requestedScriptFileName, initial: true) { openRequestedScript() }
+                .onChange(of: library.scripts) { openRequestedScript() }
                 .toolbar {
                     ToolbarItem(placement: .primaryAction) {
                         Button {
@@ -331,6 +334,13 @@ struct ScriptListView: View {
         #else
             showDocumentation?()
         #endif
+    }
+
+    /// Selects the script a ``ScriptLink`` asked for, once ``ScriptLibrary`` has it. Clears the search so the selected row isn't filtered out of the list.
+    private func openRequestedScript() {
+        guard let script = library.takeRequestedScript() else { return }
+        searchText = ""
+        selection = script
     }
 
     private func createNew() {

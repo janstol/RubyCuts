@@ -76,6 +76,7 @@
 				Ruby/RunResult.swift,
 				Ruby/rubycuts_shim.c,
 				Storage/Script.swift,
+				Storage/ScriptLink.swift,
 				Storage/ScriptStorage.swift,
 				Storage/ScriptStore.swift,
 				WidgetUI/WidgetLayout.swift,

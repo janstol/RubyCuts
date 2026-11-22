@@ -20,11 +20,17 @@ struct RubyCutsApp: App {
 
     var body: some Scene {
         WindowGroup {
-            #if os(macOS)
-                ScriptListView(library: library)
-            #else
-                RootTabView(library: library)
-            #endif
+            Group {
+                #if os(macOS)
+                    ScriptListView(library: library)
+                        // Deliver links to the open window instead of opening a second one; the app is built around one window (see ScriptCommands).
+                        .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
+                #else
+                    RootTabView(library: library)
+                #endif
+            }
+            // rubycuts://script?name=... from a tapped widget (ScriptLink).
+            .onOpenURL { library.handleOpenURL($0) }
         }
         .onChange(of: scenePhase) { _, newPhase in
             // The user can flip notification permission in Settings while the
