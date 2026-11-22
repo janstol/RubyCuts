@@ -272,7 +272,10 @@ nonisolated enum DocCatalog {
                     """#,
                 verification: .compilesOnly),
         ],
-        notes: ["The Ruby tab links to the API docs for the core classes and bundled libraries."]
+        notes: [
+            "The Ruby tab links to the API docs for the core classes and bundled libraries.",
+            "Every run starts without the constants an earlier run assigned, like TOKEN = \"...\", so running a script again doesn't warn. Classes, methods and libraries loaded with require stay loaded between runs.",
+        ]
     )
 
     // MARK: - API

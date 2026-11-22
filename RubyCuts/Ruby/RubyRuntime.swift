@@ -186,6 +186,9 @@ actor RubyRuntime {
         var result = RunResult(stdout: "", stderr: "", result: "", errorMessage: nil)
 
         // Clear any layout an earlier run presented, so presentedLayoutJSON below reflects this run only, and set the size WidgetUI.family reports. The family is one of WidgetUIFamily's fixed raw values, so it's safe to put in the source. Best-effort: if WidgetUI failed to load at boot, there is nothing to prepare.
+        // Each run starts without the plain-value constants an earlier run defined; see clearConstantsFromEarlierRuns.
+        _ = try? evalRaw(Self.clearConstantsFromEarlierRuns)
+
         let familyLiteral = widgetFamily.map { ":\($0.rawValue)" } ?? "nil"
         _ = try? evalRaw("WidgetUI.prepare_run(\(familyLiteral)) if defined?(WidgetUI)")
 
@@ -393,6 +396,7 @@ actor RubyRuntime {
         installNativeBridge()
         installWidgetUI()
         installGemPaths()
+        recordBootConstants()
     }
 
     /// Overrides `Kernel#exit!` and `Kernel#abort` to raise a catchable
@@ -459,6 +463,24 @@ actor RubyRuntime {
             // Non-fatal: Device::* capabilities degrade; Ruby itself still works.
         }
     }
+
+    /// Remembers which top-level constants exist once the VM has booted (core classes, ARGV, the preludes), so ``clearConstantsFromEarlierRuns`` never touches them. ``bootIfNeeded()`` runs before every evaluation, so only the first call records (`||=`); a later one would capture an earlier run's constants as if they came from boot. Best-effort: without the list, nothing is cleared.
+    private func recordBootConstants() {
+        _ = try? evalRaw("$rubycuts_boot_constants ||= Object.constants")
+    }
+
+    /// Removes the top-level constants an earlier run assigned plain values to (`TOKEN = "..."`, `URL = URI(...)`), so running a script again doesn't print "already initialized constant" warnings on STDERR, which the Shortcuts actions treat as a failure. The VM lives for the whole session, which made every second run of a script with constants warn; the widget's refreshes and the console's size picker rerun scripts all the time.
+    ///
+    /// Classes and modules stay: a library loaded with `require` won't load again, so removing its constants would break the next run, and reopening a class doesn't warn anyway. Constants from boot and pending autoloads are left alone too.
+    private nonisolated static let clearConstantsFromEarlierRuns = """
+        if defined?($rubycuts_boot_constants) && $rubycuts_boot_constants
+          (Object.constants - $rubycuts_boot_constants).each do |name|
+            next if Object.autoload?(name)
+            value = Object.const_get(name) rescue next
+            Object.send(:remove_const, name) unless value.is_a?(Module)
+          end
+        end
+        """
 
     /// Defines `WidgetUI`, the widget layout DSL (see ``WidgetUIPrelude``).
     ///
