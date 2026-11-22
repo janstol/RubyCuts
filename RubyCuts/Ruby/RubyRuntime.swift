@@ -375,6 +375,7 @@ actor RubyRuntime {
         configureTLS()
         hardenProcessExit()
         installNativeBridge()
+        installWidgetUI()
         installGemPaths()
     }
 
@@ -440,6 +441,17 @@ actor RubyRuntime {
             _ = try evalRaw(NativeBridge.preludeSource)
         } catch {
             // Non-fatal: Device::* capabilities degrade; Ruby itself still works.
+        }
+    }
+
+    /// Defines `WidgetUI`, the widget layout DSL (see ``WidgetUIPrelude``).
+    ///
+    /// Best-effort and non-fatal, like the rest of boot: if the eval fails, only `WidgetUI` is missing.
+    private func installWidgetUI() {
+        do {
+            _ = try evalRaw(WidgetUIPrelude.source)
+        } catch {
+            // Non-fatal: WidgetUI is undefined; Ruby itself still works.
         }
     }
 
