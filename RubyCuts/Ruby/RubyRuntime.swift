@@ -1,4 +1,5 @@
 import Foundation
+import RubyCutsVM
 
 /// An error raised while evaluating Ruby code through ``RubyRuntime``.
 enum RubyError: Error, Sendable {

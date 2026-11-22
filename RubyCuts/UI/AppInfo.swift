@@ -1,4 +1,5 @@
 import Foundation
+import RubyCutsVM
 
 /// Version details shown in the About section of the iOS settings sheet.
 ///

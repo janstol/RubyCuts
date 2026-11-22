@@ -9,6 +9,9 @@
 /* Begin PBXBuildFile section */
 		C58C33063A0487769618DD11 /* stdlib in Resources */ = {isa = PBXBuildFile; fileRef = 9A3F8C9688AF025ABF09B066 /* stdlib */; };
 		7A1D6E000000000000000001 /* RubyCutsWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 7A1D6E000000000000000002 /* RubyCutsWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		7A1D6E010000000000000002 /* RubyCutsVM.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7A1D6E010000000000000001 /* RubyCutsVM.framework */; };
+		7A1D6E010000000000000003 /* RubyCutsVM.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 7A1D6E010000000000000001 /* RubyCutsVM.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		7A1D6E010000000000000004 /* RubyCutsVM.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7A1D6E010000000000000001 /* RubyCutsVM.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -33,6 +36,20 @@
 			remoteGlobalIDString = 7A1D6E00000000000000000A;
 			remoteInfo = RubyCutsWidget;
 		};
+		7A1D6E010000000000000018 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = DB954DE23031C79700D2B0BA /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7A1D6E010000000000000010;
+			remoteInfo = RubyCutsVM;
+		};
+		7A1D6E010000000000000019 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = DB954DE23031C79700D2B0BA /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7A1D6E010000000000000010;
+			remoteInfo = RubyCutsVM;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -47,6 +64,17 @@
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		7A1D6E010000000000000005 /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				7A1D6E010000000000000003 /* RubyCutsVM.framework in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
@@ -57,6 +85,7 @@
 		DB954F023031C79900D2B0BA /* Shared.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Shared.xcconfig; sourceTree = "<group>"; };
 		DB954F033031C79900D2B0BA /* Local.xcconfig.sample */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Local.xcconfig.sample; sourceTree = "<group>"; };
 		7A1D6E000000000000000002 /* RubyCutsWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = RubyCutsWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		7A1D6E010000000000000001 /* RubyCutsVM.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = RubyCutsVM.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -74,7 +103,6 @@
 				Ruby/RubyVMExecutor.swift,
 				Ruby/RunInput.swift,
 				Ruby/RunResult.swift,
-				Ruby/rubycuts_shim.c,
 				Storage/Script.swift,
 				Storage/ScriptLink.swift,
 				Storage/ScriptStorage.swift,
@@ -85,6 +113,21 @@
 			);
 			target = 7A1D6E00000000000000000A /* RubyCutsWidget */;
 		};
+		7A1D6E010000000000000008 /* Exceptions for "RubyCuts" folder in "RubyCutsVM" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				PrivacyInfo.xcprivacy,
+			);
+			target = 7A1D6E010000000000000010 /* RubyCutsVM */;
+		};
+		7A1D6E010000000000000007 /* Exceptions for "RubyCutsVM" folder in "RubyCutsVM" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			publicHeaders = (
+				RubyCutsVM.h,
+				rubycuts_shim.h,
+			);
+			target = 7A1D6E010000000000000010 /* RubyCutsVM */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -92,6 +135,7 @@
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				7A1D6E000000000000000005 /* Exceptions for "RubyCuts" folder in "RubyCutsWidget" target */,
+				7A1D6E010000000000000008 /* Exceptions for "RubyCuts" folder in "RubyCutsVM" target */,
 			);
 			path = RubyCuts;
 			sourceTree = "<group>";
@@ -111,6 +155,14 @@
 			path = RubyCutsWidget;
 			sourceTree = "<group>";
 		};
+		7A1D6E010000000000000006 /* RubyCutsVM */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				7A1D6E010000000000000007 /* Exceptions for "RubyCutsVM" folder in "RubyCutsVM" target */,
+			);
+			path = RubyCutsVM;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -118,6 +170,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7A1D6E010000000000000002 /* RubyCutsVM.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -136,6 +189,14 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		7A1D6E000000000000000007 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7A1D6E010000000000000004 /* RubyCutsVM.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7A1D6E010000000000000013 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -160,6 +221,7 @@
 				DB954DFC3031C79900D2B0BA /* RubyCutsTests */,
 				DB954E063031C79900D2B0BA /* RubyCutsUITests */,
 				7A1D6E000000000000000006 /* RubyCutsWidget */,
+				7A1D6E010000000000000006 /* RubyCutsVM */,
 				DB954F013031C79900D2B0BA /* Config */,
 				B6FC9488F397C37CBC11A183 /* Vendor */,
 				DB954DEB3031C79700D2B0BA /* Products */,
@@ -173,6 +235,7 @@
 				DB954DF93031C79900D2B0BA /* RubyCutsTests.xctest */,
 				DB954E033031C79900D2B0BA /* RubyCutsUITests.xctest */,
 				7A1D6E000000000000000002 /* RubyCutsWidget.appex */,
+				7A1D6E010000000000000001 /* RubyCutsVM.framework */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -188,21 +251,32 @@
 		};
 /* End PBXGroup section */
 
+/* Begin PBXHeadersBuildPhase section */
+		7A1D6E010000000000000011 /* Headers */ = {
+			isa = PBXHeadersBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXHeadersBuildPhase section */
+
 /* Begin PBXNativeTarget section */
 		DB954DE93031C79700D2B0BA /* RubyCuts */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = DB954E0D3031C79900D2B0BA /* Build configuration list for PBXNativeTarget "RubyCuts" */;
 			buildPhases = (
-				DB954F0A3031C79900D2B0BA /* Check CRuby is built */,
 				DB954DE63031C79700D2B0BA /* Sources */,
 				DB954DE73031C79700D2B0BA /* Frameworks */,
 				DB954DE83031C79700D2B0BA /* Resources */,
 				7A1D6E000000000000000004 /* Embed Foundation Extensions */,
+				7A1D6E010000000000000005 /* Embed Frameworks */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 				7A1D6E00000000000000000B /* PBXTargetDependency */,
+				7A1D6E010000000000000020 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				DB954DEC3031C79700D2B0BA /* RubyCuts */,
@@ -271,6 +345,7 @@
 			buildRules = (
 			);
 			dependencies = (
+				7A1D6E010000000000000021 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				7A1D6E000000000000000006 /* RubyCutsWidget */,
@@ -281,6 +356,30 @@
 			productName = RubyCutsWidget;
 			productReference = 7A1D6E000000000000000002 /* RubyCutsWidget.appex */;
 			productType = "com.apple.product-type.app-extension";
+		};
+		7A1D6E010000000000000010 /* RubyCutsVM */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7A1D6E010000000000000015 /* Build configuration list for PBXNativeTarget "RubyCutsVM" */;
+			buildPhases = (
+				DB954F0A3031C79900D2B0BA /* Check CRuby is built */,
+				7A1D6E010000000000000011 /* Headers */,
+				7A1D6E010000000000000012 /* Sources */,
+				7A1D6E010000000000000013 /* Frameworks */,
+				7A1D6E010000000000000014 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				7A1D6E010000000000000006 /* RubyCutsVM */,
+			);
+			name = RubyCutsVM;
+			packageProductDependencies = (
+			);
+			productName = RubyCutsVM;
+			productReference = 7A1D6E010000000000000001 /* RubyCutsVM.framework */;
+			productType = "com.apple.product-type.framework";
 		};
 /* End PBXNativeTarget section */
 
@@ -306,6 +405,9 @@
 					7A1D6E00000000000000000A = {
 						CreatedOnToolsVersion = 27.2;
 					};
+					7A1D6E010000000000000010 = {
+						CreatedOnToolsVersion = 27.2;
+					};
 				};
 			};
 			buildConfigurationList = DB954DE53031C79700D2B0BA /* Build configuration list for PBXProject "RubyCuts" */;
@@ -326,6 +428,7 @@
 				DB954DF83031C79900D2B0BA /* RubyCutsTests */,
 				DB954E023031C79900D2B0BA /* RubyCutsUITests */,
 				7A1D6E00000000000000000A /* RubyCutsWidget */,
+				7A1D6E010000000000000010 /* RubyCutsVM */,
 			);
 		};
 /* End PBXProject section */
@@ -354,6 +457,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		7A1D6E000000000000000009 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7A1D6E010000000000000014 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -413,6 +523,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		7A1D6E010000000000000012 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -430,6 +547,16 @@
 			isa = PBXTargetDependency;
 			target = 7A1D6E00000000000000000A /* RubyCutsWidget */;
 			targetProxy = 7A1D6E000000000000000003 /* PBXContainerItemProxy */;
+		};
+		7A1D6E010000000000000020 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 7A1D6E010000000000000010 /* RubyCutsVM */;
+			targetProxy = 7A1D6E010000000000000018 /* PBXContainerItemProxy */;
+		};
+		7A1D6E010000000000000021 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 7A1D6E010000000000000010 /* RubyCutsVM */;
+			targetProxy = 7A1D6E010000000000000019 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -798,6 +925,62 @@
 			};
 			name = Release;
 		};
+		7A1D6E010000000000000016 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEAD_CODE_STRIPPING = YES;
+				DEFINES_MODULE = YES;
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				EXPORTED_SYMBOLS_FILE = Config/RubyCutsVM.exp;
+				GENERATE_INFOPLIST_FILE = YES;
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @loader_path/Frameworks";
+				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "$(inherited) @executable_path/../Frameworks @loader_path/Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				OTHER_LDFLAGS = "$(inherited) -lz -framework CoreFoundation -Wl,-force_load,$(CRUBY_DIR)/lib/$(PLATFORM_NAME)/libruby-static.a";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(APP_BUNDLE_IDENTIFIER).RubyCutsVM";
+				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
+				SDKROOT = auto;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VERSIONING_SYSTEM = "apple-generic";
+				VERSION_INFO_PREFIX = "";
+			};
+			name = Debug;
+		};
+		7A1D6E010000000000000017 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEAD_CODE_STRIPPING = YES;
+				DEFINES_MODULE = YES;
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				EXPORTED_SYMBOLS_FILE = Config/RubyCutsVM.exp;
+				GENERATE_INFOPLIST_FILE = YES;
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @loader_path/Frameworks";
+				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "$(inherited) @executable_path/../Frameworks @loader_path/Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				OTHER_LDFLAGS = "$(inherited) -lz -framework CoreFoundation -Wl,-force_load,$(CRUBY_DIR)/lib/$(PLATFORM_NAME)/libruby-static.a";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(APP_BUNDLE_IDENTIFIER).RubyCutsVM";
+				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
+				SDKROOT = auto;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VERSIONING_SYSTEM = "apple-generic";
+				VERSION_INFO_PREFIX = "";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -842,6 +1025,15 @@
 			buildConfigurations = (
 				7A1D6E00000000000000000D /* Debug */,
 				7A1D6E00000000000000000E /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		7A1D6E010000000000000015 /* Build configuration list for PBXNativeTarget "RubyCutsVM" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7A1D6E010000000000000016 /* Debug */,
+				7A1D6E010000000000000017 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

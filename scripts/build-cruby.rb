@@ -767,8 +767,8 @@ end
 # The same step folds in the third-party static libraries (libssl.a,
 # libcrypto.a from build_openssl!, libyaml.a from build_libyaml!) by appending
 # them to the same libtool filelist. Once flattened into lib*-static.a, the
-# existing `-Wl,-force_load,...libruby-static.a` in Config/Shared.xcconfig
-# pulls them into the app link with no new link flag. Contingency (only if
+# existing `-Wl,-force_load,...libruby-static.a` in the RubyCutsVM framework
+# target pulls them into its link with no new link flag. Contingency (only if
 # `libtool -static` errors on duplicate member names: libyaml's api.o /
 # reader.o are the generic-name collision candidates): switch to the
 # explode-rename-rearchive method: extract every archive into a temp dir,

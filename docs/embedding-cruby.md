@@ -98,7 +98,7 @@ The SHA256s are verified against the official sources (OpenSSL against the `.sha
 
 `patch_psych_extconf!` neutralizes the unconditional `pkg_config('yaml-0.1')` call in `ext/psych/extconf.rb` (run once per checkout, idempotent). Without it, a build machine with `pkg-config` plus a host Homebrew libyaml installed would let that `pkg_config` pick up the host (macOS-arch) libyaml and contaminate the iOS cross-compile with the wrong arch; with it gone, the `dir_config('libyaml')` + `find_header`/`find_library` path driven by `--with-libyaml-dir` is the only one taken. The openssl extconf needs no such patch: it already skips `pkg_config("openssl")` when `--with-openssl-dir` is given (`dir_config_given` gates it).
 
-`merge_static_extensions!` folds `libssl.a`, `libcrypto.a`, and `libyaml.a` into `libruby-static.a` by appending them to the same `libtool -static -filelist` as the Ruby ext/enc archives. Because the third-party libs live *inside* `libruby-static.a`, the existing `-Wl,-force_load,...libruby-static.a` in `Config/Shared.xcconfig` pulls them in, so no new link flag is needed in the common case. (Contingency, only if `libtool` errors on duplicate member names: the explode-rename-rearchive method extracts every archive, renames colliding `.o`s with a numeric prefix, excludes `dmyext.o`/`dmyenc.o`, then runs `ar -crs` on everything into the final archive. Not used today.) If the app link ever fails with undefined OpenSSL symbols, add `-framework Security` (and/or `-framework CoreFoundation`) to `OTHER_LDFLAGS`; verify before adding.
+`merge_static_extensions!` folds `libssl.a`, `libcrypto.a`, and `libyaml.a` into `libruby-static.a` by appending them to the same `libtool -static -filelist` as the Ruby ext/enc archives. Because the third-party libs live *inside* `libruby-static.a`, the existing `-Wl,-force_load,...libruby-static.a` in the RubyCutsVM framework target's `OTHER_LDFLAGS` pulls them in, so no new link flag is needed in the common case. (Contingency, only if `libtool` errors on duplicate member names: the explode-rename-rearchive method extracts every archive, renames colliding `.o`s with a numeric prefix, excludes `dmyext.o`/`dmyenc.o`, then runs `ar -crs` on everything into the final archive. Not used today.) If the framework link ever fails with undefined OpenSSL symbols, add `-framework Security` to that target's `OTHER_LDFLAGS`; verify before adding. (`-framework CoreFoundation` is already there, for the CFString calls in Ruby's `file.c`.)
 
 ### sqlite3 (a pre-baked C-extension gem)
 
@@ -143,7 +143,7 @@ Discovered while wiring up `require 'stringio'` and friends in the stdlib-bundli
 
 ## Completing VM boot: `ruby_options()`, not bare `ruby_init()`
 
-`rubycuts_init()` (`RubyCuts/Ruby/rubycuts_shim.c`) calls `RUBY_INIT_STACK; ruby_init();` same as before, but that alone is not a complete boot: `ruby_init()` only runs `Init_BareVM` plus the core-class `rb_call_inits()` list. It never runs `Init_ext()` (registering every statically-linked C extension so `require` can find it, see above), never loads the compiled builtin iseqs, never sets up the non-ASCII encoding database, and never seeds `$LOAD_PATH`. All of that lives in `ruby_opt_init()`, reachable only through `ruby_options()`, CRuby's command-line option processor.
+`rubycuts_init()` (`RubyCutsVM/rubycuts_shim.c`) calls `RUBY_INIT_STACK; ruby_init();` same as before, but that alone is not a complete boot: `ruby_init()` only runs `Init_BareVM` plus the core-class `rb_call_inits()` list. It never runs `Init_ext()` (registering every statically-linked C extension so `require` can find it, see above), never loads the compiled builtin iseqs, never sets up the non-ASCII encoding database, and never seeds `$LOAD_PATH`. All of that lives in `ruby_opt_init()`, reachable only through `ruby_options()`, CRuby's command-line option processor.
 
 `rubycuts_init()` calls `ruby_options()` with a synthetic, writable argv equivalent to `ruby --disable-gems -e ''`:
 
@@ -184,9 +184,19 @@ Discovered while wiring up `require 'stringio'` and friends in the stdlib-bundli
 
 **No x86_64, ever.** This isn't a deferred slice: RubyCuts targets Apple Silicon only. `ARCHS = arm64` in `Config/Shared.xcconfig` enforces this at the project level, so an Intel Mac or an Intel simulator destination won't build. `TARGETS` in `scripts/build-cruby.rb` should never grow an x86_64 row.
 
+## Linking: the RubyCutsVM framework
+
+The app and its widget extension both run Ruby, so `libruby-static.a` and the C shim (`RubyCutsVM/rubycuts_shim.c`) live in one dynamic framework, `RubyCutsVM`, instead of being linked into each binary. The app embeds it in `Frameworks/`; the widget links the same copy through its `@executable_path/../../Frameworks` runpath. Linked into both binaries, CRuby added roughly 18 MB to a Debug build; the framework ships it once.
+
+- Only the framework target links CRuby: `-force_load` of `libruby-static.a`, `-lz` for the statically linked zlib ext, and `-framework CoreFoundation` for the CFString calls in Ruby's `file.c` (the app used to get CoreFoundation implicitly through Swift).
+- `Config/RubyCutsVM.exp` exports only `_rubycuts_*`. Swift calls nothing else, and exporting just the shim lets the linker dead-strip whatever of CRuby the shim can't reach, the same result as when CRuby was linked straight into the app. Exporting everything would make the framework larger than the copy it replaces. If Swift ever needs a Ruby C API function directly, add a shim function rather than widening the export list.
+- Swift reaches the shim with `import RubyCutsVM` (the framework is a Clang module with `RubyCutsVM.h` as its umbrella header); there's no bridging header. Ruby's own headers stay private to `rubycuts_shim.c`.
+- The Swift runtime code (`RubyRuntime` and friends) is still compiled into both the app and the widget. It's small, and moving it into the framework would mean making most of its types `public`.
+- The framework carries a copy of the app's `PrivacyInfo.xcprivacy` (the same file, as a second target membership), since the file-timestamp and boot-time API use it declares comes from Ruby itself.
+
 ## Header layout
 
-Ruby installs generic headers under `include/ruby-3.4.0/` and one arch-specific header, `include/ruby-3.4.0/<arch-triplet>/ruby/config.h`, in a sibling directory. `scripts/build-cruby.rb`'s `install_artifacts!` flattens both, per target, into `Vendor/CRuby/include/<platform>/`: one complete header tree per SDK (`macosx`, `iphoneos`, `iphonesimulator`), matching the per-SDK `Vendor/CRuby/lib/<platform>/libruby-static.a` layout. `<platform>` is exactly Xcode's `PLATFORM_NAME`, so `HEADER_SEARCH_PATHS` and `OTHER_LDFLAGS` in `Config/Shared.xcconfig` each need only one `$(PLATFORM_NAME)`-parameterized line instead of one row per SDK.
+Ruby installs generic headers under `include/ruby-3.4.0/` and one arch-specific header, `include/ruby-3.4.0/<arch-triplet>/ruby/config.h`, in a sibling directory. `scripts/build-cruby.rb`'s `install_artifacts!` flattens both, per target, into `Vendor/CRuby/include/<platform>/`: one complete header tree per SDK (`macosx`, `iphoneos`, `iphonesimulator`), matching the per-SDK `Vendor/CRuby/lib/<platform>/libruby-static.a` layout. `<platform>` is exactly Xcode's `PLATFORM_NAME`, so `SYSTEM_HEADER_SEARCH_PATHS` in `Config/Shared.xcconfig` and `OTHER_LDFLAGS` in the RubyCutsVM framework target each need only one `$(PLATFORM_NAME)`-parameterized line instead of one row per SDK.
 
 ## Verifying a build
 
