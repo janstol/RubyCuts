@@ -237,7 +237,7 @@ nonisolated enum WidgetUIPrelude {
           end
           alias to_h to_hash
 
-          # Marks this layout as the one to show. When several are presented, the last one wins. `refresh_after` asks the widget to run the script again after that many seconds (at least MINIMUM_REFRESH); the system decides the actual time.
+          # Marks this layout as the one to show. When several are presented, the last one wins. `refresh_after` asks the widget to run the script again after that many seconds (at least MINIMUM_REFRESH); the system decides the actual time. Returns nil, like puts, so a script ending in present doesn't print the WidgetUI object as its result in the console.
           def present(refresh_after: nil)
             unless refresh_after.nil?
               unless refresh_after.is_a?(Numeric) && refresh_after >= MINIMUM_REFRESH
@@ -246,7 +246,7 @@ nonisolated enum WidgetUIPrelude {
               @refresh_after = refresh_after.to_f
             end
             WidgetUI.presented = to_hash
-            self
+            nil
           end
         end
         """#

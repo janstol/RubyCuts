@@ -170,6 +170,13 @@ extension EmbeddedRubyTests {
             #expect(result.stdout == "hi\n")
         }
 
+        @Test func presentLeavesNoResultInTheConsole() async {
+            // present returns nil, so a script ending in it doesn't show "#<WidgetUI:0x...>" as its result.
+            let result = await RubyRuntime.shared.run(#"WidgetUI.new { Text("x") }.present"#)
+            #expect(result.result.isEmpty)
+            #expect(!result.hasError)
+        }
+
         @Test func aLaterRunDoesNotInheritAnEarlierLayout() async throws {
             _ = await RubyRuntime.shared.run(#"WidgetUI.new { Text("old") }.present"#)
             let result = await RubyRuntime.shared.run("1 + 1")

@@ -350,7 +350,7 @@ nonisolated enum DocCatalog {
             DocMember(
                 signature: ".present(refresh_after: nil)",
                 explanation:
-                    "Makes this the layout the widget and the console preview show. Call it once, at the end; if it's called more than once, the last call wins. refresh_after asks the widget to run the script again after that many seconds, at least 300; without it the widget asks for every 15 minutes."
+                    "Makes this the layout the widget and the console preview show. Call it once, at the end; if it's called more than once, the last call wins. refresh_after asks the widget to run the script again after that many seconds, at least 300; without it the widget asks for every 15 minutes. Returns nil."
             ),
             DocMember(
                 signature: "WidgetUI.family",
