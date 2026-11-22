@@ -11,6 +11,8 @@
 # commits the new number) before each release; uploading the same build number
 # twice for a platform fails at App Store Connect.
 #
+# A successful upload tags the commit v<version>-<build> (local only); a --no-upload run doesn't tag.
+#
 # Uploads authenticate with an App Store Connect API key, taken from:
 #   ASC_KEY_ID      the key ID
 #   ASC_ISSUER_ID   the issuer ID
@@ -81,6 +83,16 @@ xcodebuild -exportArchive -archivePath "$archive" -exportOptionsPlist "$options"
 
 if $upload; then
   echo "Uploaded $version ($build_number). It shows up in TestFlight after processing."
+  # One tag per release: the iOS and macOS uploads share the version, the build number and the commit, so the second upload finds the tag already in place. Never pushed from here.
+  tag="v$version-$build_number"
+  if ! git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+    git tag -a "$tag" -m "RubyCuts $version ($build_number)"
+    echo "Tagged $tag (local; push with: git push origin $tag)."
+  elif [[ "$(git rev-list -n 1 "$tag")" == "$(git rev-parse HEAD)" ]]; then
+    echo "Tag $tag already marks this commit."
+  else
+    echo "release: warning: tag $tag already exists on another commit; not moved." >&2
+  fi
 else
   echo "Archived and exported $version ($build_number) to $out/export (not uploaded)."
 fi
