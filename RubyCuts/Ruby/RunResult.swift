@@ -64,4 +64,7 @@ nonisolated struct RunResult: Sendable {
 
     /// The moment ``RubyRuntime/run(_:input:)`` finished the user-code eval.
     var finishedAt: Date = .now
+
+    /// The widget layout the script presented with `WidgetUI.new { ... }.present`, as the JSON ``WidgetLayout/decode(json:)`` reads, or `nil` if it presented nothing. Captured in the same VM job as the run, so concurrent runs can't see each other's layouts.
+    var presentedLayoutJSON: String?
 }

@@ -179,6 +179,9 @@ actor RubyRuntime {
 
         var result = RunResult(stdout: "", stderr: "", result: "", errorMessage: nil)
 
+        // Clear any layout an earlier run presented, so presentedLayoutJSON below reflects this run only. Best-effort: if WidgetUI failed to load at boot, there is nothing to clear.
+        _ = try? evalRaw("WidgetUI.presented = nil if defined?(WidgetUI)")
+
         // The hook is installed only around the user-code eval, never
         // around boot, the StringIO setup above, the input setup/teardown,
         // the backtrace read below, or the $cap_out/$cap_err reads, all of
@@ -216,6 +219,8 @@ actor RubyRuntime {
         result.stderr = (try? evalRaw("$cap_err.string")) ?? ""
         result.stdoutTruncated = (try? evalRaw("$cap_out.truncated")) == "true"
         result.stderrTruncated = (try? evalRaw("$cap_err.truncated")) == "true"
+        let layoutJSON = (try? evalRaw("defined?(WidgetUI) && WidgetUI.presented_json")) ?? ""
+        result.presentedLayoutJSON = layoutJSON.isEmpty ? nil : layoutJSON
         return result
     }
 
@@ -700,7 +705,7 @@ actor RubyRuntime {
         return FileManager.default.fileExists(atPath: cacertURL.path) ? cacertURL : nil
     }
 
-    /// Locates the bundled CRuby stdlib directory: `RubyCuts.app/Contents/Resources/stdlib` on macOS, `RubyCuts.app/stdlib` on iOS. `RubyCutsTests` is app-hosted (`TEST_HOST`/`BUNDLE_LOADER` in the project), so `Bundle.main` during a test run resolves to `RubyCuts.app` too.
+    /// Locates the bundled CRuby stdlib directory: `RubyCuts.app/Contents/Resources/stdlib` on macOS, `RubyCuts.app/stdlib` on iOS, found through ``appBundle`` so the widget extension resolves the same folder. `RubyCutsTests` is app-hosted (`TEST_HOST`/`BUNDLE_LOADER` in the project), so `Bundle.main` during a test run resolves to `RubyCuts.app` too.
     ///
     /// - Returns: The resource's URL, or `nil` if it's missing: a build that skipped `scripts/build-cruby.rb`, or a stale bundle from before this resource was wired up.
     ///
@@ -708,7 +713,7 @@ actor RubyRuntime {
     /// ``bundledCACertURL()``, both of which run on the VM thread, not the
     /// main actor.
     private nonisolated static func bundledStdlibURL() -> URL? {
-        guard let resourceURL = Bundle.main.resourceURL else { return nil }
+        guard let resourceURL = appBundle.resourceURL else { return nil }
         let stdlibURL = resourceURL.appending(component: "stdlib", directoryHint: .isDirectory)
 
         var isDirectory: ObjCBool = false
@@ -717,6 +722,17 @@ actor RubyRuntime {
         else { return nil }
 
         return stdlibURL
+    }
+
+    /// The app bundle that holds the stdlib. That's `Bundle.main` in the app, but in the widget extension `Bundle.main` is the `.appex` nested inside the app (`RubyCuts.app/PlugIns/` on iOS, `RubyCuts.app/Contents/PlugIns/` on macOS), so this walks up to the enclosing `.app` and the extension reads the app's copy instead of shipping its own.
+    private nonisolated static var appBundle: Bundle {
+        let main = Bundle.main
+        guard main.bundleURL.pathExtension == "appex" else { return main }
+        var url = main.bundleURL.deletingLastPathComponent()
+        while url.pathExtension != "app", url.pathComponents.count > 1 {
+            url = url.deletingLastPathComponent()
+        }
+        return Bundle(url: url) ?? main
     }
 }
 

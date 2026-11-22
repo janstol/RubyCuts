@@ -25,3 +25,5 @@ SWIFT_ACTIVE_COMPILATION_CONDITIONS = $(inherited) RUBYCUTS_GEMS
 MARKETING_VERSION = 1.0.0
 // The build number: one counter for both platforms, so iOS and macOS uploads of the same release get the same number. It never goes back down, not even for a new MARKETING_VERSION, because the Mac App Store requires build numbers to increase across versions. Bump it with `mise run bump:build` before releasing.
 CURRENT_PROJECT_VERSION = 100
+// The app's bundle identifier. The widget extension's is derived from it ($(APP_BUNDLE_IDENTIFIER).Widget), because an extension's identifier has to start with its app's. Override this one, not PRODUCT_BUNDLE_IDENTIFIER, to build a differently identified copy (see the install:device task in mise.toml); a command-line PRODUCT_BUNDLE_IDENTIFIER would give the extension the app's identifier too.
+APP_BUNDLE_IDENTIFIER = dev.stol.RubyCuts

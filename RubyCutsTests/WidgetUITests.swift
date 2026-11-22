@@ -160,6 +160,29 @@ extension EmbeddedRubyTests {
             #expect(json == "nil")
         }
 
+        // MARK: - RunResult.presentedLayoutJSON
+
+        @Test func runReportsThePresentedLayout() async throws {
+            let result = await RubyRuntime.shared.run(
+                #"puts "hi"; WidgetUI.new { Text("from run") }.present"#)
+            let json = try #require(result.presentedLayoutJSON)
+            #expect(try WidgetLayout.decode(json: json).root.text == "from run")
+            #expect(result.stdout == "hi\n")
+        }
+
+        @Test func aLaterRunDoesNotInheritAnEarlierLayout() async throws {
+            _ = await RubyRuntime.shared.run(#"WidgetUI.new { Text("old") }.present"#)
+            let result = await RubyRuntime.shared.run("1 + 1")
+            #expect(result.presentedLayoutJSON == nil)
+        }
+
+        @Test func aRunThatRaisesAfterPresentingStillReportsTheError() async throws {
+            let result = await RubyRuntime.shared.run(
+                #"WidgetUI.new { Text("x") }.present; raise "boom""#)
+            #expect(result.errorMessage?.contains("boom") == true)
+            #expect(result.presentedLayoutJSON != nil)
+        }
+
         @Test(arguments: [
             (#"WidgetUI.new { Text("x").color(:chartreuse) }"#, "unknown color :chartreuse"),
             (##"WidgetUI.new { Text("x").background("#12") }"##, ##"invalid hex color "#12""##),

@@ -1,4 +1,5 @@
 import SwiftUI
+import WidgetKit
 
 /// Edits one script's source and runs it. Takes the ``Script`` and the
 /// ``ScriptStore`` it lives in (the list view and the preview use the same
@@ -587,6 +588,10 @@ struct ScriptEditorView: View {
             runResult = result
             isRunning = false
             runTask = nil
+            // A widget script: have any widget showing it run it again now rather than at its next scheduled refresh. Reloads requested while the app is in the foreground don't count against the widget's refresh budget.
+            if result.presentedLayoutJSON != nil {
+                WidgetCenter.shared.reloadAllTimelines()
+            }
         }
     }
 }

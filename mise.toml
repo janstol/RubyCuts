@@ -49,7 +49,7 @@ if [ -z "$device" ]; then echo "No connected iPhone found; set IOS_DEVICE=<UDID>
 echo "Installing RubyCuts Dev on $device"
 xcodebuild {{vars.project}} -configuration Debug -destination "id=$device" \
   -derivedDataPath build/DevDevice -allowProvisioningUpdates \
-  PRODUCT_BUNDLE_IDENTIFIER=dev.stol.RubyCuts.dev \
+  APP_BUNDLE_IDENTIFIER=dev.stol.RubyCuts.dev \
   INFOPLIST_KEY_CFBundleDisplayName="RubyCuts Dev" \
   -quiet build
 xcrun devicectl device install app --device "$device" build/DevDevice/Build/Products/Debug-iphoneos/RubyCuts.app

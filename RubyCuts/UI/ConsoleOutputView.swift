@@ -29,6 +29,15 @@ struct ConsoleOutputView: View {
             // instead of scrolling sideways.
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
+                    // First, because for a widget script the layout is the main output.
+                    if let layoutJSON = result.presentedLayoutJSON {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Widget")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            WidgetPreviewView(layoutJSON: layoutJSON)
+                        }
+                    }
                     if !result.stdout.isEmpty {
                         let output = Self.text(result.stdout, truncated: result.stdoutTruncated)
                         section("Output", text: Self.displayed(output))
