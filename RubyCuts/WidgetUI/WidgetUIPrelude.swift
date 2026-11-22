@@ -36,6 +36,9 @@ nonisolated enum WidgetUIPrelude {
           ZSTACK_ALIGNMENTS = %i[
             top_leading top top_trailing leading center trailing bottom_leading bottom bottom_trailing
           ].freeze
+          FAMILIES = %i[small medium large].freeze
+          # The shortest refresh interval a script may ask for, in seconds. Shorter requests would only use up the widget's refresh budget sooner.
+          MINIMUM_REFRESH = 300
 
           class << self
             # The layout from the most recent `present`, as a Hash, or nil.
@@ -44,6 +47,23 @@ nonisolated enum WidgetUIPrelude {
             # The presented layout as a JSON string, or nil if nothing was presented.
             def presented_json
               presented && JSON.generate(presented)
+            end
+
+            # The size of the widget being drawn: :small, :medium or :large. :medium when the script runs outside a widget or preview, e.g. from Shortcuts.
+            def family
+              @family_read = true
+              @family || :medium
+            end
+
+            # Whether the script read `family` during this run, so the host knows a layout drawn for one size may not suit the others.
+            def family_read? = @family_read == true
+
+            # Called by the host before each run: clears the previous layout and sets the size to draw for (nil outside a widget or preview).
+            def prepare_run(family)
+              raise ArgumentError, "unknown widget family #{family.inspect}" unless family.nil? || FAMILIES.include?(family)
+              self.presented = nil
+              @family = family
+              @family_read = false
             end
 
             def color(value)
@@ -210,11 +230,21 @@ nonisolated enum WidgetUIPrelude {
                     end
           end
 
-          def to_hash = { 'version' => FORMAT_VERSION, 'root' => @root.to_hash }
+          def to_hash
+            hash = { 'version' => FORMAT_VERSION, 'root' => @root.to_hash }
+            hash['refresh_after'] = @refresh_after if @refresh_after
+            hash
+          end
           alias to_h to_hash
 
-          # Marks this layout as the one to show. When several are presented, the last one wins.
-          def present
+          # Marks this layout as the one to show. When several are presented, the last one wins. `refresh_after` asks the widget to run the script again after that many seconds (at least MINIMUM_REFRESH); the system decides the actual time.
+          def present(refresh_after: nil)
+            unless refresh_after.nil?
+              unless refresh_after.is_a?(Numeric) && refresh_after >= MINIMUM_REFRESH
+                raise ArgumentError, "refresh_after must be a number of seconds, at least #{MINIMUM_REFRESH}, got #{refresh_after.inspect}"
+              end
+              @refresh_after = refresh_after.to_f
+            end
             WidgetUI.presented = to_hash
             self
           end

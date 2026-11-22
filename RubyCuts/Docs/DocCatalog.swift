@@ -169,6 +169,8 @@ nonisolated enum DocCatalog {
             A script can draw a widget. Build the layout with WidgetUI and end with present, then run the script in the app: the console shows a preview at small and medium size.
 
             To put it on the Home Screen or the Mac desktop, add the RubyCuts widget, edit it and choose the script. The widget runs the script itself, about every 15 minutes or as often as the system allows, so it can fetch fresh data each time. Running a widget script in the app refreshes the widget straight away, and tapping the widget opens its script.
+
+            A script can ask for another refresh interval with present(refresh_after: seconds), and adapt to the widget's size with WidgetUI.family. Pick Small, Medium or Large above the console preview to see each size; a script that reads WidgetUI.family runs again for the new size.
             """,
         examples: [
             DocExample(
@@ -340,9 +342,14 @@ nonisolated enum DocCatalog {
                     "Builds a layout from the views called inside the block. Several top-level views are stacked vertically."
             ),
             DocMember(
-                signature: ".present",
+                signature: ".present(refresh_after: nil)",
                 explanation:
-                    "Makes this the layout the widget and the console preview show. Call it once, at the end; if it's called more than once, the last call wins."
+                    "Makes this the layout the widget and the console preview show. Call it once, at the end; if it's called more than once, the last call wins. refresh_after asks the widget to run the script again after that many seconds, at least 300; without it the widget asks for every 15 minutes."
+            ),
+            DocMember(
+                signature: "WidgetUI.family",
+                explanation:
+                    "The size being drawn: :small, :medium or :large. Use it to show more on bigger widgets. Outside a widget or the console preview, e.g. from Shortcuts, it's :medium."
             ),
             DocMember(
                 signature: "HStack(alignment: :center, spacing: nil) { ... }",
@@ -403,6 +410,23 @@ nonisolated enum DocCatalog {
                       .color(:white)
                       .background(["#34C759", "#248A3D"])
                     end.present
+                    """#,
+                verification: .runs()),
+            DocExample(
+                title: "A layout for each size",
+                code: #"""
+                    WidgetUI.new do
+                      VStack(alignment: :leading) {
+                        Text("Inbox").font(:headline)
+                        Text("12 unread").font(:caption)
+                        if WidgetUI.family != :small
+                          Spacer()
+                          Text("Latest: Lunch on Friday?").font(:footnote)
+                        end
+                      }
+                      .padding
+                      .frame(width: :infinity, height: :infinity)
+                    end.present(refresh_after: 30 * 60)
                     """#,
                 verification: .runs()),
             DocExample(

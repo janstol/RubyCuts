@@ -67,4 +67,7 @@ nonisolated struct RunResult: Sendable {
 
     /// The widget layout the script presented with `WidgetUI.new { ... }.present`, as the JSON ``WidgetLayout/decode(json:)`` reads, or `nil` if it presented nothing. Captured in the same VM job as the run, so concurrent runs can't see each other's layouts.
     var presentedLayoutJSON: String?
+
+    /// Whether the script read `WidgetUI.family`, meaning its layout was drawn for one size and should be built again, not just redrawn, for another.
+    var readWidgetFamily: Bool = false
 }

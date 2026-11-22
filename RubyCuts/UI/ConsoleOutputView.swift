@@ -13,6 +13,9 @@ import SwiftUI
 struct ConsoleOutputView: View {
     let result: RunResult
 
+    /// The size the widget preview shows. Defaults to a constant for previews and tests that don't show one.
+    var widgetFamily: Binding<WidgetUIFamily> = .constant(.medium)
+
     /// Called when the Clear button is tapped. Defaults to a no-op so
     /// previews and tests that don't care about dismissal can ignore it.
     var onClear: () -> Void = {}
@@ -35,7 +38,7 @@ struct ConsoleOutputView: View {
                             Text("Widget")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
-                            WidgetPreviewView(layoutJSON: layoutJSON)
+                            WidgetPreviewView(layoutJSON: layoutJSON, family: widgetFamily)
                         }
                     }
                     if !result.stdout.isEmpty {

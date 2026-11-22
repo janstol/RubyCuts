@@ -115,6 +115,9 @@ struct ScriptEditorView: View {
     /// `nil` by the console's Clear button.
     @State private var runResult: RunResult?
 
+    /// The widget size the console previews and the next run draws for (`WidgetUI.family`).
+    @State private var widgetFamily: WidgetUIFamily = .medium
+
     /// The console panel's height, dragged via ``ConsoleResizeHandle``.
     /// `@AppStorage`, not the injected-`UserDefaults` seam ``ScriptLibrary``
     /// uses elsewhere. This is per-view chrome with no test surface and no
@@ -180,6 +183,12 @@ struct ScriptEditorView: View {
                 }
             }
             .onChange(of: source) { _, _ in rehighlight() }
+            // A widget script that reads WidgetUI.family laid itself out for the old size, so build it again for the new one. Other layouts are only redrawn, without running the script again.
+            .onChange(of: widgetFamily) { _, _ in
+                if runResult?.readWidgetFamily == true, !isRunning {
+                    run()
+                }
+            }
             .alert("Error", isPresented: $showError) {
                 Button("OK", role: .cancel) {}
             } message: {
@@ -209,11 +218,14 @@ struct ScriptEditorView: View {
                         height: $consoleHeight,
                         bounds: consoleHeightBounds(in: proxy.size.height)
                     )
-                    ConsoleOutputView(result: runResult, onClear: { self.runResult = nil })
-                        .frame(height: clampedConsoleHeight(in: proxy.size.height))
-                        // Opaque, not a material: text over a translucent
-                        // material fails the accessibility contrast audit.
-                        .background(.background.secondary)
+                    ConsoleOutputView(
+                        result: runResult, widgetFamily: $widgetFamily,
+                        onClear: { self.runResult = nil }
+                    )
+                    .frame(height: clampedConsoleHeight(in: proxy.size.height))
+                    // Opaque, not a material: text over a translucent
+                    // material fails the accessibility contrast audit.
+                    .background(.background.secondary)
                 }
             }
         }
@@ -581,7 +593,8 @@ struct ScriptEditorView: View {
     private func run() {
         isRunning = true
         runTask = Task {
-            var result = await RubyRuntime.shared.runCancellable(sourceText)
+            var result = await RubyRuntime.shared.runCancellable(
+                sourceText, widgetFamily: widgetFamily)
             #if DEBUG
                 ScreenshotFixture.pinClock(of: &result)
             #endif

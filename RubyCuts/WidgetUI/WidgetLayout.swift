@@ -9,6 +9,13 @@ nonisolated struct WidgetLayout: Decodable, Hashable, Sendable {
     var version: Int
     /// The outermost view.
     var root: WidgetNode
+    /// Seconds until the script asked to be run again (`present(refresh_after:)`), or `nil` for the widget's default. The Ruby side enforces the minimum.
+    var refreshAfter: Double?
+
+    private enum CodingKeys: String, CodingKey {
+        case version, root
+        case refreshAfter = "refresh_after"
+    }
 
     /// Decodes a layout from the JSON string `WidgetUI.presented_json` returns.
     /// - Throws: `WidgetLayoutError.unsupportedVersion` for a layout written by a newer format, or a `DecodingError` if the JSON doesn't match the format.
@@ -19,6 +26,11 @@ nonisolated struct WidgetLayout: Decodable, Hashable, Sendable {
         }
         return layout
     }
+}
+
+/// The widget size a script draws for, which it reads as `WidgetUI.family`. The raw values are the Ruby symbols' names.
+nonisolated enum WidgetUIFamily: String, CaseIterable, Sendable {
+    case small, medium, large
 }
 
 /// An error decoding a ``WidgetLayout``.

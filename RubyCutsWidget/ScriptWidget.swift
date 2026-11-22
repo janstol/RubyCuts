@@ -44,8 +44,8 @@ nonisolated struct ScriptEntry: TimelineEntry {
 
 /// Runs the configured script for each timeline. Placeholders and the widget gallery get a static sample instead, so browsing the gallery doesn't run anything.
 nonisolated struct ScriptTimelineProvider: AppIntentTimelineProvider {
-    /// How long until WidgetKit is asked to refresh again. The system treats this as a lower bound and may wait longer.
-    static let refreshInterval: TimeInterval = 15 * 60
+    /// How long until WidgetKit is asked to refresh again, unless the script asked for another interval with `present(refresh_after:)`. The system treats it as a lower bound and may wait longer.
+    static let defaultRefreshInterval: TimeInterval = 15 * 60
 
     func placeholder(in context: Context) -> ScriptEntry {
         ScriptEntry(date: .now, content: .layout(.sample))
@@ -55,21 +55,40 @@ nonisolated struct ScriptTimelineProvider: AppIntentTimelineProvider {
         if context.isPreview {
             return ScriptEntry(date: .now, content: .layout(.sample))
         }
-        return await entry(for: configuration)
+        return await entry(for: configuration, family: context.family)
     }
 
     func timeline(for configuration: SelectScriptIntent, in context: Context) async -> Timeline<
         ScriptEntry
     > {
-        return Timeline(
-            entries: [await entry(for: configuration)],
-            policy: .after(.now.addingTimeInterval(Self.refreshInterval)))
+        let entry = await entry(for: configuration, family: context.family)
+        var interval = Self.defaultRefreshInterval
+        if case .layout(let layout) = entry.content, let requested = layout.refreshAfter {
+            interval = requested
+        }
+        return Timeline(entries: [entry], policy: .after(.now.addingTimeInterval(interval)))
     }
 
-    private func entry(for configuration: SelectScriptIntent) async -> ScriptEntry {
+    /// Runs the script for a widget of this size. Each widget on screen gets its own timeline request, so a script that reads `WidgetUI.family` lays out every size correctly.
+    private func entry(for configuration: SelectScriptIntent, family: WidgetFamily) async
+        -> ScriptEntry
+    {
         ScriptEntry(
-            date: .now, content: await ScriptWidgetRunner.content(for: configuration.script),
+            date: .now,
+            content: await ScriptWidgetRunner.content(
+                for: configuration.script, family: WidgetUIFamily(family)),
             scriptFileName: configuration.script?.id)
+    }
+}
+
+nonisolated extension WidgetUIFamily {
+    /// The size a script sees for a WidgetKit family. The widget only supports the system families, so anything else counts as medium.
+    init(_ family: WidgetFamily) {
+        switch family {
+        case .systemSmall: self = .small
+        case .systemLarge: self = .large
+        default: self = .medium
+        }
     }
 }
 

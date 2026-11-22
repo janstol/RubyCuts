@@ -183,6 +183,49 @@ extension EmbeddedRubyTests {
             #expect(result.presentedLayoutJSON != nil)
         }
 
+        // MARK: - WidgetUI.family and refresh_after
+
+        @Test(arguments: WidgetUIFamily.allCases)
+        func familyReportsTheSizeTheRunWasGiven(_ family: WidgetUIFamily) async {
+            let result = await RubyRuntime.shared.run("puts WidgetUI.family", widgetFamily: family)
+            #expect(result.stdout == "\(family.rawValue)\n")
+            #expect(result.readWidgetFamily)
+        }
+
+        @Test func familyIsMediumOutsideAWidget() async {
+            _ = await RubyRuntime.shared.run("1", widgetFamily: .small)
+            // A later run without a family (e.g. from Shortcuts) mustn't inherit the earlier one.
+            let result = await RubyRuntime.shared.run("puts WidgetUI.family")
+            #expect(result.stdout == "medium\n")
+        }
+
+        @Test func aLayoutThatIgnoresTheFamilyIsNotFlagged() async {
+            _ = await RubyRuntime.shared.run("WidgetUI.family", widgetFamily: .large)
+            let result = await RubyRuntime.shared.run(
+                #"WidgetUI.new { Text("same everywhere") }.present"#, widgetFamily: .small)
+            #expect(!result.readWidgetFamily)
+        }
+
+        @Test func refreshAfterIsCarriedInTheLayout() async throws {
+            let result = await RubyRuntime.shared.run(
+                #"WidgetUI.new { Text("x") }.present(refresh_after: 3600)"#)
+            let layout = try WidgetLayout.decode(json: try #require(result.presentedLayoutJSON))
+            #expect(layout.refreshAfter == 3600)
+        }
+
+        @Test func noRefreshAfterLeavesTheDefault() async throws {
+            let layout = try await present(#"WidgetUI.new { Text("x") }.present"#)
+            #expect(layout.refreshAfter == nil)
+        }
+
+        @Test(arguments: ["60", "-1", #""soon""#])
+        func refreshAfterRejectsTooShortOrNonNumericValues(_ value: String) async throws {
+            let message = try #require(
+                await errorMessage(
+                    #"WidgetUI.new { Text("x") }.present(refresh_after: "# + value + ")"))
+            #expect(message.contains("refresh_after must be a number of seconds, at least 300"))
+        }
+
         @Test(arguments: [
             (#"WidgetUI.new { Text("x").color(:chartreuse) }"#, "unknown color :chartreuse"),
             (##"WidgetUI.new { Text("x").background("#12") }"##, ##"invalid hex color "#12""##),

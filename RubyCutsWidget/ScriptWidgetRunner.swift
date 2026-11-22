@@ -13,8 +13,10 @@ nonisolated enum ScriptWidgetRunner {
     /// How long a script may run before it's cancelled. WidgetKit doesn't document how long a timeline request may take, so this stays well under a minute. Cancellation can't interrupt a blocking call such as a network read, so scripts should set their own timeouts on those too.
     static let runTimeout: Duration = .seconds(15)
 
-    /// Loads `entity`'s source, runs it, and returns what the widget should show.
-    static func content(for entity: ScriptEntity?) async -> ScriptWidgetContent {
+    /// Loads `entity`'s source, runs it for a widget of size `family`, and returns what the widget should show.
+    static func content(for entity: ScriptEntity?, family: WidgetUIFamily) async
+        -> ScriptWidgetContent
+    {
         guard let entity else {
             return .message(
                 symbol: "hand.tap", title: "Choose a script",
@@ -38,7 +40,7 @@ nonisolated enum ScriptWidgetRunner {
                 detail: error.localizedDescription)
         }
 
-        let result = await run(source)
+        let result = await run(source, family: family)
         return content(from: result, scriptName: entity.name)
     }
 
@@ -69,8 +71,8 @@ nonisolated enum ScriptWidgetRunner {
     }
 
     /// Runs `source`, cancelling it after ``runTimeout``.
-    private static func run(_ source: String) async -> RunResult {
-        let run = Task { await RubyRuntime.shared.runCancellable(source) }
+    private static func run(_ source: String, family: WidgetUIFamily) async -> RunResult {
+        let run = Task { await RubyRuntime.shared.runCancellable(source, widgetFamily: family) }
         let timer = Task {
             try await Task.sleep(for: runTimeout)
             run.cancel()

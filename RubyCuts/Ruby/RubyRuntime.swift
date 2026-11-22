@@ -101,8 +101,12 @@ actor RubyRuntime {
     /// before it can be overwritten by a later eval. Empty on a clean run and
     /// on non-exception control-flow failures (a top-level `return`/`break`/
     /// `throw`), which have no exception object to read frames from.
-    func run(_ code: String, input: RunInput = .empty) -> RunResult {
-        run(code, input: input, cancellation: nil)
+    ///
+    /// `widgetFamily` is the size `WidgetUI.family` reports during the run: set for a widget or a console preview, `nil` (reported as `:medium`) otherwise.
+    func run(
+        _ code: String, input: RunInput = .empty, widgetFamily: WidgetUIFamily? = nil
+    ) -> RunResult {
+        run(code, input: input, widgetFamily: widgetFamily, cancellation: nil)
     }
 
     /// The shared body of ``run(_:input:)`` and ``runCancellable(_:input:)``.
@@ -111,7 +115,8 @@ actor RubyRuntime {
     /// otherwise the cancellation hook watches that run, and only that run,
     /// while its user code executes.
     private func run(
-        _ code: String, input: RunInput, cancellation: RunCancellation?
+        _ code: String, input: RunInput, widgetFamily: WidgetUIFamily?,
+        cancellation: RunCancellation?
     ) -> RunResult {
         if let cancellation, cancellation.isCancelled {
             var result = RunResult(
@@ -179,8 +184,9 @@ actor RubyRuntime {
 
         var result = RunResult(stdout: "", stderr: "", result: "", errorMessage: nil)
 
-        // Clear any layout an earlier run presented, so presentedLayoutJSON below reflects this run only. Best-effort: if WidgetUI failed to load at boot, there is nothing to clear.
-        _ = try? evalRaw("WidgetUI.presented = nil if defined?(WidgetUI)")
+        // Clear any layout an earlier run presented, so presentedLayoutJSON below reflects this run only, and set the size WidgetUI.family reports. The family is one of WidgetUIFamily's fixed raw values, so it's safe to put in the source. Best-effort: if WidgetUI failed to load at boot, there is nothing to prepare.
+        let familyLiteral = widgetFamily.map { ":\($0.rawValue)" } ?? "nil"
+        _ = try? evalRaw("WidgetUI.prepare_run(\(familyLiteral)) if defined?(WidgetUI)")
 
         // The hook is installed only around the user-code eval, never
         // around boot, the StringIO setup above, the input setup/teardown,
@@ -221,6 +227,8 @@ actor RubyRuntime {
         result.stderrTruncated = (try? evalRaw("$cap_err.truncated")) == "true"
         let layoutJSON = (try? evalRaw("defined?(WidgetUI) && WidgetUI.presented_json")) ?? ""
         result.presentedLayoutJSON = layoutJSON.isEmpty ? nil : layoutJSON
+        result.readWidgetFamily =
+            (try? evalRaw("defined?(WidgetUI) && WidgetUI.family_read?")) == "true"
         return result
     }
 
@@ -307,10 +315,12 @@ actor RubyRuntime {
     ///   (between Ruby statements, not mid-syscall), not a kill switch.
     /// - Cancelled after it finished: nothing reads that run's flag any more,
     ///   so a later run is unaffected.
-    nonisolated func runCancellable(_ code: String, input: RunInput = .empty) async -> RunResult {
+    nonisolated func runCancellable(
+        _ code: String, input: RunInput = .empty, widgetFamily: WidgetUIFamily? = nil
+    ) async -> RunResult {
         let cancellation = RunCancellation()
         return await withTaskCancellationHandler {
-            await run(code, input: input, cancellation: cancellation)
+            await run(code, input: input, widgetFamily: widgetFamily, cancellation: cancellation)
         } onCancel: {
             cancellation.cancel()
         }
