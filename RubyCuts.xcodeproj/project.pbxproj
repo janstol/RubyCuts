@@ -99,6 +99,7 @@
 				Native/ClipboardCapability.swift,
 				Native/NativeBridge.swift,
 				Native/NotificationCapability.swift,
+				Native/ScriptHost.swift,
 				Ruby/RubyRuntime.swift,
 				Ruby/RubyVMExecutor.swift,
 				Ruby/RunInput.swift,

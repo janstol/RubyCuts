@@ -57,16 +57,16 @@ enum NotificationCapability {
         cachedAuthorizationStatus = settings.authorizationStatus
     }
 
-    /// Registers the notify handler on `bridge`.
+    /// Registers the notify handler on `bridge`. `host` decides whether a missing permission may be requested; see ``decision(for:host:)``.
     @MainActor
-    static func register(in bridge: NativeBridge) {
+    static func register(in bridge: NativeBridge, host: ScriptHost = .current) {
         bridge.register("device.notification.notify") { args in
             guard args.count == 2 else {
                 throw NativeBridgeError(
                     message: "device.notification.notify requires a title and a body"
                 )
             }
-            try post(title: args[0], body: args[1])
+            try post(title: args[0], body: args[1], host: host)
             return nil
         }
     }
@@ -85,17 +85,48 @@ enum NotificationCapability {
         end
         """
 
-    @MainActor
-    private static func post(title: String, body: String) throws {
-        switch cachedAuthorizationStatus {
+    /// What a `notify` call does for a given permission state, in a given host.
+    nonisolated enum Decision: Equatable, Sendable {
+        /// Post the notification.
+        case post
+        /// Ask for permission (the app only), then fail with this message so the script can be run again.
+        case requestPermission(message: String)
+        /// Fail with this message.
+        case fail(message: String)
+    }
+
+    /// Decides what `notify` does. The widget never asks for permission: it runs in the background, so the system prompt would have nobody to answer it. There, an undecided permission fails with a pointer to the app instead.
+    nonisolated static func decision(
+        for status: UNAuthorizationStatus, host: ScriptHost
+    ) -> Decision {
+        switch status {
         case .authorized, .provisional, .ephemeral:
-            break
+            return .post
         case .denied:
-            throw NativeBridgeError(
-                message:
-                    "notifications are denied. Enable them in Settings to use Device::Notification"
-            )
+            return .fail(
+                message: "notifications are denied. Enable them in Settings to use Device::Notification")
         case .notDetermined:
+            switch host {
+            case .app:
+                return .requestPermission(
+                    message: "requesting notification permission. Allow it, then run the script again")
+            case .widget:
+                return .fail(
+                    message:
+                        "notifications haven't been allowed yet. Run a script that calls Device::Notification.notify in the app once and allow them; widget scripts can't ask for permission"
+                )
+            }
+        @unknown default:
+            return .fail(message: "notification authorization status is unknown")
+        }
+    }
+
+    @MainActor
+    private static func post(title: String, body: String, host: ScriptHost) throws {
+        switch decision(for: cachedAuthorizationStatus, host: host) {
+        case .post:
+            break
+        case .requestPermission(let message):
             // Permission is asked for just-in-time, on the first call, rather
             // than at launch (see `RubyCutsApp`). Nothing in `UserNotifications`
             // can be awaited from here. `post` runs synchronously from inside
@@ -103,22 +134,15 @@ enum NotificationCapability {
             // async, so the request is kicked off detached and this call
             // still has to fail. The OS prompt appears once the request
             // resolves; a second `Device::Notification.notify` call after
-            // granting succeeds. (This could become one call now that the VM
-            // thread is free to await the request directly; see this type's
-            // doc comment.)
+            // granting succeeds.
             Task.detached {
                 _ = try? await UNUserNotificationCenter.current()
                     .requestAuthorization(options: [.alert, .sound])
                 await refreshAuthorizationStatus()
             }
-            throw NativeBridgeError(
-                message:
-                    "requesting notification permission. Allow it, then run the script again"
-            )
-        @unknown default:
-            throw NativeBridgeError(
-                message: "notification authorization status is unknown"
-            )
+            throw NativeBridgeError(message: message)
+        case .fail(let message):
+            throw NativeBridgeError(message: message)
         }
 
         let content = UNMutableNotificationContent()

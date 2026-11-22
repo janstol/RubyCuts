@@ -13,16 +13,35 @@ import Foundation
 /// Reading on iOS shows the system paste banner. That's Apple's privacy gate
 /// on pasteboard reads, not something to suppress or work around.
 enum ClipboardCapability {
-    /// Registers the get/set handlers on `bridge`.
+    /// Registers the get/set handlers on `bridge`. In the widget extension both raise ``widgetUnavailableMessage`` instead (see ``isAvailable(in:)``).
     @MainActor
-    static func register(in bridge: NativeBridge) {
-        bridge.register("device.clipboard.get") { _ in currentText() }
+    static func register(in bridge: NativeBridge, host: ScriptHost = .current) {
+        bridge.register("device.clipboard.get") { _ in
+            try requireAvailable(in: host)
+            return currentText()
+        }
         bridge.register("device.clipboard.set") { args in
+            try requireAvailable(in: host)
             guard let text = args.first else {
                 throw NativeBridgeError(message: "device.clipboard.set requires one argument")
             }
             setText(text)
             return nil
+        }
+    }
+
+    /// Whether scripts in `host` may use the clipboard. Not in a widget: it runs in the background on every refresh, so it would read the clipboard (or try to show the paste prompt) and overwrite it without anyone looking.
+    nonisolated static func isAvailable(in host: ScriptHost) -> Bool {
+        host == .app
+    }
+
+    /// The error a widget script gets from `Device::Clipboard`.
+    nonisolated static let widgetUnavailableMessage =
+        "Device::Clipboard isn't available in widget scripts. Run the script in the app or from Shortcuts to use the clipboard."
+
+    private static func requireAvailable(in host: ScriptHost) throws {
+        guard isAvailable(in: host) else {
+            throw NativeBridgeError(message: widgetUnavailableMessage)
         }
     }
 

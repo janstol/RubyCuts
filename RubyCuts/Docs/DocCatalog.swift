@@ -211,6 +211,7 @@ nonisolated enum DocCatalog {
             "Widgets get little memory. Keep downloads small and avoid parsing very large JSON responses.",
             "The widget runs the saved version of the script. If the script fails, the widget shows the error; tap it to open the script.",
             "Installed gems aren't available to widget scripts yet. The bundled sqlite3 is.",
+            "Device::Clipboard isn't available in widget scripts. Device::Notification works once notifications are allowed in the app.",
         ]
     )
 
@@ -301,7 +302,8 @@ nonisolated enum DocCatalog {
                 verification: .compilesOnly)
         ],
         notes: [
-            "On iOS, reading the clipboard shows the system paste banner. That's Apple's privacy gate, not something RubyCuts can suppress."
+            "On iOS, reading the clipboard shows the system paste banner. That's Apple's privacy gate, not something RubyCuts can suppress.",
+            "Not available in widget scripts: a widget refreshes in the background, so it would read and overwrite the clipboard without you knowing. It raises an error there.",
         ]
     )
 
@@ -324,7 +326,8 @@ nonisolated enum DocCatalog {
                 verification: .compilesOnly)
         ],
         notes: [
-            "The first call after installing the app raises while the system shows its permission prompt. Allow notifications, then call notify again: the second call succeeds."
+            "The first call after installing the app raises while the system shows its permission prompt. Allow notifications, then call notify again: the second call succeeds.",
+            "Widget scripts can post notifications once they're allowed, but can't ask for permission. Allow them from the app first, by running a script that calls notify.",
         ]
     )
 

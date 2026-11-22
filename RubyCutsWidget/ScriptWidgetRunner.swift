@@ -40,6 +40,8 @@ nonisolated enum ScriptWidgetRunner {
                 detail: error.localizedDescription)
         }
 
+        // The app refreshes the notification permission when it comes to the foreground; the extension has no such moment, so read it before every run. Otherwise Device::Notification would always see it as undecided here.
+        await NotificationCapability.refreshAuthorizationStatus()
         let result = await run(source, family: family)
         return content(from: result, scriptName: entity.name)
     }
