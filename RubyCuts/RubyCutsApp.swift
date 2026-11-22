@@ -25,6 +25,10 @@ struct RubyCutsApp: App {
                     ScriptListView(library: library)
                         // Deliver links to the open window instead of opening a second one; the app is built around one window (see ScriptCommands).
                         .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
+                        // A fixed size in screenshot mode, which `mainWindowResizability` makes the window follow; nil x nil changes nothing.
+                        .frame(
+                            width: Self.screenshotWindowSize?.width,
+                            height: Self.screenshotWindowSize?.height)
                 #else
                     RootTabView(library: library)
                 #endif
@@ -49,6 +53,7 @@ struct RubyCutsApp: App {
             // (see `ScriptListView`'s `navigationSplitViewColumnWidth`).
             // Unavailable on iOS, hence the guard.
             .defaultSize(width: 900, height: 600)
+            .windowResizability(Self.mainWindowResizability)
         #endif
 
         #if os(macOS)
@@ -76,4 +81,20 @@ struct RubyCutsApp: App {
             }
         #endif
     }
+
+    #if os(macOS)
+        /// The main window's fixed size in screenshot mode (see ``ScreenshotFixture/macWindowSize``), otherwise `nil`.
+        private static var screenshotWindowSize: CGSize? {
+            #if DEBUG
+                ScreenshotFixture.macWindowSize
+            #else
+                nil
+            #endif
+        }
+
+        /// `.contentSize` in screenshot mode, so the window takes the content's fixed size even over a frame macOS remembers; the default otherwise.
+        private static var mainWindowResizability: WindowResizability {
+            screenshotWindowSize == nil ? .automatic : .contentSize
+        }
+    #endif
 }

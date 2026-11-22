@@ -15,6 +15,15 @@
         /// The launch argument that turns the fixture on.
         static let launchArgument = "-UIScreenshots"
 
+        #if os(macOS)
+            /// The Mac main window's content size in points when the app was launched with ``launchArgument``, otherwise `nil`. It makes a 1500 x 915 window, the size the first Mac App Store shots were taken at, so new ones match them once composed onto 2880 x 1800.
+            static var macWindowSize: CGSize? {
+                guard ProcessInfo.processInfo.arguments.contains(launchArgument) else { return nil }
+                // 863 = 915 minus the 52pt toolbar, which sits outside the content.
+                return CGSize(width: 1500, height: 863)
+            }
+        #endif
+
         /// Extra scripts shown next to the samples, so the list looks like
         /// someone actually uses the app.
         private static let demoScripts: [SampleScripts.Sample] = [
