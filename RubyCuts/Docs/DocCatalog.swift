@@ -166,7 +166,7 @@ nonisolated enum DocCatalog {
         title: "Widgets",
         summary: "Show a script's output on the Home Screen or desktop.",
         overview: """
-            A script can draw a widget. Build the layout with WidgetUI and end with present, then run the script in the app: the console shows a preview at small and medium size.
+            A script can draw a widget. Build the layout with WidgetUI and end with present, then run the script in the app: the console shows a preview, small, medium or large.
 
             To put it on the Home Screen or the Mac desktop, add the RubyCuts widget, edit it and choose the script. The widget runs the script itself, about every 15 minutes or as often as the system allows, so it can fetch fresh data each time. Running a widget script in the app refreshes the widget straight away, and tapping the widget opens its script.
 

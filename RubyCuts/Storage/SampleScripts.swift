@@ -114,7 +114,7 @@ nonisolated enum SampleScripts {
         # Widget
         #
         # Draws a Home Screen (or Mac desktop) widget with WidgetUI. Run it
-        # here first: the console shows a preview at small and medium size.
+        # here first: the console shows a preview, small, medium or large.
         # Then add the RubyCuts widget, edit it and pick this script. The
         # widget runs the script itself every so often and redraws, and
         # tapping it opens the script here.
