@@ -262,6 +262,7 @@
 /* Begin PBXShellScriptBuildPhase section */
 		DB954F0A3031C79900D2B0BA /* Check CRuby is built */ = {
 			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
 			files = (
 			);
