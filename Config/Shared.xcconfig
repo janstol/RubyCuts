@@ -20,3 +20,8 @@ OTHER_LDFLAGS = $(inherited) -lz -Wl,-force_load,$(CRUBY_DIR)/lib/$(PLATFORM_NAM
 
 // Gem installation UI (Settings > Gems, and the Reference line pointing to it). Delete this line to build without it, the fallback if App Review rejects downloadable gems under guideline 2.5.2. A build-time switch on purpose: guideline 2.3.1(a) requires every feature to be described in the review notes and reachable during review, so gems can't be switched on remotely after approval. Only the entry points are gated; the gem code itself stays compiled, so its tests run in both configurations.
 SWIFT_ACTIVE_COMPILATION_CONDITIONS = $(inherited) RUBYCUTS_GEMS
+
+// The version, shared by the app and by the iOS and macOS builds. Change it here, not in Xcode's General tab: that writes a per-target setting that would override this one.
+MARKETING_VERSION = 1.0.0
+// The build number: one counter for both platforms, so iOS and macOS uploads of the same release get the same number. It never goes back down, not even for a new MARKETING_VERSION, because the Mac App Store requires build numbers to increase across versions. Bump it with `mise run bump:build` before releasing.
+CURRENT_PROJECT_VERSION = 100

@@ -84,6 +84,21 @@ run = "swift format format --configuration .swift-format -i"
 description = "Archive the app and upload it to TestFlight (iOS by default, --macos for the Mac, --no-upload to only archive); needs ASC_KEY_ID/ASC_ISSUER_ID, see scripts/release.sh"
 run = "scripts/release.sh"
 
+[tasks."bump:build"]
+description = "Increment the shared build number in Config/Shared.xcconfig and commit it; run once per release, before releasing iOS and macOS from the same commit"
+run = '''
+set -euo pipefail
+file=Config/Shared.xcconfig
+[ -z "$(git status --porcelain)" ] || { echo "Working tree is not clean, commit or stash first." >&2; exit 1; }
+current=$(sed -n 's/^CURRENT_PROJECT_VERSION = //p' "$file")
+case "$current" in ''|*[!0-9]*) echo "Could not read CURRENT_PROJECT_VERSION from $file." >&2; exit 1 ;; esac
+next=$((current + 1))
+sed -i '' "s/^CURRENT_PROJECT_VERSION = $current\$/CURRENT_PROJECT_VERSION = $next/" "$file"
+git add "$file"
+git commit -q -m "Build $next"
+echo "Build number is now $next (committed). Release with: mise run release, then mise run release -- --macos"
+'''
+
 [tasks.hooks]
 description = "Enable the repo's git hooks (advisory swift-format lint on commit)"
 run = "git config core.hooksPath .githooks"

@@ -6,9 +6,10 @@
 #   mise run release -- --no-upload           # archive + local export only, to check signing
 #   mise run release -- --macos --no-upload
 #
-# The build number is the commit count of HEAD, so it only goes up and needs no
-# commit of its own. Override it with BUILD_NUMBER=123 if needed. Uploading the
-# same commit twice fails at App Store Connect (duplicate build number).
+# The version and build number come from Config/Shared.xcconfig, so the iOS and
+# macOS uploads of one release share them. Run `mise run bump:build` (which
+# commits the new number) before each release; uploading the same build number
+# twice for a platform fails at App Store Connect.
 #
 # Uploads authenticate with an App Store Connect API key, taken from:
 #   ASC_KEY_ID      the key ID
@@ -43,8 +44,12 @@ cd "$root"
 
 [[ -z "$(git status --porcelain)" ]] || fail "working tree is not clean, commit or stash first"
 
-build_number="${BUILD_NUMBER:-$(git rev-list --count HEAD)}"
-[[ "$build_number" =~ ^[0-9]+$ ]] || fail "could not work out a build number"
+xcconfig_value() {
+  sed -n "s/^$1 = //p" "$root/Config/Shared.xcconfig"
+}
+version="$(xcconfig_value MARKETING_VERSION)"
+build_number="$(xcconfig_value CURRENT_PROJECT_VERSION)"
+[[ "$build_number" =~ ^[0-9]+$ ]] || fail "could not read CURRENT_PROJECT_VERSION from Config/Shared.xcconfig"
 
 auth=()
 if $upload; then
@@ -55,13 +60,13 @@ if $upload; then
   auth=(-authenticationKeyPath "$key_path" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
 fi
 
-echo "Releasing RubyCuts for $platform, build $build_number ($(git rev-parse --short HEAD))"
+echo "Releasing RubyCuts $version ($build_number) for $platform from $(git rev-parse --short HEAD)"
 rm -rf "$out"
 mkdir -p "$out"
 
 xcodebuild -project RubyCuts.xcodeproj -scheme RubyCuts -configuration Release \
   -destination "generic/platform=$platform" -archivePath "$archive" -allowProvisioningUpdates \
-  ${auth[@]+"${auth[@]}"} "CURRENT_PROJECT_VERSION=$build_number" archive
+  ${auth[@]+"${auth[@]}"} archive
 
 # The export options say "upload"; for a dry run, export locally instead.
 options="$export_options"
@@ -75,7 +80,7 @@ xcodebuild -exportArchive -archivePath "$archive" -exportOptionsPlist "$options"
   -exportPath "$out/export" -allowProvisioningUpdates ${auth[@]+"${auth[@]}"}
 
 if $upload; then
-  echo "Uploaded build $build_number. It shows up in TestFlight after processing."
+  echo "Uploaded $version ($build_number). It shows up in TestFlight after processing."
 else
-  echo "Archived and exported build $build_number to $out/export (not uploaded)."
+  echo "Archived and exported $version ($build_number) to $out/export (not uploaded)."
 fi
