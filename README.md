@@ -36,6 +36,7 @@ It's inspired by [Rubyist](https://rubyist.app), but aims to be actively maintai
 - **Script editor.** Syntax highlighting, a console with output, errors, backtrace and timing, a Stop button for runaway scripts, plus search, sort, rename and sample scripts to start from.
 - **iCloud Drive sync.** Scripts live in a "RubyCuts" folder in iCloud Drive, so they sync between your devices and you can edit them in any editor. Without iCloud they're kept on the device.
 - **Gems.** Search and install pure-Ruby gems from rubygems.org, dependencies included, and `require` them right away. `sqlite3` comes bundled. Gems with C extensions can't be installed (Apple doesn't allow loading downloaded native code).
+- **Widgets.** Put a script on your Home Screen or Mac desktop: the "Ruby Script" widget runs it on the system's refresh schedule and draws what it builds with `WidgetUI` (text, SF Symbols, stacks, colors), in small, medium and large sizes. Tapping the widget opens the script.
 - **Native bridge.** `Device::Clipboard` and `Device::Notification` let scripts read and write the clipboard and post notifications.
 - **iPhone, iPad and Mac.** One universal app, with a menu bar, keyboard shortcuts and a Settings window on the Mac, and a built-in reference for the Ruby-to-Shortcuts contract.
 
