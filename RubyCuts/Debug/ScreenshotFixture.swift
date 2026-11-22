@@ -21,6 +21,7 @@
             SampleScripts.Sample(name: "Daily Note", source: dailyNote),
             SampleScripts.Sample(name: "Daily Weather", source: dailyWeather),
             SampleScripts.Sample(name: "Rename Photos", source: renamePhotos),
+            SampleScripts.Sample(name: "Today Widget", source: todayWidget),
         ]
 
         /// Minutes ago each script was last modified, by name. Anything not
@@ -29,6 +30,8 @@
             "Daily Note": 2,
             "Daily Weather": 9,
             "Rename Photos": 24,
+            "Today Widget": 33,
+            "Widget": 37,
             "Device Bridge": 41,
             "Fetch JSON": 47,
             "Hello Shortcuts": 52,
@@ -126,6 +129,48 @@
               ext = File.extname(line.strip).downcase
               puts format("%s %s %03d%s", prefix, Time.now.strftime("%Y-%m-%d"), index, ext)
             end
+            """
+
+        /// Fixed data rather than a live API, so the widget screenshot looks
+        /// the same on every run.
+        private static let todayWidget = """
+            # Today Widget
+            #
+            # The weather and today's meetings on one widget. A real version
+            # would fetch both from an API. The small size shows only the
+            # weather.
+
+            weather = { symbol: "cloud.sun.fill", now: 18, high: 21, low: 12, summary: "Partly cloudy" }
+            meetings = [["10:30", "Design review"], ["13:00", "Lunch with Ana"], ["16:15", "1:1"]]
+
+            WidgetUI.new do
+              HStack(alignment: :top, spacing: 16) {
+                VStack(alignment: :leading, spacing: 2) {
+                  Image(system: weather[:symbol]).font(:title2)
+                  Spacer()
+                  Text("#{weather[:now]}°").size(44).bold
+                  Text(weather[:summary]).font(:caption)
+                  Text("H:#{weather[:high]}°  L:#{weather[:low]}°").font(:caption).opacity(0.8)
+                }
+                if WidgetUI.family != :small
+                  VStack(alignment: :leading, spacing: 6) {
+                    Text("Today").font(:caption).bold.opacity(0.8)
+                    meetings.each do |time, title|
+                      VStack(alignment: :leading, spacing: 0) {
+                        Text(title).font(:subheadline).bold
+                        Text(time).font(:caption).opacity(0.8)
+                      }
+                    end
+                    Spacer()
+                  }
+                  .frame(width: :infinity)
+                end
+              }
+              .padding
+              .frame(width: :infinity, height: :infinity)
+              .color(:white)
+              .background(["#E0115F", "#9B1B30"])
+            end.present
             """
     }
 #endif

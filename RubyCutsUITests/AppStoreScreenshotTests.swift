@@ -71,6 +71,11 @@
             XCTAssertTrue(
                 app.navigationBars["Input: ARGV, STDIN, ENV"].waitForExistence(timeout: 10))
             capture("04-documentation", appearance: .dark)
+
+            launch(appearance: .light, consoleHeight: 340)
+            openScript("Today Widget")
+            run(waitingFor: "Medium widget preview")
+            capture("05-widget", appearance: .light)
         }
 
         @MainActor
@@ -86,15 +91,24 @@
             openScript("Hello Shortcuts")
             run(waitingFor: "GREETING from Environment:")
             capture("02-shortcuts", appearance: .dark)
+
+            launch(appearance: .light, orientation: .landscapeLeft, consoleHeight: 340)
+            openScript("Today Widget")
+            run(waitingFor: "Medium widget preview")
+            capture("03-widget", appearance: .light)
         }
 
         // MARK: - Steps
 
         /// Sets the device up and (re)launches the app over a fresh fixture
-        /// library, then waits for the list to show.
+        /// library, then waits for the list to show. `consoleHeight`
+        /// overrides the editor's remembered console height for this launch
+        /// only (through the arguments domain, so the stored value stays),
+        /// for a scene whose console needs more room than the default.
         @MainActor
         private func launch(
-            appearance: XCUIDevice.Appearance, orientation: UIDeviceOrientation? = nil
+            appearance: XCUIDevice.Appearance, orientation: UIDeviceOrientation? = nil,
+            consoleHeight: Int? = nil
         ) {
             app?.terminate()
             XCUIDevice.shared.appearance = appearance
@@ -103,6 +117,9 @@
             }
             app = XCUIApplication()
             app.launchArguments = ["-UIScreenshots"]
+            if let consoleHeight {
+                app.launchArguments += ["-consoleHeight", String(consoleHeight)]
+            }
             app.launch()
             XCTAssertTrue(row(named: "Fetch JSON").waitForExistence(timeout: 20))
         }
