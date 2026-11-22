@@ -49,7 +49,7 @@ struct RubyCutsApp: App {
         }
         #if os(macOS)
             .commands { ScriptCommands() }
-            // Leaves ~680pt for the editor next to the 180-320pt sidebar
+            // Leaves ~640pt for the editor next to the 200-320pt sidebar
             // (see `ScriptListView`'s `navigationSplitViewColumnWidth`).
             // Unavailable on iOS, hence the guard.
             .defaultSize(width: 900, height: 600)

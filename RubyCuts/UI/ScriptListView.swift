@@ -62,7 +62,6 @@ struct ScriptListView: View {
         NavigationSplitView {
             content
                 .navigationTitle("Scripts")
-                .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 320)
                 .searchable(text: $searchText, prompt: "Search Scripts")
                 .task {
                     await library.prepareStorage()
@@ -126,6 +125,8 @@ struct ScriptListView: View {
                         Text(library.errorMessage ?? "")
                     }
                 #endif
+                // Last in the chain, so no modifier above sits between it and the split view.
+                .navigationSplitViewColumnWidth(min: 200, ideal: 260, max: 320)
         } detail: {
             if let script = selection {
                 ScriptEditorView(
