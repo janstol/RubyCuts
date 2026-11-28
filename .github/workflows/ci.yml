@@ -43,7 +43,7 @@ jobs:
       # as the README sets up, installs into the build's own prefix.
       - name: Install mise and Ruby
         if: steps.cache.outputs.cache-hit != 'true'
-        uses: jdx/mise-action@v4
+        uses: jdx/mise-action@v5
         env:
           MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
 
